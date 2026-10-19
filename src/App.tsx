@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Viewport } from './components/Viewport'
 import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel } from './components/Chrome'
 import { Sidebar, Timeline } from './components/Panels'
+import { UVEditor } from './components/UVEditor'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
@@ -15,7 +16,11 @@ export default function App() {
   const [dragging, setDragging] = useState(false)
   const maximized = useStore(s => s.maximized)
   const layout = useStore(s => s.layout)
-  useEffect(() => sceneManager.invalidate(), [maximized, layout])
+  const uvSpace = useStore(s => s.uvSpace)
+  const uvSplit = useStore(s => s.uvSplit)
+  const uvMax = useStore(s => s.uvMax)
+  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax])
+  const cols = uvMax === '3d' ? 'minmax(0, 1fr) 14px 0px' : uvMax === 'uv' ? '0px 14px minmax(0, 1fr)' : `minmax(0, ${uvSplit}fr) 14px minmax(0, ${1 - uvSplit}fr)`
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
   useEffect(() => {
@@ -36,9 +41,15 @@ export default function App() {
       <div className="main">
         <ToolRail />
         <div className="center">
-          <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
-            <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
-            {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
+          <div className={`work ${uvSpace ? 'uv-space' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
+            <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
+              <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
+              {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
+            </div>
+            {uvSpace && <>
+              <UVDivider />
+              <div className="uv-pane" data-testid="uv-pane">{uvMax !== '3d' && <UVEditor big />}</div>
+            </>}
           </div>
           <Timeline />
         </div>
@@ -49,6 +60,26 @@ export default function App() {
       <Toast />
       <Popup />
       {dragging && <div className="dropzone"><div>Drop a .glb, .obj, project .json, or a PNG / JPEG / WebP image</div></div>}
+    </div>
+  )
+}
+
+/** Draggable divider of the UV workspace; double-click resets; the arrows maximize one side / restore. */
+function UVDivider() {
+  const uvMax = useStore(s => s.uvMax)
+  const set = useStore(s => s.set)
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).tagName === 'BUTTON') return
+    const el = e.currentTarget, work = el.parentElement!.getBoundingClientRect()
+    el.setPointerCapture(e.pointerId)
+    const mv = (ev: PointerEvent) => set({ uvMax: null, uvSplit: Math.max(0.15, Math.min(0.85, (ev.clientX - work.left) / work.width)) })
+    const upFn = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', upFn) }
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', upFn)
+  }
+  return (
+    <div className="uv-divider" data-testid="uv-divider" onPointerDown={drag} onDoubleClick={() => set({ uvSplit: 0.5, uvMax: null })} title="Drag to resize · double-click to reset">
+      <button data-testid="uv-max-uv" title={uvMax === 'uv' ? 'Restore' : 'Maximize the UV editor'} onClick={() => set({ uvMax: uvMax === 'uv' ? null : 'uv' })}>{uvMax === 'uv' ? '▸' : '◂'}</button>
+      <button data-testid="uv-max-3d" title={uvMax === '3d' ? 'Restore' : 'Maximize the 3D view'} onClick={() => set({ uvMax: uvMax === '3d' ? null : '3d' })}>{uvMax === '3d' ? '◂' : '▸'}</button>
     </div>
   )
 }

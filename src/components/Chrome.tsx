@@ -68,12 +68,13 @@ export function ToolRail() {
   const axis = useStore(s => s.axis)
   const snap = useStore(s => s.snap)
   const autoKey = useStore(s => s.autoKey)
+  const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
   return (
     <aside className="rail" data-testid="tool-rail">
       <div className="tabs">
-        {TABS.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => setTab(t)}>{t}</button>)}
+        {TABS.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>
       <div className="tool-list">
         {tab === 'Create' && <>
@@ -103,6 +104,8 @@ export function ToolRail() {
         {tab === 'Map' && <>
           <h4>UV</h4>
           <CmdBtn cmd="uv.auto" label="Auto UV" testid="auto-uv" />
+          <CmdBtn cmd="view.uv" label="UV workspace" active={uvSpace} testid="uv-workspace" />
+          <p className="muted">The UV editor opens beside the 3D view. Selection is shared: pick faces in either side.</p>
         </>}
         {tab === 'Paint' && <>
           <CmdBtn cmd="tool.paint" label="Paint brush" active={tool === 'paint'} testid="brush" />

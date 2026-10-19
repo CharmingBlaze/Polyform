@@ -3,45 +3,75 @@ import { importImage } from '../io'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../store'
-import { cornerFace, cornerId, cornerIdx, faceCorners, faceNormal, type Vec2 } from '../model'
+import { interaction } from '../interaction'
+import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
+import * as U from '../uvops'
 
-type UVTool = 'select' | 'move' | 'rotate' | 'scale'
+export type UVTool = 'select' | 'move' | 'rotate' | 'scale'
+type Xf = 'move' | 'rotate' | 'scale'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Drag = any
 
-/** Corner id = face * 3 + corner */
-export function UVEditor() {
+/** Faces the UV editor shows and picks: every visible face. */
+export function uvFaces(): number[] {
+  const m = useStore.getState().model
+  return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
+}
+/** UV corners covered by the 3D selection (the UV selection is the 3D selection). */
+export function uvSelection(): Set<number> {
+  const s = useStore.getState()
+  return U.selectedCorners(s.model, s, uvFaces())
+}
+
+/**
+ * UV editor. Selection is synced with the 3D views: picking here selects points / edges / faces in the current
+ * select mode, and whatever is selected in 3D is highlighted here. G/R/S while hovering = modal move / rotate /
+ * scale of the selected UVs (click or Enter confirms, Esc or right-click cancels); L selects the UV island.
+ */
+export function UVEditor({ big = false }: { big?: boolean }) {
   const wrap = useRef<HTMLDivElement>(null)
   const cv = useRef<HTMLCanvasElement>(null)
   const [tool, setTool] = useState<UVTool>('select')
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 })
   const [size, setSize] = useState({ w: 300, h: 300 })
+  const [checker, setChecker] = useState(false)
   const version = useStore(s => s.version)
   const selFaces = useStore(s => s.selFaces)
-  const selUV = useStore(s => s.selUV)
+  const selVerts = useStore(s => s.selVerts)
+  const selEdges = useStore(s => s.selEdges)
   const selectMode = useStore(s => s.selectMode)
+  const subModes = useStore(s => s.subModes)
   const texRev = useStore(s => s.texRev)
   const activeMat = useStore(s => s.activeMat)
-  const texId = useStore(s => s.model.materials[Math.min(s.activeMat, s.model.materials.length - 1)]?.texture ?? null)
-  const texImg = texId ? textures.canvas(texId) : null
+  const model = useStore(s => s.model)
+  // image of the first selected face's material, else the active material
+  const firstSel = [...selFaces].find(f => model.faces[f])
+  const shownMat = firstSel !== undefined ? faceMat(model, model.faces[firstSel]) : Math.min(activeMat, model.materials.length - 1)
+  const texId = model.materials[shownMat]?.texture ?? null
+  const texImg = texId && !checker ? textures.canvas(texId) : null
   const [, force] = useState(0)
-  const drag = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const drag = useRef<Drag>(null)
+  const mouse = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
-    const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setSize({ w: r.width, h: r.height }) })
+    const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setSize({ w: Math.max(50, r.width), h: Math.max(50, r.height) }) })
     ro.observe(wrap.current!)
     const h = () => force(x => x + 1)
     window.addEventListener('texture-changed', h)
     return () => { ro.disconnect(); window.removeEventListener('texture-changed', h) }
   }, [])
 
-  const shownFaces = () => {
-    const m = useStore.getState().model
-    const sf = useStore.getState().selFaces
-    const list = sf.size ? [...sf] : m.faces.map((_, i) => i)
-    return list.filter(i => m.faces[i])
-  }
   const side = Math.min(size.w, size.h) * 0.88 * view.zoom
   const originX = (size.w - side) / 2 + view.ox, originY = (size.h - side) / 2 + view.oy
   const toPx = (u: Vec2) => ({ x: originX + u[0] * side, y: originY + (1 - u[1]) * side })
+  const toUV = (x: number, y: number): Vec2 => [(x - originX) / side, 1 - (y - originY) / side]
+
+  // dev / test hook: UV -> client px of this editor
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as unknown as Record<string, unknown>
+    w.__polyformUV = { sel: () => [...uvSelection()], toClient: (u: number, v: number) => { const r = cv.current!.getBoundingClientRect(); const p = toPx([u, v]); return { x: r.left + p.x, y: r.top + p.y } }, side }
+  })
 
   useEffect(() => {
     const c = cv.current!
@@ -51,94 +81,232 @@ export function UVEditor() {
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
     g.fillStyle = '#101217'; g.fillRect(0, 0, size.w, size.h)
     g.imageSmoothingEnabled = false
-    // tile ghosts
+    const drawImg = (x: number, y: number) => {
+      if (texImg) { try { g.drawImage(texImg as CanvasImageSource, x, y, side, side) } catch { /* not loaded */ } return }
+      const n = 8, cs = side / n
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { g.fillStyle = (i + j) % 2 ? '#2a2f3a' : '#3a4150'; g.fillRect(x + i * cs, y + j * cs, cs + 0.5, cs + 0.5) }
+    }
     g.globalAlpha = 0.15
-    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) if (tx || ty) try { g.drawImage(texImg as CanvasImageSource, originX + tx * side, originY + ty * side, side, side) } catch { /* not loaded */ }
+    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) if (tx || ty) drawImg(originX + tx * side, originY + ty * side)
     g.globalAlpha = 1
-    try { g.drawImage(texImg as CanvasImageSource, originX, originY, side, side) } catch { /* */ }
+    drawImg(originX, originY)
+    // pixel grid at high zoom
+    const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
+    if (tw && side / tw >= 8) {
+      g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 1; g.beginPath()
+      for (let i = 0; i <= tw; i++) { const x = originX + (i / tw) * side; g.moveTo(x, originY); g.lineTo(x, originY + side) }
+      for (let j = 0; j <= th; j++) { const y = originY + (j / th) * side; g.moveTo(originX, y); g.lineTo(originX + side, y) }
+      g.stroke()
+    }
     g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1; g.strokeRect(originX + 0.5, originY + 0.5, side, side)
     const m = useStore.getState().model
-    const faces = shownFaces()
+    const faces = uvFaces(), sel = uvSelection()
+    const st = useStore.getState()
+    const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
     g.lineWidth = 1.2
     for (const fi of faces) {
       const f = m.faces[fi]
       const p = f.uv.map(toPx)
       g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
-      const anySel = f.uv.some((_, i) => selUV.has(cornerId(fi, i)))
-      g.fillStyle = anySel ? 'rgba(255,93,93,0.18)' : 'rgba(110,160,255,0.08)'; g.fill()
-      g.strokeStyle = anySel ? '#ff7a7a' : '#7fb0ff'; g.stroke()
+      const on = st.selFaces.has(fi) && (faceMode || f.uv.every((_, i) => sel.has(fi * 1024 + i)))
+      g.fillStyle = on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
+      g.strokeStyle = on ? '#ffa04a' : '#7fb0ff'; g.stroke()
     }
+    // selected edges
+    g.strokeStyle = '#ffa04a'; g.lineWidth = 2.2; g.beginPath()
     for (const fi of faces) {
+      const f = m.faces[fi]
+      f.uv.forEach((u, i) => {
+        const j = (i + 1) % f.uv.length
+        if (sel.has(fi * 1024 + i) && sel.has(fi * 1024 + j)) { const a = toPx(u), b = toPx(f.uv[j]); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y) }
+      })
+    }
+    g.stroke()
+    const showPts = !faceMode
+    if (showPts) for (const fi of faces) {
       m.faces[fi].uv.forEach((u, i) => {
-        const p = toPx(u)
-        const s = selUV.has(cornerId(fi, i))
-        g.fillStyle = s ? '#ff5d5d' : '#e8ecf6'
+        const p = toPx(u), s = sel.has(fi * 1024 + i)
+        g.fillStyle = s ? '#ffa04a' : '#e8ecf6'
         g.fillRect(p.x - (s ? 3 : 2), p.y - (s ? 3 : 2), s ? 6 : 4, s ? 6 : 4)
       })
     }
-    if (drag.current?.kind === 'rect') {
+    if (drag.current?.kind === 'rect' && drag.current.moved) {
       const d = drag.current
       g.strokeStyle = '#8ab4ff'; g.setLineDash([4, 3]); g.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); g.setLineDash([])
     }
   })
-  void version; void selFaces; void selectMode; void texRev; void activeMat; void texId
+  void version; void selFaces; void selVerts; void selEdges; void selectMode; void subModes; void texRev
 
-  const loc = (e: React.PointerEvent | React.WheelEvent) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+  const loc = (e: { clientX: number; clientY: number }) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 
-  const down = (e: React.PointerEvent) => {
-    cv.current!.setPointerCapture(e.pointerId)
-    const { x, y } = loc(e)
-    if (e.button === 1 || e.button === 2) { drag.current = { kind: 'pan', x, y }; return }
-    const st = useStore.getState()
-    if (tool === 'select' || !st.selUV.size) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.ctrlKey || e.metaKey }; return }
-    const m = st.model
-    const orig = new Map<number, Vec2>()
-    let cx = 0, cy = 0
-    st.selUV.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) { orig.set(id, [...u] as Vec2); cx += u[0]; cy += u[1] } })
-    drag.current = { kind: 'xf', x0: x, y0: y, orig, c: [cx / orig.size, cy / orig.size], started: false }
+  // ---------- picking (3D-synced) ----------
+  type Hit = { verts?: number[]; faces?: number[]; edges?: number[] }
+  const pickAt = (x: number, y: number): Hit | null => {
+    const st = useStore.getState(), m = st.model, faces = uvFaces()
+    const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
+    if (st.subModes.includes('vertex') && st.selectMode !== 'object') {
+      let best = -1, bd = 49
+      for (const fi of faces) m.faces[fi].uv.forEach((u, i) => { const p = toPx(u), d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = m.faces[fi].v[i] } })
+      if (best >= 0) return { verts: [best] }
+    }
+    if (st.subModes.includes('edge') && st.selectMode !== 'object') {
+      let best = -1, bd = 36
+      for (const fi of faces) {
+        const f = m.faces[fi]
+        f.uv.forEach((u, i) => {
+          const j = (i + 1) % f.uv.length, a = toPx(u), b = toPx(f.uv[j])
+          const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy || 1
+          const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / L))
+          const d = (a.x + t * dx - x) ** 2 + (a.y + t * dy - y) ** 2
+          if (d < bd) { bd = d; best = edgeKey(f.v[i], f.v[j]) }
+        })
+      }
+      if (best >= 0) return { edges: [best] }
+    }
+    if (faceMode) {
+      const p = toUV(x, y)
+      for (let k = faces.length - 1; k >= 0; k--) if (U.uvInFace(m, faces[k], p)) {
+        const fi = faces[k]
+        if (st.selectMode === 'object') { const g = m.faces[fi].g; return { faces: m.faces.map((f, i) => (f.g === g ? i : -1)).filter(i => i >= 0) } }
+        return { faces: [fi] }
+      }
+    }
+    return null
   }
-  const move = (e: React.PointerEvent) => {
-    const d = drag.current
-    if (!d) return
-    const { x, y } = loc(e)
-    if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
-    if (d.kind === 'rect') { d.x1 = x; d.y1 = y; force(n => n + 1); return }
+  const pickRect = (x0: number, y0: number, x1: number, y1: number): Hit => {
+    const st = useStore.getState(), m = st.model, faces = uvFaces()
+    const inside = (u: Vec2) => { const p = toPx(u); return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 }
+    if (st.selectMode === 'object' || st.subModes.includes('face')) {
+      let hit = faces.filter(fi => m.faces[fi].uv.every(inside))
+      if (st.selectMode === 'object') { const gs = new Set(hit.map(f => m.faces[f].g)); hit = m.faces.map((f, i) => (gs.has(f.g) ? i : -1)).filter(i => i >= 0) }
+      return { faces: hit }
+    }
+    if (st.subModes.includes('edge')) {
+      const es = new Set<number>()
+      for (const fi of faces) { const f = m.faces[fi]; f.uv.forEach((u, i) => { const j = (i + 1) % f.uv.length; if (inside(u) && inside(f.uv[j])) es.add(edgeKey(f.v[i], f.v[j])) }) }
+      return { edges: [...es] }
+    }
+    const vs = new Set<number>()
+    for (const fi of faces) m.faces[fi].uv.forEach((u, i) => inside(u) && vs.add(m.faces[fi].v[i]))
+    return { verts: [...vs] }
+  }
+  const applyHit = (hit: Hit | null, add: boolean, sub: boolean) => {
     const st = useStore.getState()
-    if (!d.started) { d.started = true; st.checkpoint() }
+    const merge = (cur: Set<number>, ids: number[]) => { const s = new Set(add || sub ? cur : []); ids.forEach(i => (sub ? s.delete(i) : s.add(i))); return s }
+    if (!hit) { if (!add && !sub) st.setSelection(st.subModes.includes('vertex') && st.selectMode !== 'object' ? { verts: [] } : st.subModes.includes('edge') && st.selectMode !== 'object' ? { edges: [] } : { faces: [] }); return }
+    if (hit.faces) st.setSelection({ faces: merge(st.selFaces, hit.faces) })
+    else if (hit.edges) st.setSelection({ edges: merge(st.selEdges, hit.edges) })
+    else if (hit.verts) st.setSelection({ verts: merge(st.selVerts, hit.verts) })
+  }
+  const hitSelected = (hit: Hit | null) => {
+    if (!hit) return false
+    const st = useStore.getState()
+    if (hit.faces) return hit.faces.every(f => st.selFaces.has(f))
+    if (hit.edges) return hit.edges.every(e => st.selEdges.has(e))
+    return !!hit.verts?.every(v => st.selVerts.has(v))
+  }
+
+  // ---------- transforms ----------
+  const beginXf = (kind: Xf, x: number, y: number, modal: boolean) => {
+    const st = useStore.getState(), m = st.model
+    const ids = uvSelection()
+    if (!ids.size) { st.notify('Select something to transform'); return false }
+    const orig = new Map<number, Vec2>()
+    ids.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) orig.set(id, [...u] as Vec2) })
+    const b = U.cornerBox(m, ids)!
+    const cp = toPx(b.c)
+    st.checkpoint(`UV ${kind}`)
+    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c: b.c, cp, modal, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
+    return true
+  }
+  const updateXf = (x: number, y: number, ctrl: boolean) => {
+    const d = drag.current, st = useStore.getState(), m = st.model
     const dx = (x - d.x0) / side, dy = -(y - d.y0) / side
-    const m = st.model
+    let ang = -(Math.atan2(y - d.cp.y, x - d.cp.x) - d.a0)
+    if (ctrl) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
+    const f = Math.max(0.001, Math.hypot(x - d.cp.x, y - d.cp.y) / d.r0)
     d.orig.forEach((o: Vec2, id: number) => {
       let u: Vec2
-      if (tool === 'move') u = [o[0] + dx, o[1] + dy]
-      else if (tool === 'scale') { const f = Math.max(0.01, 1 + (x - d.x0) * 0.006); u = [d.c[0] + (o[0] - d.c[0]) * f, d.c[1] + (o[1] - d.c[1]) * f] }
-      else { const a = (x - d.x0) * 0.012, cs = Math.cos(a), sn = Math.sin(a), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
+      if (d.xf === 'move') u = [o[0] + dx, o[1] + dy]
+      else if (d.xf === 'scale') u = [d.c[0] + (o[0] - d.c[0]) * f, d.c[1] + (o[1] - d.c[1]) * f]
+      else { const cs = Math.cos(ang), sn = Math.sin(ang), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
       m.faces[cornerFace(id)].uv[cornerIdx(id)] = u
     })
     st.touch()
   }
-  const up = () => {
-    const d = drag.current
-    drag.current = null
-    if (!d || d.kind !== 'rect') return
+  const endXf = (cancel: boolean) => {
     const st = useStore.getState()
-    const m = st.model
-    const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1)
-    const click = x1 - x0 < 4 && y1 - y0 < 4
-    const hits: number[] = []
-    for (const fi of shownFaces()) m.faces[fi].uv.forEach((u, i) => {
-      const p = toPx(u)
-      if (click ? (p.x - d.x0) ** 2 + (p.y - d.y0) ** 2 < 49 : p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) hits.push(cornerId(fi, i))
-    })
-    const s = new Set(d.add || d.sub ? st.selUV : [])
-    hits.forEach(h => (d.sub ? s.delete(h) : s.add(h)))
-    useStore.setState({ selUV: s })
-    if (hits.length && tool === 'select' && click) { /* stay */ }
+    drag.current = null
+    if (cancel) st.cancelEdit(); else st.commit()
+    force(n => n + 1)
+  }
+
+  // modal keys routed here while the pointer is over the editor
+  useEffect(() => {
+    const onUVKey = (e: Event) => {
+      const code = (e as CustomEvent<string>).detail, { x, y } = mouse.current
+      if (drag.current) return
+      if (code === 'KeyG') beginXf('move', x, y, true)
+      else if (code === 'KeyR') beginXf('rotate', x, y, true)
+      else if (code === 'KeyS') beginXf('scale', x, y, true)
+      else if (code === 'KeyL') selectIsland(pickAt(x, y))
+      force(n => n + 1)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (!drag.current?.modal) return
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); endXf(true) }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); endXf(false) }
+    }
+    window.addEventListener('uv-key', onUVKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => { window.removeEventListener('uv-key', onUVKey); window.removeEventListener('keydown', onKey, true) }
+  })
+  useEffect(() => () => { interaction.hoverUV = false }, [])
+
+  const down = (e: React.PointerEvent) => {
+    cv.current!.setPointerCapture(e.pointerId)
+    const { x, y } = loc(e)
+    if (drag.current?.modal) { endXf(e.button !== 0); return }
+    if (e.button === 1 || e.button === 2) { drag.current = { kind: 'pan', x, y }; return }
+    const add = e.shiftKey, sub = e.ctrlKey || e.metaKey
+    if (tool !== 'select' && !add && !sub) { if (beginXf(tool, x, y, false)) return }
+    // select tool: press on an element selects it (unless already selected) and a drag moves it; else marquee
+    const hit = add || sub ? null : pickAt(x, y)
+    if (hit) {
+      const was = hitSelected(hit)
+      if (!was) applyHit(hit, false, false)
+      drag.current = { kind: 'press', x0: x, y0: y, hit, was }
+      return
+    }
+    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, moved: false }
+  }
+  const move = (e: React.PointerEvent) => {
+    const { x, y } = loc(e)
+    mouse.current = { x, y }
+    const d = drag.current
+    if (!d) return
+    if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
+    if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
+    if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { beginXf('move', d.x0, d.y0, false) && updateXf(x, y, e.ctrlKey) } return }
+    if (d.kind === 'xf') updateXf(x, y, e.ctrlKey)
+  }
+  const up = (e: React.PointerEvent) => {
+    const d = drag.current
+    if (!d || d.modal) return
+    if (d.kind === 'xf') return endXf(false)
+    drag.current = null
+    // a plain click on an already selected element selects only it
+    if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
+    if (d.kind !== 'rect') { force(n => n + 1); return }
+    if (!d.moved) { applyHit(pickAt(d.x0, d.y0), d.add, d.sub); return }
+    applyHit(pickRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)), d.add, d.sub)
+    void e
   }
   const wheel = (e: React.WheelEvent) => {
     const { x, y } = loc(e)
     const k = Math.exp(-e.deltaY * 0.0015)
     setView(v => {
-      const zoom = THREE.MathUtils.clamp(v.zoom * k, 0.2, 20)
+      const zoom = THREE.MathUtils.clamp(v.zoom * k, 0.2, 40)
       const r = zoom / v.zoom
       const s0 = Math.min(size.w, size.h) * 0.88
       const ox0 = (size.w - s0 * v.zoom) / 2 + v.ox, oy0 = (size.h - s0 * v.zoom) / 2 + v.oy
@@ -147,86 +315,69 @@ export function UVEditor() {
     })
   }
 
-  // -------- mapping ops --------
-  const targetFaces = () => shownFaces()
-  const mapPlanar = (axis: 'x' | 'y' | 'z' | 'box') => {
-    const st = useStore.getState()
-    const faces = targetFaces()
-    if (!faces.length) return
-    st.edit(m => {
-      const proj = (p: number[], ax: string): Vec2 => ax === 'y' ? [p[0], -p[2]] : ax === 'z' ? [p[0], p[1]] : [-p[2], p[1]]
-      const uvs: Vec2[][] = []
-      for (const fi of faces) {
-        const f = m.faces[fi]
-        let ax: string = axis
-        if (axis === 'box') { const n = faceNormal(m, f); const a = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)]; ax = a[0] >= a[1] && a[0] >= a[2] ? 'x' : a[1] >= a[2] ? 'y' : 'z' }
-        uvs.push(f.v.map(v => proj(m.verts[v], ax)))
-      }
-      let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
-      uvs.flat().forEach(([u, v]) => { minU = Math.min(minU, u); minV = Math.min(minV, v); maxU = Math.max(maxU, u); maxV = Math.max(maxV, v) })
-      const s = Math.max(maxU - minU, maxV - minV) || 1
-      faces.forEach((fi, k) => { m.faces[fi].uv = uvs[k].map(([u, v]) => [(u - minU) / s, (v - minV) / s] as Vec2) })
-    })
-    useStore.setState({ selUV: new Set(faces.flatMap(f => faceCorners(useStore.getState().model, f))) })
+  // ---------- ops ----------
+  const targetFaces = () => { const st = useStore.getState(); const f = st.activeFaces(); return f.length ? f : uvFaces() }
+  const targetCorners = () => { const s = uvSelection(); return s.size ? [...s] : targetFaces().flatMap(fi => useStore.getState().model.faces[fi].uv.map((_, i) => fi * 1024 + i)) }
+  const op = (label: string, fn: (m: typeof model, ids: number[]) => void) => { const ids = targetCorners(); if (!ids.length) return; useStore.getState().edit(m => fn(m, ids), label) }
+  const project = (axis: U.UVAxis) => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.project(m, faces, axis), 'UV project') }
+  const selectIsland = (hit: Hit | null) => {
+    const st = useStore.getState(), faces = uvFaces()
+    const seeds = hit?.faces ?? (hit ? [] : [...st.selFaces])
+    if (hit?.verts || hit?.edges) {
+      const vs = new Set(hit.verts ?? hit.edges!.flatMap(k => [Math.floor(k / 2 ** 26), k % 2 ** 26]))
+      faces.forEach(fi => st.model.faces[fi].v.some(v => vs.has(v)) && seeds.push(fi))
+    }
+    if (!seeds.length) { st.notify('Hover a face or select one, then L'); return }
+    const isl = U.islandFaces(st.model, seeds, faces)
+    if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face')
+    useStore.getState().setSelection({ faces: new Set([...(hit ? st.selFaces : []), ...isl]) })
   }
-  const transformSel = (fn: (u: Vec2, c: Vec2) => Vec2) => {
-    const st = useStore.getState()
-    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => faceCorners(st.model, f))
-    if (!ids.length) return
-    const m = st.model
-    let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
-    ids.forEach(id => { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
-    const c: Vec2 = [(minU + maxU) / 2, (minV + maxV) / 2]
-    st.edit(mm => ids.forEach(id => { const f = mm.faces[cornerFace(id)]; f.uv[cornerIdx(id)] = fn(f.uv[cornerIdx(id)], c) }))
-  }
-  const fit = () => {
-    const st = useStore.getState()
-    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => faceCorners(st.model, f))
-    if (!ids.length) return
-    const m = st.model
-    let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
-    ids.forEach(id => { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
-    const s = Math.max(maxU - minU, maxV - minV) || 1
-    st.edit(mm => ids.forEach(id => { const f = mm.faces[cornerFace(id)]; const u = f.uv[cornerIdx(id)]; f.uv[cornerIdx(id)] = [(u[0] - minU) / s, (u[1] - minV) / s] }))
-  }
-
   const loadTexture = (file: File) => {
-    importImage(file).then(id => useStore.getState().setMaterialTexture(useStore.getState().activeMat, id)).catch(err => useStore.getState().notify(String(err.message || err)))
+    importImage(file).then(id => useStore.getState().setMaterialTexture(shownMat, id)).catch(err => useStore.getState().notify(String(err.message || err)))
   }
+  const B = ({ id, label, tip, onClick, on }: { id: string; label: string; tip?: string; onClick: () => void; on?: boolean }) => (
+    <button data-testid={`uv-${id}`} className={on ? 'on' : ''} title={tip ?? label} onClick={onClick}>{label}</button>
+  )
+  const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
 
   return (
-    <div className="uv-editor">
+    <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
       <div className="uv-toolbar">
-        {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => (
-          <button key={t} className={tool === t ? 'on' : ''} onClick={() => setTool(t)}>{t[0].toUpperCase() + t.slice(1)}</button>
-        ))}
+        {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => <B key={t} id={t} on={tool === t} label={t[0].toUpperCase() + t.slice(1)} tip={t === 'select' ? 'Select (click / drag); drag a selected element to move it' : `${t} (or ${t === 'move' ? 'G' : t === 'rotate' ? 'R' : 'S'} while hovering)`} onClick={() => setTool(t)} />)}
         <span className="grow" />
-        <button title="Reset view" onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>⟲</button>
+        <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
+        <button title="Reset view" data-testid="uv-reset-view" onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>⟲</button>
       </div>
       <div className="uv-canvas" ref={wrap}>
-        <canvas ref={cv} style={{ width: size.w, height: size.h }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
-        <div className="uv-hint">{selFaces.size ? `${selFaces.size} selected faces` : 'All faces'} · wheel zoom · right-drag pan</div>
+        <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()}
+          onPointerEnter={() => (interaction.hoverUV = true)} onPointerLeave={() => (interaction.hoverUV = false)} />
+        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · click/drag select · G R S · L island · wheel zoom · right-drag pan</div>
       </div>
       <div className="uv-actions">
         <div className="label">Project</div>
         <div className="btn-row">
-          <button onClick={() => mapPlanar('z')}>Front</button>
-          <button onClick={() => mapPlanar('y')}>Top</button>
-          <button onClick={() => mapPlanar('x')}>Side</button>
-          <button onClick={() => mapPlanar('box')}>Box</button>
+          <B id="proj-front" label="Front" onClick={() => project('z')} />
+          <B id="proj-top" label="Top" onClick={() => project('y')} />
+          <B id="proj-side" label="Side" onClick={() => project('x')} />
+          <B id="proj-box" label="Box" onClick={() => project('box')} />
+          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
         </div>
         <div className="label">Adjust</div>
         <div className="btn-row">
-          <button onClick={() => transformSel((u, c) => [2 * c[0] - u[0], u[1]])}>Flip U</button>
-          <button onClick={() => transformSel((u, c) => [u[0], 2 * c[1] - u[1]])}>Flip V</button>
-          <button onClick={() => transformSel((u, c) => [c[0] - (u[1] - c[1]), c[1] + (u[0] - c[0])])}>Rot 90°</button>
-          <button onClick={fit}>Fit 0–1</button>
+          <B id="flip-u" label="Flip H" onClick={() => op('UV flip', U.flipU)} />
+          <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
+          <B id="rot90" label="Rot 90°" onClick={() => op('UV rotate', U.rot90)} />
+          <B id="fit" label="Fit 0–1" onClick={() => op('UV fit', U.fit01)} />
+          <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || 64, th || 64))} />
+          <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
         </div>
-        <div className="label">Texture</div>
-        <div className="btn-row">
-          <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
-          <button onClick={() => useStore.getState().setMaterialTexture(useStore.getState().activeMat, null)}>Checker</button>
-        </div>
+        {!big && <>
+          <div className="label">Texture</div>
+          <div className="btn-row">
+            <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
+          </div>
+        </>}
       </div>
     </div>
   )

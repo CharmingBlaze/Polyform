@@ -53,6 +53,14 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .header [data-tip]:hover::after, .timeline [data-tip]:hover::after { transform: translate(-30%, 30px); }
 
 .center { display: grid; grid-template-rows: 1fr 84px; min-width: 0; min-height: 0; overflow: hidden; }
+.work { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; }
+.work > .views { min-width: 0; }
+.uv-divider { background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line); cursor: col-resize; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; user-select: none; }
+.uv-divider button { width: 12px; height: 28px; padding: 0; font-size: 10px; line-height: 1; border-radius: 3px; cursor: pointer; }
+.uv-pane { display: flex; min-width: 0; min-height: 0; background: var(--panel); overflow: hidden; }
+.uv-pane > .uv-editor { flex: 1; min-width: 0; }
+.uv-editor.big .uv-actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.uv-editor.big .uv-actions .label { margin: 0; }
 .views { position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; background: var(--line); min-height: 0; }
 .views.max, .views.layout-1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 .views.layout-2h { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; }

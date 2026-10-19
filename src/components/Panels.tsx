@@ -19,7 +19,7 @@ export function Sidebar() {
       <div className="tab-body">
         {tab === 'scene' && <Groups />}
         {tab === 'joints' && <Joints />}
-        {tab === 'uv' && <UVEditor />}
+        {tab === 'uv' && <UVSide />}
       </div>
     </aside>
   )
@@ -253,4 +253,10 @@ function FrameInput({ frame, max, onSet }: { frame: number; max: number; onSet: 
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); onSet(Math.max(0, Math.min(max, frame + (e.key === 'ArrowUp' ? 1 : -1)))); setText(null) }
       }} />
   )
+}
+
+function UVSide() {
+  const uvSpace = useStore(s => s.uvSpace)
+  if (!uvSpace) return <UVEditor />
+  return <div className="list"><Empty title="UV editor is open beside the 3D view" body="Close the UV workspace (Map tab › UV workspace) to edit UVs here." /></div>
 }

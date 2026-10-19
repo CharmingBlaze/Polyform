@@ -1099,7 +1099,7 @@ export function Viewport({ pane }: { pane: number }) {
   })
 
   const panes = layout === '1' ? 1 : layout === '2h' || layout === '2v' ? 2 : layout === '3' ? 3 : 4
-  const hidden = (maximized !== null && maximized !== pane) || pane >= panes
+  const hidden = maximized !== null ? maximized !== pane : pane >= panes
   const setPane = (p: Partial<typeof cfg>) => set({ panes: useStore.getState().panes.map((x, i) => (i === pane ? { ...x, ...p } : x)) })
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>

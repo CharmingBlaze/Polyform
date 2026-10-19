@@ -72,6 +72,13 @@ interface State {
   layout: Layout
   panes: Pane[]
   maximized: number | null
+  /** UV workspace: 3D view left, UV editor right */
+  uvSpace: boolean
+  /** width of the 3D side, 0..1 */
+  uvSplit: number
+  /** one side of the UV workspace maximized */
+  uvMax: '3d' | 'uv' | null
+  setUVSpace: (on: boolean) => void
   showTexture: boolean
   showWire: boolean
   activeMat: number
@@ -179,6 +186,7 @@ interface State {
 }
 
 let toastTimer = 0
+let preUVMax: number | null = null
 const DEFAULT_PANES: Pane[] = [
   { type: 'top', shade: 'wire', grid: true }, { type: 'persp', shade: 'textured', grid: true },
   { type: 'front', shade: 'wire', grid: true }, { type: 'right', shade: 'wire', grid: true },
@@ -243,6 +251,18 @@ export const useStore = create<State>((set, get) => ({
   layout: '4',
   panes: DEFAULT_PANES,
   maximized: null,
+  uvSpace: false,
+  uvSplit: 0.5,
+  uvMax: null,
+  setUVSpace: on => {
+    const s = get()
+    if (on === s.uvSpace) return
+    if (on) {
+      preUVMax = s.maximized
+      const persp = s.panes.findIndex(p => p.type === 'persp')
+      set({ uvSpace: true, uvMax: null, maximized: persp >= 0 ? persp : 1 })
+    } else set({ uvSpace: false, uvMax: null, maximized: preUVMax })
+  },
   showTexture: true,
   showWire: true,
   activeMat: 0,

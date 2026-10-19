@@ -2,7 +2,7 @@ import { useStore, type EditMode, type Tool } from './store'
 import { exportGLB, exportOBJ, saveProject } from './io'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
-import { isModalActive } from './interaction'
+import { interaction, isModalActive } from './interaction'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -88,6 +88,7 @@ export const commands: Command[] = [
     s.set({ cursor3d: c as [number, number, number] })
   }) },
   { id: 'joint.bind', label: 'Bind selected verts to active joint', group: 'Setup', keys: 'Ctrl+P', run: () => S().assignToJoint() },
+  { id: 'view.uv', label: 'UV workspace (3D view + UV editor side by side)', group: 'View', run: () => S().setUVSpace(!S().uvSpace) },
   { id: 'uv.auto', label: 'Auto UV (unwrap selection or everything)', group: 'Map', run: () => { void S().autoUV() } },
   { id: 'joint.unbind', label: 'Unbind selected points (or the selected joints)', group: 'Setup', keys: 'Alt+P', run: () => S().unbindSelection() },
   { id: 'joint.selectBound', label: 'Select points bound to the selected joints', group: 'Setup', run: () => S().selectBoundPoints() },
@@ -143,6 +144,7 @@ export function installShortcuts(openPalette: () => void) {
     if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
     const combo = comboOf(e)
     if (!combo) return
+    if (interaction.hoverUV && ['G', 'R', 'S', 'L'].includes(combo)) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: e.code })); return }
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
     if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }
     const c = map.get(combo.toUpperCase())
