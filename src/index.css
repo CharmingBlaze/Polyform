@@ -242,3 +242,11 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 html, body { overflow: hidden; }
 .app { overflow: hidden; }
 .header { min-width: 0; overflow: hidden; }
+.outliner .ol-filter { display: flex; align-items: center; gap: 6px; margin: 2px 6px 6px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); }
+.outliner .ol-filter input { border: none; background: transparent; flex: 1; min-width: 0; padding: 2px 0; }
+.outliner .ol-head { display: flex; align-items: center; gap: 6px; padding: 5px 8px; margin-top: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); cursor: pointer; user-select: none; }
+.outliner .ol-head .meta { margin-left: auto; }
+.outliner .row.sub { padding-left: 46px; font-size: 12px; }
+.outliner .twisty { width: 18px; padding: 0; }
+.outliner .ol-empty { padding: 4px 18px 8px; color: var(--dim); font-size: 12px; }
+.swatch-dot { width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(255,255,255,.2); flex: none; }

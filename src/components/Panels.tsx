@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
 import { useStore, type SideTab } from '../store'
-import { faceMat, triCount } from '../model'
+import { faceMat } from '../model'
 import { textures } from '../textures'
 import { importImage } from '../io'
 import { UVEditor } from './UVEditor'
+import { Outliner } from './Outliner'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
@@ -17,46 +18,16 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="tabs">
-        <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Groups</button>
+        <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Outliner</button>
         <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>
         <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>
       </div>
       <div className="tab-body">
-        {tab === 'scene' && <Groups />}
+        {tab === 'scene' && <Outliner />}
         {tab === 'joints' && <Joints />}
         {tab === 'uv' && <UVSide />}
       </div>
     </aside>
-  )
-}
-
-function Groups() {
-  const m = useStore(s => s.model)
-  useStore(s => s.version)
-  const selFaces = useStore(s => s.selFaces)
-  const [editing, setEditing] = useState<number | null>(null)
-  const st = useStore.getState()
-  if (!m.groups.length) return <Empty title="No geometry yet" body="Add a primitive from the left toolbar, or drop a .glb / .obj file anywhere to import." />
-  return (
-    <div className="list">
-      {m.groups.map((g, i) => {
-        const faces = m.faces.map((f, fi) => (f.g === i ? fi : -1)).filter(fi => fi >= 0)
-        const count = faces.length
-        const sel = count > 0 && m.faces.every((f, fi) => f.g !== i || selFaces.has(fi))
-        return (
-          <div key={i} className={`row ${sel ? 'on' : ''}`} onClick={e => st.selectGroup(i, e.shiftKey)}>
-            <button className="icon-btn sm" onClick={e => { e.stopPropagation(); st.edit(mm => (mm.groups[i].visible = !mm.groups[i].visible)) }}>
-              {g.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-            </button>
-            {editing === i
-              ? <input autoFocus defaultValue={g.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.groups[i].name = e.target.value || g.name)); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-              : <span className="name" onDoubleClick={e => { e.stopPropagation(); setEditing(i) }}>{g.name}</span>}
-            <span className="meta" data-testid={`group-count-${i}`}>{count} faces · {triCount(m, faces)} tris</span>
-          </div>
-        )
-      })}
-      <p className="tip">Click to select · Shift-click to add · double-click to rename</p>
-    </div>
   )
 }
 
