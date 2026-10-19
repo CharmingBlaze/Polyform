@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { sceneManager } from '../scene'
-import { faceNormal, type Vec2 } from '../model'
+import { cornerFace, cornerId, cornerIdx, faceCorners, faceNormal, type Vec2 } from '../model'
 
 type UVTool = 'select' | 'move' | 'rotate' | 'scale'
 
@@ -59,15 +59,15 @@ export function UVEditor() {
     for (const fi of faces) {
       const f = m.faces[fi]
       const p = f.uv.map(toPx)
-      g.beginPath(); g.moveTo(p[0].x, p[0].y); g.lineTo(p[1].x, p[1].y); g.lineTo(p[2].x, p[2].y); g.closePath()
-      const anySel = [0, 1, 2].some(i => selUV.has(fi * 3 + i))
+      g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
+      const anySel = f.uv.some((_, i) => selUV.has(cornerId(fi, i)))
       g.fillStyle = anySel ? 'rgba(255,93,93,0.18)' : 'rgba(110,160,255,0.08)'; g.fill()
       g.strokeStyle = anySel ? '#ff7a7a' : '#7fb0ff'; g.stroke()
     }
     for (const fi of faces) {
       m.faces[fi].uv.forEach((u, i) => {
         const p = toPx(u)
-        const s = selUV.has(fi * 3 + i)
+        const s = selUV.has(cornerId(fi, i))
         g.fillStyle = s ? '#ff5d5d' : '#e8ecf6'
         g.fillRect(p.x - (s ? 3 : 2), p.y - (s ? 3 : 2), s ? 6 : 4, s ? 6 : 4)
       })
@@ -90,7 +90,7 @@ export function UVEditor() {
     const m = st.model
     const orig = new Map<number, Vec2>()
     let cx = 0, cy = 0
-    st.selUV.forEach(id => { const u = m.faces[Math.floor(id / 3)]?.uv[id % 3]; if (u) { orig.set(id, [...u] as Vec2); cx += u[0]; cy += u[1] } })
+    st.selUV.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) { orig.set(id, [...u] as Vec2); cx += u[0]; cy += u[1] } })
     drag.current = { kind: 'xf', x0: x, y0: y, orig, c: [cx / orig.size, cy / orig.size], started: false }
   }
   const move = (e: React.PointerEvent) => {
@@ -108,7 +108,7 @@ export function UVEditor() {
       if (tool === 'move') u = [o[0] + dx, o[1] + dy]
       else if (tool === 'scale') { const f = Math.max(0.01, 1 + (x - d.x0) * 0.006); u = [d.c[0] + (o[0] - d.c[0]) * f, d.c[1] + (o[1] - d.c[1]) * f] }
       else { const a = (x - d.x0) * 0.012, cs = Math.cos(a), sn = Math.sin(a), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
-      m.faces[Math.floor(id / 3)].uv[id % 3] = u
+      m.faces[cornerFace(id)].uv[cornerIdx(id)] = u
     })
     st.touch()
   }
@@ -123,7 +123,7 @@ export function UVEditor() {
     const hits: number[] = []
     for (const fi of shownFaces()) m.faces[fi].uv.forEach((u, i) => {
       const p = toPx(u)
-      if (click ? (p.x - d.x0) ** 2 + (p.y - d.y0) ** 2 < 49 : p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) hits.push(fi * 3 + i)
+      if (click ? (p.x - d.x0) ** 2 + (p.y - d.y0) ** 2 < 49 : p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) hits.push(cornerId(fi, i))
     })
     const s = new Set(d.add || d.sub ? st.selUV : [])
     hits.forEach(h => (d.sub ? s.delete(h) : s.add(h)))
@@ -161,30 +161,30 @@ export function UVEditor() {
       let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
       uvs.flat().forEach(([u, v]) => { minU = Math.min(minU, u); minV = Math.min(minV, v); maxU = Math.max(maxU, u); maxV = Math.max(maxV, v) })
       const s = Math.max(maxU - minU, maxV - minV) || 1
-      faces.forEach((fi, k) => { m.faces[fi].uv = uvs[k].map(([u, v]) => [(u - minU) / s, (v - minV) / s]) as [Vec2, Vec2, Vec2] })
+      faces.forEach((fi, k) => { m.faces[fi].uv = uvs[k].map(([u, v]) => [(u - minU) / s, (v - minV) / s] as Vec2) })
     })
-    useStore.setState({ selUV: new Set(faces.flatMap(f => [f * 3, f * 3 + 1, f * 3 + 2])) })
+    useStore.setState({ selUV: new Set(faces.flatMap(f => faceCorners(useStore.getState().model, f))) })
   }
   const transformSel = (fn: (u: Vec2, c: Vec2) => Vec2) => {
     const st = useStore.getState()
-    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => [f * 3, f * 3 + 1, f * 3 + 2])
+    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => faceCorners(st.model, f))
     if (!ids.length) return
     const m = st.model
     let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
-    ids.forEach(id => { const u = m.faces[Math.floor(id / 3)].uv[id % 3]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
+    ids.forEach(id => { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
     const c: Vec2 = [(minU + maxU) / 2, (minV + maxV) / 2]
-    st.edit(mm => ids.forEach(id => { const f = mm.faces[Math.floor(id / 3)]; f.uv[id % 3] = fn(f.uv[id % 3], c) }))
+    st.edit(mm => ids.forEach(id => { const f = mm.faces[cornerFace(id)]; f.uv[cornerIdx(id)] = fn(f.uv[cornerIdx(id)], c) }))
     ;(transformSel as any).bounds = { minU, minV, maxU, maxV }
   }
   const fit = () => {
     const st = useStore.getState()
-    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => [f * 3, f * 3 + 1, f * 3 + 2])
+    const ids = st.selUV.size ? [...st.selUV] : targetFaces().flatMap(f => faceCorners(st.model, f))
     if (!ids.length) return
     const m = st.model
     let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
-    ids.forEach(id => { const u = m.faces[Math.floor(id / 3)].uv[id % 3]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
+    ids.forEach(id => { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
     const s = Math.max(maxU - minU, maxV - minV) || 1
-    st.edit(mm => ids.forEach(id => { const f = mm.faces[Math.floor(id / 3)]; const u = f.uv[id % 3]; f.uv[id % 3] = [(u[0] - minU) / s, (u[1] - minV) / s] }))
+    st.edit(mm => ids.forEach(id => { const f = mm.faces[cornerFace(id)]; const u = f.uv[cornerIdx(id)]; f.uv[cornerIdx(id)] = [(u[0] - minU) / s, (u[1] - minV) / s] }))
   }
 
   const loadTexture = (file: File) => {

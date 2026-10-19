@@ -3,7 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import { addGeometry, emptyModel, validateModel, type Model } from './model'
+import { addGeometry, emptyModel, triangulate, validateModel, type Model } from './model'
 import { keyFrames } from './anim'
 import { sceneManager } from './scene'
 import { useStore } from './store'
@@ -44,7 +44,7 @@ export function buildExportScene(m: Model) {
     const pos: number[] = [], uv: number[] = [], si: number[] = [], sw: number[] = []
     m.faces.forEach(f => {
       if (f.g !== gi) return
-      for (let i = 0; i < 3; i++) {
+      for (const t of triangulate(m.verts, f)) for (const i of t) {
         const v = f.v[i]
         pos.push(...m.verts[v]); uv.push(f.uv[i][0], f.uv[i][1])
         si.push(m.vbone[v] >= 0 ? m.vbone[v] + 1 : 0, 0, 0, 0); sw.push(1, 0, 0, 0)
@@ -104,8 +104,8 @@ export function exportOBJ(m: Model, name = 'model') {
     m.faces.forEach(f => {
       if (f.g !== gi) return
       f.uv.forEach(u => lines.push(`vt ${u[0].toFixed(6)} ${u[1].toFixed(6)}`))
-      lines.push(`f ${f.v[0] + 1}/${vt} ${f.v[1] + 1}/${vt + 1} ${f.v[2] + 1}/${vt + 2}`)
-      vt += 3
+      lines.push('f ' + f.v.map((v, i) => `${v + 1}/${vt + i}`).join(' '))
+      vt += f.v.length
     })
   })
   download(lines.join('\n'), `${name}.obj`, 'text/plain')

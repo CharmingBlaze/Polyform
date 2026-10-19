@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useStore } from './store'
 import { posedJoints, posedVerts } from './anim'
-import type { Vec3 } from './model'
+import { triangulate, type Vec3 } from './model'
 
 export const LAYER = { common: 0, gridXZ: 1, gridXY: 2, gridZY: 3, persp: 4, ortho: 5 }
 
@@ -44,6 +44,8 @@ class SceneManager {
   joints: Vec3[] = []
   visibleVerts = new Set<number>()
   visibleFaces: number[] = []
+  /** Face index of each rendered triangle (for raycasts). */
+  triFace: number[] = []
   targets = new Set<RenderTarget>()
   dirty = true
 
@@ -205,12 +207,17 @@ class SceneManager {
     const pos: number[] = [], uv: number[] = [], sel: number[] = []
     const edges = new Set<string>(), wire: number[] = []
     const faceSel = st.selectMode === 'face' && st.mode === 'model'
+    this.triFace = []
     for (const fi of this.visibleFaces) {
       const f = m.faces[fi]
-      for (let i = 0; i < 3; i++) { pos.push(...P[f.v[i]]); uv.push(...f.uv[i]) }
-      if (faceSel && st.selFaces.has(fi)) for (let i = 0; i < 3; i++) sel.push(...P[f.v[i]])
-      for (let i = 0; i < 3; i++) {
-        const a = f.v[i], b = f.v[(i + 1) % 3]
+      const on = faceSel && st.selFaces.has(fi)
+      for (const t of triangulate(P, f)) {
+        this.triFace.push(fi)
+        for (const c of t) { pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); if (on) sel.push(...P[f.v[c]]) }
+      }
+      const n = f.v.length
+      for (let i = 0; i < n; i++) {
+        const a = f.v[i], b = f.v[(i + 1) % n]
         const k = a < b ? `${a}_${b}` : `${b}_${a}`
         if (!edges.has(k)) { edges.add(k); wire.push(...P[a], ...P[b]) }
       }

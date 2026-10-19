@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { LAYER, sceneManager } from '../scene'
 import { useStore, type ViewName } from '../store'
 import { boneMatrices, sampleBone } from '../anim'
-import { facesOfVerts, vertsOfFaces, type Vec3 } from '../model'
+import { faceCenter, facesOfVerts, triangulate, vertsOfFaces, type Vec3 } from '../model'
 
 const LABEL: Record<ViewName, string> = { persp: 'Perspective', top: 'Top', front: 'Front', side: 'Side' }
 
@@ -246,15 +246,16 @@ export function Viewport({ view }: { view: ViewName }) {
       if (click) {
         let best = -1, bz = Infinity
         for (const fi of sceneManager.visibleFaces) {
-          const [a, b, c] = m.faces[fi].v.map(v => project(P[v]))
-          if (pointInTri(d.x0, d.y0, a, b, c)) { const z = (a.z + b.z + c.z) / 3; if (z < bz) { bz = z; best = fi } }
+          const f = m.faces[fi]
+          const q = f.v.map(v => project(P[v]))
+          for (const [i, j, k] of triangulate(P, f)) {
+            const a = q[i], b = q[j], c = q[k]
+            if (pointInTri(d.x0, d.y0, a, b, c)) { const z = (a.z + b.z + c.z) / 3; if (z < bz) { bz = z; best = fi } }
+          }
         }
         if (best >= 0) hits = [best]
       } else for (const fi of sceneManager.visibleFaces) {
-        const f = m.faces[fi]
-        const cen = new THREE.Vector3()
-        f.v.forEach(v => cen.add(new THREE.Vector3(...P[v])))
-        if (inside(project(cen.divideScalar(3)))) hits.push(fi)
+        if (inside(project(faceCenter(P, m.faces[fi])))) hits.push(fi)
       }
     } else {
       if (click) {
