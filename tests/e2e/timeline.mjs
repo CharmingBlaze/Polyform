@@ -55,8 +55,9 @@ const keysNow = await S(() => Object.keys(window.__polyform.getState().model.cli
 check('a key click does not move the key', keysNow === '5,20', keysNow)
 // dragging a key still moves it
 {
-  const k = await p.locator('[data-testid="key-20"]').boundingBox(), tr = await p.locator('.tl-track').boundingBox()
-  const x25 = tr.x + tr.width * 25 / 29
+  const k = await p.locator('[data-testid="key-20"]').boundingBox()
+  const lane = await p.locator('.dope-row.all .dope-track').boundingBox()
+  const x25 = lane.x + lane.width * 25 / 29
   await p.mouse.move(k.x + k.width / 2, k.y + k.height / 2); await p.mouse.down(); await p.mouse.move(x25, k.y + k.height / 2, { steps: 5 }); await p.mouse.up(); await frame()
   const ks = await S(() => Object.keys(window.__polyform.getState().model.clips[0].keys[0]).join())
   check('dragging a key still moves it (20 -> 25)', ks === '5,25', ks)

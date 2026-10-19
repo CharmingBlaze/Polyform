@@ -8,6 +8,7 @@ import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type 
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
 import { WorkspaceTabs } from './Workspace'
+import { ClipsPanel } from './ClipsPanel'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -59,6 +60,7 @@ export function ToolRail() {
   const snap = useStore(s => s.snap)
   const autoKey = useStore(s => s.autoKey)
   const xMirror = useStore(s => s.xMirror)
+  const onion = useStore(s => s.onion)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
@@ -118,7 +120,8 @@ export function ToolRail() {
           <button className={`tool-btn rec ${autoKey ? 'on' : ''}`} data-testid="auto-key" onClick={() => set({ autoKey: !autoKey })}><Circle size={10} fill={autoKey ? 'currentColor' : 'none'} /> <span>Auto-key</span></button>
           <CmdBtn cmd="anim.copy" label="Copy keys" />
           <CmdBtn cmd="anim.paste" label="Paste keys" />
-          <CmdBtn cmd="view.onion" label="Onion skin" />
+          <button className={`tool-btn ${onion ? 'on' : ''}`} data-testid="onion" onClick={() => byId['view.onion'].run()}><span>Onion skin</span></button>
+          <ClipsPanel />
         </>}
         {tab === 'Export' && <>
           <CmdBtn cmd="file.glb" label="Export .glb" testid="export-glb-tab" />

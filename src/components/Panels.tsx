@@ -6,6 +6,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { UVEditor } from './UVEditor'
 import { Outliner } from './Outliner'
+import { DopeSheet } from './DopeSheet'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
@@ -126,7 +127,6 @@ export function Timeline() {
   const selBones = useStore(s => s.selBones)
   const set = useStore(s => s.set)
   const st = useStore.getState()
-  const track = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!playing) return
@@ -158,11 +158,6 @@ export function Timeline() {
   objs.forEach(g => objectKeyFrames(clip, g).forEach(f => keySet.add(f)))
   const keys = [...keySet].sort((a, b) => a - b)
   const n = Math.max(2, clip.frames)
-  const [keyDrag, setKeyDrag] = useState<{ from: number; to: number } | null>(null)
-  const frameAt = (clientX: number) => { const r = track.current!.getBoundingClientRect(); return Math.max(0, Math.min(n - 1, Math.round(((clientX - r.left) / r.width) * (n - 1)))) }
-  const scrub = (e: React.PointerEvent) => {
-    set({ frame: frameAt(e.clientX), ...(mode !== 'animate' ? { mode: 'animate' as const } : {}) })
-  }
   const jump = (dir: number) => {
     const target = dir < 0 ? [...keys].reverse().find(k => k < frame) : keys.find(k => k > frame)
     if (target !== undefined) set({ frame: target })
@@ -175,10 +170,6 @@ export function Timeline() {
         <select className="clip-pick" data-testid="clip-select" value={Math.min(clipIdx, m.clips.length - 1)} onChange={e => st.setClip(+e.target.value)} title="Animation clip">
           {m.clips.map((c, i) => <option key={i} value={i}>{c.name}</option>)}
         </select>
-        <button className="icon-btn" title="New clip" data-testid="clip-add" onClick={() => st.addClip()}>+</button>
-        <button className="icon-btn" title="Duplicate clip" onClick={() => st.addClip(true)}>⧉</button>
-        <button className="icon-btn" title="Rename clip" onClick={() => { const nm = prompt('Clip name', clip.name); if (nm) st.edit(mm => (mm.clips[clipIdx].name = nm), 'Rename clip') }}>✎</button>
-        <button className="icon-btn" title="Delete clip" disabled={m.clips.length < 2} onClick={() => st.deleteClip(clipIdx)}>−</button>
         <button className="icon-btn play" onClick={() => { if (mode !== 'animate') set({ mode: 'animate' }); set({ playing: !playing }) }} data-tip="Play / pause  ·  Space" data-testid="play">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
         <button className="icon-btn" data-testid="key-next" onClick={() => jump(1)} data-tip="Next key"><SkipForward size={15} /></button>
         <button className="icon-btn" data-testid="frame-end" onClick={() => set({ frame: n - 1 })} data-tip="Last frame"><ChevronLast size={15} /></button>
@@ -192,22 +183,7 @@ export function Timeline() {
         <label className="mini">Loop <input type="checkbox" checked={clip.loop} onChange={e => st.edit(mm => (mm.clips[clipIdx].loop = e.target.checked), 'Clip loop')} /></label>
         <label className="mini">Interp <select value={clip.interp} onChange={e => st.edit(mm => (mm.clips[clipIdx].interp = e.target.value as 'linear' | 'step'), 'Interpolation')}><option value="linear">Linear</option><option value="step">Step</option></select></label>
       </div>
-      <div className="tl-track" ref={track} onPointerDown={e => { (e.target as HTMLElement).setPointerCapture(e.pointerId); scrub(e) }} onPointerMove={e => e.buttons & 1 && scrub(e)}>
-        {Array.from({ length: n }, (_, i) => i).filter(i => i % Math.max(1, Math.ceil(n / 60)) === 0).map(i => (
-          <div key={i} className={`tick ${i % 5 === 0 ? 'major' : ''}`} style={{ left: `${(i / (n - 1)) * 100}%` }}>{i % 10 === 0 && <span>{i}</span>}</div>
-        ))}
-        {keys.map(k => (
-          <div key={k} className={`key ${keyDrag?.from === k ? 'drag' : ''}`} data-testid={`key-${k}`} style={{ left: `${((keyDrag?.from === k ? keyDrag.to : k) / (n - 1)) * 100}%` }}
-            onPointerDown={e => { e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); setKeyDrag({ from: k, to: k }) }}
-            onPointerMove={e => { if (keyDrag?.from === k) setKeyDrag({ from: k, to: frameAt(e.clientX) }) }}
-            onPointerUp={() => {
-              if (keyDrag && keyDrag.to !== keyDrag.from) st.moveKey(keyDrag.from, keyDrag.to)
-              else if (keyDrag) set({ frame: k }) // a click (no drag) jumps the playhead to the key
-              setKeyDrag(null)
-            }} />
-        ))}
-        <div className="playhead" style={{ left: `${(frame / (n - 1)) * 100}%` }} />
-      </div>
+      <DopeSheet n={n} />
     </div>
   )
 }
