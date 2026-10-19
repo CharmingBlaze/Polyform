@@ -218,6 +218,8 @@ interface State {
   uvCorners: () => number[]
   /** mark / clear UV seams: selected edges, or the boundary of the selected faces in Face mode */
   markSeams: (on: boolean) => void
+  markSharp: (on: boolean) => void
+  setShading: (smooth: number) => void
   pinUVs: (on: boolean) => void
   /** stitch the selected faces (or the faces on both sides of the selected edges) onto the first one's island */
   stitchUVs: () => void
@@ -911,7 +913,6 @@ export const useStore = create<State>((set, get) => ({
     const s = get(), m = s.model
     let edges: number[]
     if (s.selectMode === 'object' || s.subModes.includes('face')) {
-      // boundary of the selected faces
       const cnt = new Map<number, number>()
       for (const fi of s.selFaces) { const f = m.faces[fi]; if (f) f.v.forEach((a, i) => { const k = M.edgeKey(a, f.v[(i + 1) % f.v.length]); cnt.set(k, (cnt.get(k) || 0) + 1) }) }
       edges = [...cnt].filter(([, n]) => n === 1).map(([k]) => k)
@@ -920,6 +921,32 @@ export const useStore = create<State>((set, get) => ({
     let n = 0
     s.edit(mm => { n = UV.setSeams(mm, edges, on) }, on ? 'Mark seam' : 'Clear seam')
     s.notify(`${on ? 'Marked' : 'Cleared'} ${n} seam edge${n === 1 ? '' : 's'}`)
+  },
+  markSharp: on => {
+    const s = get(), m = s.model
+    let edges: number[]
+    if (s.selectMode === 'object' || s.subModes.includes('face')) {
+      // all edges of selected faces (hard edges on a face region)
+      const set = new Set<number>()
+      for (const fi of s.selFaces) { const f = m.faces[fi]; if (f) f.v.forEach((a, i) => set.add(M.edgeKey(a, f.v[(i + 1) % f.v.length]))) }
+      edges = [...set]
+    } else edges = s.activeEdges().map(([a, b]) => M.edgeKey(a, b))
+    if (!edges.length) return s.notify('Select edges (or faces) to mark as hard')
+    let n = 0
+    s.edit(mm => { n = UV.setSharp(mm, edges, on) }, on ? 'Mark hard edge' : 'Clear hard edge')
+    s.notify(`${on ? 'Marked' : 'Cleared'} ${n} hard edge${n === 1 ? '' : 's'}`)
+  },
+  setShading: smooth => {
+    const s = get()
+    const gs = new Set(s.activeFaces().map(fi => s.model.faces[fi]?.g).filter(g => g !== undefined) as number[])
+    if (!gs.size) {
+      // object / all visible groups of selection modes
+      if (s.selectMode === 'object') s.selFaces.forEach(fi => { const g = s.model.faces[fi]?.g; if (g !== undefined) gs.add(g) })
+      s.model.groups.forEach((_, i) => { if (!gs.size) gs.add(i) })
+    }
+    if (!gs.size) return s.notify('Select an object or faces to set shading')
+    s.edit(m => { for (const g of gs) if (m.groups[g]) m.groups[g].smooth = smooth }, smooth > 0 ? 'Smooth shading' : 'Flat shading')
+    s.notify(smooth > 0 ? `Smooth shading (${smooth}°)` : 'Flat shading')
   },
   pinUVs: on => {
     const s = get(), ids = s.uvCorners()

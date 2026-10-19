@@ -92,6 +92,11 @@ export function ToolRail() {
           </button>
         </>}
         {tab === 'Modify' && <>
+          <h4>Shading</h4>
+          <CmdBtn cmd="shade.flat" label="Flat" testid="shade-flat" />
+          <CmdBtn cmd="shade.smooth" label="Smooth" testid="shade-smooth" />
+          <CmdBtn cmd="shade.sharp" label="Mark hard" testid="shade-sharp" />
+          <CmdBtn cmd="shade.sharpClear" label="Clear hard" testid="shade-sharp-clear" />
           <h4>Transform</h4>
           <CmdBtn cmd="tool.select" label="Select" active={tool === 'select'} testid="tool-select" />
           <CmdBtn cmd="tool.move" label="Move" active={tool === 'move'} testid="tool-move" />

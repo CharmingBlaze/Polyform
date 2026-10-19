@@ -14,6 +14,8 @@ export interface Face {
   pin?: number[]
   /** UV seams: corner i marks the edge from corner i to corner i+1 (an edge is a seam if either face marks it). */
   seam?: number[]
+  /** Hard edges for shading (split normals): corner indices like seams. */
+  sharp?: number[]
   /** Vertex colours, one '#rrggbb' per corner (glTF COLOR_0). Per corner, so a face can be flat-coloured. */
   vc?: string[]
   /** Per-face material slot; overrides the group's material (used by "Assign image to selection"). */
@@ -46,6 +48,7 @@ export function normalizeCorners(m: Model) {
     if (f.vc && (f.vc.length !== n || !f.vc.every(c => typeof c === 'string' && HEX.test(c)))) delete f.vc
     if (f.pin && f.pin.some(c => c >= n)) { f.pin = f.pin.filter(c => c < n); if (!f.pin.length) delete f.pin }
     if (f.seam && f.seam.some(c => c >= n)) { f.seam = f.seam.filter(c => c < n); if (!f.seam.length) delete f.seam }
+    if (f.sharp && f.sharp.some(c => c >= n)) { f.sharp = f.sharp.filter(c => c < n); if (!f.sharp.length) delete f.sharp }
   }
 }
 
@@ -334,6 +337,7 @@ export function validateModel(m: Model) {
     })
     if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
     if (f.seam !== undefined && !(Array.isArray(f.seam) && f.seam.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid seams`)
+    if (f.sharp !== undefined && !(Array.isArray(f.sharp) && f.sharp.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid sharp edges`)
     if (f.vc !== undefined && !(Array.isArray(f.vc) && f.vc.length === f.v.length && f.vc.every(c => typeof c === 'string' && HEX.test(c)))) throw new Error(`Face ${i} has invalid vertex colours`)
   })
   m.bones.forEach((b, i) => {
@@ -373,6 +377,28 @@ export function validateModel(m: Model) {
   })
 }
 
+
+/** Shared edge between faces a and b incident to vertex v is marked sharp on either face. */
+function sharedEdgeSharp(m: Model, a: number, b: number, v: number): boolean {
+  const fa = m.faces[a], fb = m.faces[b]
+  const marked = (f: Face, u: number, w: number) => {
+    if (!f.sharp?.length) return false
+    const n = f.v.length
+    for (const c of f.sharp) {
+      const x = f.v[c], y = f.v[(c + 1) % n]
+      if ((x === u && y === w) || (x === w && y === u)) return true
+    }
+    return false
+  }
+  for (let i = 0; i < fa.v.length; i++) {
+    if (fa.v[i] !== v) continue
+    for (const u of [fa.v[(i + 1) % fa.v.length], fa.v[(i - 1 + fa.v.length) % fa.v.length]]) {
+      if (fb.v.includes(u) && (marked(fa, v, u) || marked(fb, v, u))) return true
+    }
+  }
+  return false
+}
+
 /**
  * Per-corner normals honoring each group's smoothing angle: a corner averages (area-weighted) the normals of
  * faces in the same group around that vertex that are within the angle of its own face; 0° gives flat normals.
@@ -392,7 +418,11 @@ export function cornerNormals(m: Model, P: Vec3[] = m.verts, only?: number[]): T
     const cos = Math.cos(THREE.MathUtils.degToRad(Math.min(180, ang))) - 1e-6
     out[fi] = f.v.map(v => {
       const n = new THREE.Vector3()
-      for (const o of around.get(v) ?? []) if (m.faces[o].g === f.g && unit[o].dot(unit[fi]) >= cos) n.add(fn[o])
+      for (const o of around.get(v) ?? []) {
+        if (m.faces[o].g !== f.g || unit[o].dot(unit[fi]) < cos) continue
+        if (sharedEdgeSharp(m, fi, o, v)) continue
+        n.add(fn[o])
+      }
       return n.lengthSq() > 0 ? n.normalize() : unit[fi]
     })
   }

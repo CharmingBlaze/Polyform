@@ -11,7 +11,7 @@
     "lint:errors": "eslint . --quiet",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs shade.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
@@ -31,7 +31,8 @@
     "test:inset": "node tests/e2e/run.mjs inset.mjs",
     "test:bevel": "node tests/e2e/run.mjs bevel.mjs",
     "test:fillmerge": "node tests/e2e/run.mjs fillmerge.mjs",
-    "test:snap": "node tests/e2e/run.mjs snap.mjs"
+    "test:snap": "node tests/e2e/run.mjs snap.mjs",
+    "test:shade": "node tests/e2e/run.mjs shade.mjs"
   },
   "dependencies": {
     "comlink": "4.4.2",

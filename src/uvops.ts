@@ -223,6 +223,23 @@ export function setSeams(m: Model, edges: Iterable<number>, on: boolean): number
 }
 
 // ---------- pins ----------
+export function setSharp(m: Model, edges: Iterable<number>, on: boolean): number {
+  const want = new Set(edges)
+  const hit = new Set<number>()
+  m.faces.forEach(f => {
+    const cur = new Set(f.sharp ?? [])
+    f.v.forEach((a, c) => {
+      const k = edgeKey(a, f.v[(c + 1) % f.v.length])
+      if (!want.has(k)) return
+      hit.add(k)
+      if (on) cur.add(c); else cur.delete(c)
+    })
+    if (cur.size) f.sharp = [...cur].sort((x, y) => x - y); else delete f.sharp
+  })
+  return hit.size
+}
+
+// ---------- pins ----------
 export function setPins(m: Model, ids: Iterable<number>, on: boolean) {
   const by = new Map<number, number[]>()
   for (const id of ids) { const f = cornerFace(id); by.set(f, [...(by.get(f) || []), cornerIdx(id)]) }
