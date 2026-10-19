@@ -331,9 +331,15 @@ class SceneManager {
         col.push(...(on ? ORANGE : dimPts ? [0.45, 0.5, 0.6] : [0.92, 0.94, 1]))
       })
     }
+    // Joint tool: show the points bound to the selected joints
+    const showBound = st.mode === 'model' && st.selectMode === 'joint' && st.selBones.size > 0
+    if (showBound) this.visibleVerts.forEach(i => {
+      if (!st.selBones.has(m.vbone[i] ?? -1)) return
+      pts.push(...P[i]); col.push(1, 0.82, 0.25)
+    })
     setAttr(this.pointGeo, 'position', pts, 3)
     setAttr(this.pointGeo, 'color', col, 3)
-    this.pointObjs.forEach(o => (o.visible = showPts))
+    this.pointObjs.forEach(o => (o.visible = showPts || showBound))
 
     {
       const c = st.cursor3d, r = 0.12, cp: number[] = [], cc: number[] = []

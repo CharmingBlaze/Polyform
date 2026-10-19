@@ -12,9 +12,9 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="tabs">
-        <button className={tab === 'scene' ? 'on' : ''} onClick={() => setTab('scene')}><Layers size={14} /> Groups</button>
-        <button className={tab === 'joints' ? 'on' : ''} onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>
-        <button className={tab === 'uv' ? 'on' : ''} onClick={() => setTab('uv')}><Image size={14} /> UV / Texture</button>
+        <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Groups</button>
+        <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>
+        <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> UV / Texture</button>
       </div>
       <div className="tab-body">
         {tab === 'scene' && <Groups />}
@@ -76,7 +76,7 @@ function Joints() {
           {editing === i
             ? <input autoFocus defaultValue={b.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.bones[i].name = e.target.value || b.name)); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
             : <span className="name" onDoubleClick={() => setEditing(i)}>{b.name}</span>}
-          <span className="meta">{counts[i] || 0} v</span>
+          <span className="meta" data-testid={`joint-count-${i}`} title="Points bound to this joint">{counts[i] || 0} pts</span>
         </div>
         {children(i).map(c => row(c.i, depth + 1))}
       </div>
@@ -89,15 +89,11 @@ function Joints() {
       {mode === 'model' && m.bones.length > 0 && (
         <div className="card">
           <div className="label">Skinning</div>
-          <p className="tip">Select vertices or faces in a view, pick a joint here, then assign.</p>
+          <p className="tip">Select points or faces, pick a joint, then Ctrl+P. The selection is kept while the Joint tool is active. Alt+P unbinds.</p>
           <div className="btn-row">
-            <button className="primary" onClick={() => st.assignToJoint()}><Link size={14} /> Assign to joint</button>
-            <button onClick={() => {
-              if (one === undefined) return
-              const v = new Set<number>(); m.vbone.forEach((b, i) => b === one && v.add(i))
-              useStore.setState({ selectMode: 'vertex', selVerts: v })
-            }}>Select assigned</button>
-            <button onClick={() => { const v = st.activeVerts(); if (v.length) st.edit(mm => v.forEach(i => (mm.vbone[i] = -1))) }}>Unassign</button>
+            <button className="primary" data-testid="panel-bind" onClick={() => st.assignToJoint()}><Link size={14} /> Bind (Ctrl+P)</button>
+            <button data-testid="joint-select-pts" disabled={one === undefined} onClick={() => st.selectBoundPoints()}>Select points</button>
+            <button data-testid="unbind" onClick={() => st.unbindSelection()}>Unbind (Alt+P)</button>
           </div>
         </div>
       )}

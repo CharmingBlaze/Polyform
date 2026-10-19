@@ -105,6 +105,8 @@ interface State {
   setSelectMode: (mode: SelectMode, combine?: boolean) => void
   toggleObjectMode: () => void
   activeVerts: () => number[]
+  /** vertex selection made in edit modes; still valid while the Joint tool is active */
+  editVerts: () => number[]
   activeFaces: () => number[]
   activeEdges: () => [number, number][]
   opSel: () => OpSel
@@ -148,6 +150,8 @@ interface State {
 
   // bones
   assignToJoint: () => void
+  unbindSelection: () => void
+  selectBoundPoints: () => void
   autoBindSelection: () => void
   reparentJoint: (b: number, parent: number) => void
   mirrorSelectedJoints: () => void
@@ -320,14 +324,20 @@ export const useStore = create<State>((set, get) => ({
   activeVerts: () => {
     const s = get()
     if (s.selectMode === 'joint') return []
-    if (s.selectMode === 'object') return [...M.vertsOfFaces(s.model, s.selFaces)]
+    return s.editVerts()
+  },
+  editVerts: () => {
+    const s = get()
+    const nv = s.model.verts.length, nf = s.model.faces.length
+    const faces = (fs: Set<number>) => M.vertsOfFaces(s.model, new Set([...fs].filter(f => f < nf)))
+    if (s.selectMode === 'object') return [...faces(s.selFaces)]
     const out = new Set<number>()
     for (const sm of s.subModes) {
       if (sm === 'vertex') s.selVerts.forEach(v => out.add(v))
       if (sm === 'edge') vertsOfEdges(s.selEdges).forEach(v => out.add(v))
-      if (sm === 'face') M.vertsOfFaces(s.model, s.selFaces).forEach(v => out.add(v))
+      if (sm === 'face') faces(s.selFaces).forEach(v => out.add(v))
     }
-    return [...out]
+    return [...out].filter(v => v < nv)
   },
   activeFaces: () => {
     const s = get()
@@ -623,17 +633,35 @@ export const useStore = create<State>((set, get) => ({
   assignToJoint: () => {
     const s = get()
     const bone = [...s.selBones][s.selBones.size - 1]
-    const verts = s.activeVerts()
+    // in the Joint tool the edit-mode selection is kept, so Ctrl+P binds it
+    const verts = s.editVerts()
     if (bone === undefined) return s.notify('Select a joint first (Joints panel or Setup tab)')
     if (!verts.length) return s.notify('Select points or faces to bind')
     let cleared: ReturnType<typeof B.clearObjectKeysOfSkinned> = []
     s.edit(m => { verts.forEach(v => (m.vbone[v] = bone)); cleared = B.clearObjectKeysOfSkinned(m) }, 'Bind to joint')
     s.notify(`Bound ${verts.length} points to ${s.model.bones[bone].name}${clearedNote(cleared)}`)
   },
+  unbindSelection: () => {
+    const s = get()
+    let verts = s.editVerts().filter(v => s.model.vbone[v] >= 0)
+    // Joint tool with joints selected: unbind everything bound to them
+    if (s.selectMode === 'joint' && s.selBones.size) verts = s.model.vbone.map((b, i) => (s.selBones.has(b) ? i : -1)).filter(i => i >= 0)
+    if (!verts.length) return s.notify('Nothing to unbind: select bound points or joints')
+    s.edit(m => verts.forEach(v => (m.vbone[v] = -1)), 'Unbind')
+    s.notify(`Unbound ${verts.length} points`)
+  },
+  selectBoundPoints: () => {
+    const s = get()
+    if (!s.selBones.size) return s.notify('Select a joint first')
+    const v = new Set<number>(); s.model.vbone.forEach((b, i) => s.selBones.has(b) && v.add(i))
+    if (!v.size) return s.notify('No points are bound to the selected joints')
+    set({ mode: 'model', selectMode: 'vertex', subModes: ['vertex'], lastEdit: 'vertex', selVerts: v, selEdges: edgesOfVerts(s.model, v), selFaces: new Set(facesWithAllVerts(s.model, v)) })
+    s.notify(`Selected ${v.size} bound points`)
+  },
   autoBindSelection: () => {
     const s = get()
     if (!s.model.bones.length) return s.notify('Add joints first')
-    const sel = s.activeVerts()
+    const sel = s.editVerts()
     const verts = sel.length ? sel : s.model.verts.map((_, i) => i)
     let cleared: ReturnType<typeof B.clearObjectKeysOfSkinned> = []
     s.edit(m => { B.autoBind(m, verts); cleared = B.clearObjectKeysOfSkinned(m) }, 'Auto-bind')
