@@ -182,6 +182,20 @@ export const commands: Command[] = [
   { id: 'view.skeleton', label: 'Toggle skeleton', group: 'View', run: () => S().set({ showSkeleton: !S().showSkeleton }) },
   { id: 'view.refs', label: 'Toggle reference images', group: 'View', run: () => S().set({ showRefs: !S().showRefs }) },
   { id: 'edit.xmirror', label: 'Toggle X-mirror editing', group: 'Edit', keys: 'Alt+X', run: () => { const s = S(); const on = !s.xMirror; s.set({ xMirror: on, xMirrorMap: on ? xPairs(s.model) : null }); s.notify(on ? 'X-mirror on: edits on one side update the other' : 'X-mirror off') } },
+  { id: 'edit.snapCycle', label: 'Cycle snap target (Grid / Vertex / Increment)', group: 'Edit', keys: 'Shift+`', run: () => {
+    const s = S()
+    const order = ['grid', 'vertex', 'increment'] as const
+    const next = order[(order.indexOf(s.snapTarget) + 1) % order.length]
+    s.set({ snapTarget: next, snap: true })
+    s.notify(`Snap: ${next}`)
+  } },
+  { id: 'edit.pivotCycle', label: 'Cycle pivot (Median / Cursor / Active)', group: 'Edit', keys: 'Ctrl+.', run: () => {
+    const s = S()
+    const order = ['median', 'cursor', 'active'] as const
+    const next = order[(order.indexOf(s.pivot) + 1) % order.length]
+    s.set({ pivot: next })
+    s.notify(`Pivot: ${next}`)
+  } },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
   { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
   { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },

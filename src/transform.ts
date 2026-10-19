@@ -84,6 +84,23 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
   } else addVerts(st.activeVerts())
   if (!T.count) return null
   T.center.divideScalar(T.count)
+
+  if (st.pivot === 'cursor') T.center.set(st.cursor3d[0], st.cursor3d[1], st.cursor3d[2])
+  else if (st.pivot === 'active') {
+    if (st.selectMode === 'vertex' && st.selVerts.size) {
+      const v = [...st.selVerts][st.selVerts.size - 1]!
+      const p = sceneManager.posed[v] ?? m.verts[v]
+      T.center.set(p[0], p[1], p[2])
+    } else if (st.selectMode === 'face' && st.selFaces.size) {
+      const fi = [...st.selFaces][st.selFaces.size - 1]!
+      const f = m.faces[fi]
+      if (f) {
+        const c = new THREE.Vector3()
+        f.v.forEach(v => c.add(new THREE.Vector3(...(sceneManager.posed[v] ?? m.verts[v]))))
+        T.center.copy(c.multiplyScalar(1 / f.v.length))
+      }
+    }
+  }
   return T
 
   function addVerts(list: number[]) {
@@ -185,4 +202,17 @@ export function needsKeyFirst(st: St, T: Targets): boolean {
     bones = [...new Set([...bones, ...ikChain(st.model, tip, st.ikDepth)])]
   }
   return !bones.every(b => c.keys[b]?.[st.frame]) || ![...T.objs.keys()].every(g => c.okeys[g]?.[st.frame])
+}
+
+/** Snap a world point to the nearest non-selected vertex within `thresh` (or null). */
+export function nearestVert(st: St, world: THREE.Vector3, ignore: Set<number>, thresh = 0.35): THREE.Vector3 | null {
+  const P = sceneManager.posed
+  let best: THREE.Vector3 | null = null, bd = thresh * thresh
+  for (let i = 0; i < st.model.verts.length; i++) {
+    if (ignore.has(i)) continue
+    const p = P[i] ?? st.model.verts[i]
+    const d = (p[0] - world.x) ** 2 + (p[1] - world.y) ** 2 + (p[2] - world.z) ** 2
+    if (d < bd) { bd = d; best = new THREE.Vector3(p[0], p[1], p[2]) }
+  }
+  return best
 }

@@ -7,7 +7,7 @@ import { faceCenter, faceNormal, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
 import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
-import { applyXf, collectTargets, identityXf, needsKeyFirst, type Targets, type Xf } from '../transform'
+import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction } from '../interaction'
 import { topology } from '../topology'
 import type { ModalKind } from '../commands'
@@ -360,11 +360,32 @@ export function Viewport({ pane }: { pane: number }) {
       const delta = planeHit(d, x, y).sub(d.hit0)
       if (a) {
         let k = delta.dot(a)
-        if (snap) k = Math.round(k / st.gridStep) * st.gridStep
+        if (snap && st.snapTarget !== 'vertex') {
+          if (st.snapTarget === 'increment') k = Math.round(k / st.gridStep) * st.gridStep
+          else { // absolute grid: snap the resulting world point
+            const dest = d.T.center.clone().addScaledVector(a, k)
+            const g = st.gridStep
+            const sg = dest.clone().set(Math.round(dest.x / g) * g, Math.round(dest.y / g) * g, Math.round(dest.z / g) * g)
+            k = sg.clone().sub(d.T.center).dot(a)
+          }
+        }
         out.t.copy(a).multiplyScalar(k)
       } else {
-        if (snap) { const g = st.gridStep; delta.set(Math.round(delta.x / g) * g, Math.round(delta.y / g) * g, Math.round(delta.z / g) * g) }
+        if (snap && st.snapTarget !== 'vertex') {
+          const g = st.gridStep
+          if (st.snapTarget === 'increment') delta.set(Math.round(delta.x / g) * g, Math.round(delta.y / g) * g, Math.round(delta.z / g) * g)
+          else {
+            const dest = d.T.center.clone().add(delta)
+            dest.set(Math.round(dest.x / g) * g, Math.round(dest.y / g) * g, Math.round(dest.z / g) * g)
+            delta.copy(dest.sub(d.T.center))
+          }
+        }
         out.t.copy(delta)
+      }
+      if (snap && st.snapTarget === 'vertex') {
+        const dest = d.T.center.clone().add(out.t)
+        const hit = nearestVert(st, dest, new Set(d.T.verts.keys()), Math.max(st.gridStep * 4, 0.25))
+        if (hit) out.t.copy(hit.sub(d.T.center))
       }
     } else if (d.op === 'rotate') {
       const toViewer = camBasis().fwd.negate()

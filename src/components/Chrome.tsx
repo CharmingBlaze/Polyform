@@ -58,6 +58,8 @@ export function ToolRail() {
   const tool = useStore(s => s.tool)
   const axis = useStore(s => s.axis)
   const snap = useStore(s => s.snap)
+  const snapTarget = useStore(s => s.snapTarget)
+  const pivot = useStore(s => s.pivot)
   const autoKey = useStore(s => s.autoKey)
   const xMirror = useStore(s => s.xMirror)
   const onion = useStore(s => s.onion)
@@ -100,7 +102,19 @@ export function ToolRail() {
           <h4>Constraints</h4>
           <div className="axis-row">
             {(['x', 'y', 'z'] as const).map(a => <button key={a} className={`axis-btn ${a} ${axis[a] ? 'on' : ''}`} title={`Allow ${a.toUpperCase()}`} onClick={() => set({ axis: { ...axis, [a]: !axis[a] } })}>{a.toUpperCase()}</button>)}
-            <button className={`axis-btn ${snap ? 'on' : ''}`} onClick={() => set({ snap: !snap })} title="Grid snap (Ctrl inverts while dragging)">Snap</button>
+            <button className={`axis-btn ${snap ? 'on' : ''}`} data-testid="snap" onClick={() => set({ snap: !snap })} title="Snap on/off (Ctrl inverts while dragging)">Snap</button>
+            <button className="axis-btn" data-testid="snap-target" title="Snap target: Grid / Vertex / Increment. Click to cycle"
+              onClick={() => {
+                const order = ['grid', 'vertex', 'increment'] as const
+                const i = order.indexOf(snapTarget)
+                set({ snapTarget: order[(i + 1) % order.length], snap: true })
+              }}>{snapTarget === 'grid' ? 'Grid' : snapTarget === 'vertex' ? 'Vert' : 'Incr'}</button>
+            <button className="axis-btn" data-testid="pivot" title="Transform pivot: Median / 3D Cursor / Active. Click to cycle"
+              onClick={() => {
+                const order = ['median', 'cursor', 'active'] as const
+                const i = order.indexOf(pivot)
+                set({ pivot: order[(i + 1) % order.length] })
+              }}>{pivot === 'median' ? 'Median' : pivot === 'cursor' ? 'Cursor' : 'Active'}</button>
             <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="X-mirror editing (Alt+X): transforms on one side update the paired verts across X = 0">X-Mirror</button>
           </div>
         </>}

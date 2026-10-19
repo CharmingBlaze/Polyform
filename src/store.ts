@@ -63,7 +63,11 @@ interface State {
   lastEdit: EditMode
   axis: { x: boolean; y: boolean; z: boolean }
   snap: boolean
+  /** What transforms snap to when Snap is on (Ctrl inverts). */
+  snapTarget: 'grid' | 'vertex' | 'increment'
   gridStep: number
+  /** Gizmo / modal transform pivot. */
+  pivot: 'median' | 'cursor' | 'active'
   selVerts: Set<number>
   /** numeric edge keys (topology.ts) */
   selEdges: Set<number>
@@ -284,7 +288,9 @@ export const useStore = create<State>((set, get) => ({
   lastEdit: 'vertex',
   axis: { x: true, y: true, z: true },
   snap: false,
+  snapTarget: 'grid',
   gridStep: 0.125,
+  pivot: 'median',
   ...clearSel(),
   clip: 0,
   frame: 0,
