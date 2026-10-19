@@ -61,6 +61,33 @@ describe('undo history (spec A)', () => {
     expect(bytes).toBeLessThan(m.verts.length * 8 + 200)
     expect(materialize(b).verts[0]).toEqual([9, 9, 9])
   })
+  it('move-one-vert commits a sparse diff (not a full snap)', async () => {
+    const { makeDiff, applyDiff } = await import('../src/history')
+    const m = M.emptyModel(); M.addPolys(m, M.boxPolys(1, 1, 1, 8), 'b')
+    const h = new History(); h.reset(m)
+    const before = h.bytes
+    h.begin(m, 'move'); m.verts[0] = [9, 9, 9]; h.commit(m)
+    expect(h.steps[h.cur].diff).toBeDefined()
+    expect(h.steps[h.cur].snap).toBeUndefined()
+    expect(h.steps[h.cur].bytes).toBeLessThan(200)
+    expect(h.bytes - before).toBeLessThan(200)
+    expect(materialize(h.resolveAt(h.cur)).verts[0]).toEqual([9, 9, 9])
+    // makeDiff + applyDiff round-trip
+    const base = snapshot(m).snap
+    m.verts[1] = [1, 2, 3]
+    const d = makeDiff(base, m)!
+    expect(d.diff.verts!.length).toBe(1)
+    expect(materialize(applyDiff(base, d.diff)).verts[1]).toEqual([1, 2, 3])
+  })
+  it('200 single-vert moves on ~10k tris cost far less than full snaps', () => {
+    const m = M.emptyModel(); M.addPolys(m, M.boxPolys(1, 1, 1, 29), 'b')
+    const h = new History(); h.reset(m)
+    const baseBytes = h.bytes
+    for (let i = 0; i < 200; i++) { h.begin(m, 'move'); const v = i % m.verts.length; m.verts[v] = [m.verts[v][0] + 0.01, m.verts[v][1], m.verts[v][2]]; h.commit(m) }
+    // each step ~64 bytes; 500 steps << one full N*8 array * 500
+    expect(h.bytes - baseBytes).toBeLessThan(200 * 200)
+    expect(h.steps.filter(s => s.diff).length).toBeGreaterThan(150)
+  })
   it('materialized models never alias history', () => {
     const m = M.emptyModel(); M.addPrimitive(m, 'box')
     const s = snapshot(m).snap
@@ -76,12 +103,5 @@ describe('undo history (spec A)', () => {
     const back = h.cancel()!
     expect(json(back)).toBe(before)
     expect(h.canUndo()).toBe(false)
-  })
-  it('500 steps on a ~10k-triangle mesh stay under the byte cap', () => {
-    const m = M.emptyModel(); M.addPolys(m, M.boxPolys(1, 1, 1, 29), 'b') // 6*29*29 quads ≈ 10k tris
-    const h = new History(); h.reset(m)
-    for (let i = 0; i < 500; i++) { h.begin(m, 'move'); const v = i % m.verts.length; m.verts[v] = [m.verts[v][0] + 0.01, m.verts[v][1], m.verts[v][2]]; h.commit(m) }
-    expect(h.bytes).toBeLessThan(64 * 1024 * 1024)
-    expect(h.steps.length).toBeGreaterThan(1)
   })
 })
