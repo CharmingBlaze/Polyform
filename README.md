@@ -2,22 +2,26 @@
 
 A modern low-poly 3D modeler with UV editing and skeletal animation, in the spirit of MilkShape 3D. Built with Vite, React and plain three.js.
 
-## Run locally
+## How to run
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # open the printed URL (http://localhost:5173)
 npm run build      # type-check + production build
+npm test           # unit tests
+npm run test:e2e   # needs `npm run dev` in another terminal
 ```
 
 ## What "working" looks like
 
-- Four viewports (Top, Perspective, Front, Side). Left-drag uses the active tool, right-drag orbits (3D) or pans (2D), the wheel zooms, and double-clicking a view maximizes it.
-- Model mode: add primitives, select vertices/faces/joints (1/2/3), move/rotate/scale (W/E/R) with X/Y/Z axis locks, extrude (X), duplicate, subdivide, weld, flip, delete. Each drag is a single undo step (Ctrl+Z / Ctrl+Shift+Z).
-- Joints: the Joint tool (J) places joints and parents each one to the selected joint. Assign selected vertices in the Joints panel (one bone per vertex, like MilkShape).
-- Animate mode (Tab): scrub the timeline, then rotate or move joints to key them at that frame. K sets a key, Shift+K deletes one, Space plays.
-- UV / Texture panel: front/top/side/box projection, move/rotate/scale UVs, flip, fit to 0–1, load a texture image.
-- Ctrl+K opens the command palette. Drag and drop .glb/.gltf/.obj/.json/images onto the window to import. Work autosaves to IndexedDB and survives a reload.
-- Export: .glb (skinned mesh, skeleton, and an animation clip named "Animation"; passes the Khronos glTF validator with 0 issues) and .obj. Save/Open uses a .polyform.json project file.
+1. **Empty scene** → click **Character + walk** (or Create → Character). The app jumps to Animate; **Space** plays the walk cycle; **Ctrl+Z** returns to your previous scene.
+2. **Model → UV → Paint → Rig → Animate → Export** workspace tabs (numbered) guide the happy path. The hint bar under the header always suggests the next step.
+3. Four viewports (Top, Perspective, Front, Side). Left-drag uses the active tool, right-drag orbits (3D) or pans (2D), the wheel zooms, double-click maximizes a view.
+4. **Model:** primitives (drag-a-box or double-click), **1 / 2 / 3** = point / edge / face, **4** = joints, **Tab** = object mode. **G / R / S** modal grab / rotate / scale; **E** extrude, **Ctrl+R** loop cut, **K** knife, **I** inset, **Ctrl+B** bevel, **F** fill, **M** merge. Each drag is one undo step (**Ctrl+Z** / **Ctrl+Shift+Z**).
+5. **UV:** Auto UV, seams, pack, pin, stitch; **Palette** snaps selected faces to a paint-colour swatch on a palette image.
+6. **Paint:** image / vertex colour / weight paint; swatches; first image stroke creates a texture.
+7. **Rig:** Joint tool (**J**) places bones; Auto bind; up to 4 weights per vertex; weight paint; **Alt+X** X-mirror.
+8. **Animate:** scrub the timeline, pose with **G / R**, **I** keys (or auto-key ●), per-key easing in the inspector, onion skin, IK for limbs. Multiple named clips.
+9. **Export:** **Ctrl+E** downloads a `.glb` (mesh, materials/images, skins, all clips) that passes the Khronos glTF validator. Also `.obj` and Save/Open `.polyform.json`. Drop `.glb` / `.gltf` / `.obj` / `.ms3d` / images onto the window to import.
 
 In dev builds the store is exposed as `window.__polyform` for tests.
