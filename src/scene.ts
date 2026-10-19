@@ -66,7 +66,7 @@ class SceneManager {
   jointGeo = new THREE.BufferGeometry()
   boneGeo = new THREE.BufferGeometry()
   boneFillGeo = new THREE.BufferGeometry()
-  onionGeo = [new THREE.BufferGeometry(), new THREE.BufferGeometry()]
+  onionGeo: THREE.BufferGeometry[] = []
   ghost: THREE.MeshBasicMaterial
   meshes: Record<'solid' | 'smooth' | 'textured', THREE.Mesh>
   /** raycast target for painting / face picking (never rendered) */
@@ -149,10 +149,8 @@ class SceneManager {
     const boneFill = new THREE.Mesh(this.boneFillGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, side: THREE.DoubleSide }))
     boneFill.layers.enableAll(); boneFill.renderOrder = 5; boneFill.frustumCulled = false; s.add(boneFill)
     this.boneObjs = [bones, joints, boneFill]
-    this.onionObjs = this.onionGeo.map((g, i) => {
-      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: i ? '#5fd38d' : '#ff6b6b', transparent: true, opacity: 0.45, depthTest: false }))
-      l.layers.enableAll(); l.renderOrder = 1; s.add(l); return l
-    })
+    this.onionObjs = []
+    this.ensureOnion(4) // up to 3 steps each side
 
     // 3D cursor: a small red/white crosshair, always on top
     const cur = new THREE.LineSegments(this.cursorGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false }))
@@ -167,7 +165,7 @@ class SceneManager {
     useStore.subscribe((st, prev) => {
       if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
-        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d) this.rebuild()
+        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d) this.rebuild()
     })
     textures.onChange(() => { this.matKey = ''; this.invalidate() })
     this.rebuild()
@@ -182,6 +180,16 @@ class SceneManager {
   pointObjs: THREE.Object3D[] = []
 
   invalidate() { this.dirty = true }
+  /** Grow the onion ghost pool to `n` (half past / half future). */
+  ensureOnion(n: number) {
+    while (this.onionGeo.length < n) {
+      const g = new THREE.BufferGeometry()
+      this.onionGeo.push(g)
+      const past = this.onionGeo.length % 2 === 1
+      const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: past ? '#ff6b6b' : '#5fd38d', transparent: true, opacity: 0.4, depthTest: false }))
+      l.layers.enableAll(); l.renderOrder = 1; l.visible = false; this.scene.add(l); this.onionObjs.push(l)
+    }
+  }
   readonly cursorGeo = new THREE.BufferGeometry()
   readonly toolLineGeo = new THREE.BufferGeometry()
   readonly toolPointGeo = new THREE.BufferGeometry()
@@ -390,16 +398,27 @@ class SceneManager {
     setAttr(this.boneGeo, 'color', bc, 3)
     this.boneObjs.forEach(o => (o.visible = st.showSkeleton || st.selectMode === 'joint'))
 
-    // onion skin: previous / next frame as faint wireframes
-    const onion = st.mode === 'animate' && st.onion && m.bones.length + Object.keys(clip.okeys).length > 0
-    this.onionObjs.forEach(o => (o.visible = onion))
-    if (onion) [-1, 1].forEach((d, k) => {
-      const f2 = Math.max(0, Math.min(clip.frames - 1, st.frame + d * 2))
-      const Q = posedVerts(m, f2, clip)
-      const w: number[] = []
-      this.edges.forEach(([a, b]) => w.push(...Q[a], ...Q[b]))
-      setAttr(this.onionGeo[k], 'position', w, 3)
-    })
+    // onion skin: past (red) and future (green) wireframe ghosts, fading with distance
+    const steps = Math.max(1, Math.min(3, st.onionSteps || 2))
+    const onion = st.mode === 'animate' && st.onion && (m.bones.length + Object.keys(clip.okeys).length > 0)
+    this.ensureOnion(steps * 2)
+    this.onionObjs.forEach((o, i) => { o.visible = false; if (i >= steps * 2) return })
+    if (onion) {
+      let slot = 0
+      for (const dir of [-1, 1] as const) for (let s = 1; s <= steps; s++) {
+        const f2 = st.frame + dir * s
+        if (f2 < 0 || f2 >= clip.frames) { slot++; continue }
+        const Q = posedVerts(m, f2, clip)
+        const w: number[] = []
+        this.edges.forEach(([a, b]) => w.push(...Q[a], ...Q[b]))
+        setAttr(this.onionGeo[slot], 'position', w, 3)
+        const mat = (this.onionObjs[slot] as THREE.LineSegments).material as THREE.LineBasicMaterial
+        mat.color.set(dir < 0 ? '#ff6b6b' : '#5fd38d')
+        mat.opacity = 0.55 * (1 - (s - 1) / steps)
+        this.onionObjs[slot].visible = true
+        slot++
+      }
+    }
     this.invalidate()
   }
 }

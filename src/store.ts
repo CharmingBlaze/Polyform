@@ -75,6 +75,8 @@ interface State {
   playSpeed: number
   autoKey: boolean
   onion: boolean
+  /** How many frames on each side of the playhead the onion ghosts show (1–3). */
+  onionSteps: number
   /** X-mirror editing: transforms on one side update the paired verts across X = 0. */
   xMirror: boolean
   xMirrorMap: XMirror | null
@@ -285,6 +287,7 @@ export const useStore = create<State>((set, get) => ({
   playSpeed: 1,
   autoKey: true,
   onion: false,
+  onionSteps: 2,
   xMirror: false,
   xMirrorMap: null,
   showSkeleton: true,

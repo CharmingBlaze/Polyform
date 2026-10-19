@@ -61,6 +61,7 @@ export function ToolRail() {
   const autoKey = useStore(s => s.autoKey)
   const xMirror = useStore(s => s.xMirror)
   const onion = useStore(s => s.onion)
+  const onionSteps = useStore(s => s.onionSteps)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
@@ -121,6 +122,9 @@ export function ToolRail() {
           <CmdBtn cmd="anim.copy" label="Copy keys" />
           <CmdBtn cmd="anim.paste" label="Paste keys" />
           <button className={`tool-btn ${onion ? 'on' : ''}`} data-testid="onion" onClick={() => byId['view.onion'].run()}><span>Onion skin</span></button>
+          {onion && <label className="paint-range" style={{ padding: '0 4px' }}><span>Steps</span><b>{onionSteps}</b>
+            <input type="range" min={1} max={3} step={1} value={onionSteps} data-testid="onion-steps"
+              onChange={e => set({ onionSteps: Number(e.target.value) })} /></label>}
           <ClipsPanel />
         </>}
         {tab === 'Export' && <>
