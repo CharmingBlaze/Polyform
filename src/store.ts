@@ -332,7 +332,12 @@ export const useStore = create<State>((set, get) => ({
   setMode: mode => {
     const s = get()
     if (mode === s.mode) return
-    if (mode === 'animate') s.set({ mode: 'animate', tool: s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' : s.tool, selectMode: s.selectMode === 'object' ? 'object' : 'joint' })
+    if (mode === 'animate') {
+      // object-animated scenes (no joints) stay in Object mode so the Outliner picks groups; skinned scenes default to Joints
+      const sel = !s.model.bones.length ? 'object' as const : s.selectMode === 'object' ? 'object' as const : 'joint'
+      const tool = s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' as const : s.tool
+      s.set({ mode: 'animate', tool, selectMode: sel })
+    }
     else s.set({ mode: 'model', playing: false })
   },
   setWorkspace: w => {
@@ -1054,10 +1059,12 @@ export const useStore = create<State>((set, get) => ({
     if (!sm) return
     const s = get(), fresh = sm.make()
     s.edit(m => { m.verts = fresh.verts; m.vbone = fresh.vbone; m.skin = fresh.skin; m.faces = fresh.faces; m.groups = fresh.groups; m.materials = fresh.materials; m.bones = fresh.bones; m.clips = fresh.clips; m.wires = fresh.wires }, `Open sample: ${sm.label}`)
-    set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null, autoKey: true })
+    set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null, autoKey: true, selectMode: fresh.bones.length ? 'joint' : 'object', tool: fresh.bones.length ? 'rotate' : 'select' })
     // jump to Animate so Space plays the clip right away
     s.setWorkspace('animate')
-    s.notify(`Opened the ${sm.label} sample — Space plays · Ctrl+Z returns to your scene`)
+    s.notify(fresh.bones.length
+      ? `Opened the ${sm.label} sample — Space plays · Ctrl+Z returns to your scene`
+      : `Opened the ${sm.label} sample — Space plays · pick an object in the Outliner to pose · Ctrl+Z returns`)
     setTimeout(() => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })), 0)
   },
   setPaint: p => set(s => ({ paint: { ...s.paint, ...p, size: Math.max(1, Math.min(200, p.size ?? s.paint.size)), opacity: Math.max(0.01, Math.min(1, p.opacity ?? s.paint.opacity)), hardness: Math.max(0, Math.min(1, p.hardness ?? s.paint.hardness)) } })),

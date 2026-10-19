@@ -75,7 +75,8 @@ export function HintBar() {
     else { text = `Rigged: ${f.joints} joint${f.joints === 1 ? '' : 's'}, every point bound.`; acts = <Next to="animate" /> }
   } else if (ws === 'animate') {
     if (!f.keyed) { text = <>Pick a joint or object, move to a frame and pose it with <kbd>R</kbd> / <kbd>G</kbd>. {autoKey ? 'Auto-key (●) is on: every pose becomes a key.' : <>Press <kbd>I</kbd> to key, or turn on auto-key (●).</>}</>; acts = !autoKey ? <Act cmd="anim.autokey" label="Turn on auto-key" testid="hint-autokey" primary /> : null }
-    else { text = <>Animated. <kbd>Space</kbd> plays · drag keys in the dope sheet · Ease in the inspector · <kbd>Ctrl+Tab</kbd> back to Model.</>; acts = <Next to="export" /> }
+    else if (f.joints) { text = <>Animated. <kbd>Space</kbd> plays · drag keys in the dope sheet · Ease in the inspector · <kbd>Ctrl+Tab</kbd> back to Model.</>; acts = <Next to="export" /> }
+    else { text = <>Animated (object). <kbd>Space</kbd> plays · pick an object in the Outliner · drag keys in the dope sheet · <kbd>Ctrl+Tab</kbd> back to Model.</>; acts = <Next to="export" /> }
   } else {
     const item = (ok: boolean, label: string, opt = false) => <span className={`chk ${ok ? 'ok' : opt ? 'opt' : 'no'}`}>{ok ? <Check size={12} /> : <Circle size={10} />} {label}</span>
     text = <span className="checklist" data-testid="export-checklist">

@@ -64,6 +64,8 @@ check('Ctrl+Z goes back to the character', (await S(() => window.__polyform.getS
 await p.keyboard.press('Control+Shift+z'); await frame()
 await p.click('[data-testid="ws-animate"]'); await frame()
 check('Animate with no joints shows the Outliner (object animation is picked there)', (await S(() => window.__polyform.getState().sideTab)) === 'scene')
+check('windmill Animate uses Object mode (not Joints)', (await S(() => window.__polyform.getState().selectMode)) === 'object')
+check('windmill toast / hint point at the Outliner', /Outliner/i.test(await S(() => window.__polyform.getState().toast)) && /Outliner/i.test(await p.textContent('[data-testid="hint-text"]')))
 const w0 = await pose(0), w12 = await pose(12)
 check('the sails turn (frame 12 vs 0) while the tower stays', dist(w0, w12) > 0.3)
 await S(() => window.__polyform.getState().set({ frame: 6, maximized: 1 })); await frame()
