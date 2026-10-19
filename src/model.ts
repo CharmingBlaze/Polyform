@@ -79,8 +79,6 @@ export function validateModel(m: Model) {
   })
 }
 
-export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus'
-
 /** A polygon to add: positions and matching per-corner UVs. */
 export interface Poly { p: Vec3[]; uv: Vec2[] }
 
@@ -164,26 +162,117 @@ export function capPoly(r: number, y: number, sides: number, up: boolean, phase 
 const arc = (cx: number, cy: number, r: number, a0: number, a1: number, n: number): Vec2[] =>
   Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as Vec2 })
 
-function makePolys(kind: PrimitiveKind): Poly[] | THREE.BufferGeometry {
+/**
+ * Extrude a counter-clockwise 2D profile (s, t) = (-z, y) along X: two n-gon caps (concave is fine) and quad walls.
+ */
+export function prismPolys(profile: Vec2[], width: number): Poly[] {
+  const hx = width / 2, n = profile.length
+  const P = (x: number, q: Vec2): Vec3 => [x, q[1], -q[0]]
+  let minS = Infinity, maxS = -Infinity, minT = Infinity, maxT = -Infinity
+  profile.forEach(([s, t]) => { minS = Math.min(minS, s); maxS = Math.max(maxS, s); minT = Math.min(minT, t); maxT = Math.max(maxT, t) })
+  const span = Math.max(maxS - minS, maxT - minT) || 1
+  const cuv = (q: Vec2, mirror: boolean): Vec2 => [mirror ? 1 - (q[0] - minS) / span : (q[0] - minS) / span, (q[1] - minT) / span]
+  const out: Poly[] = [
+    { p: profile.map(q => P(hx, q)), uv: profile.map(q => cuv(q, false)) },
+    { p: [...profile].reverse().map(q => P(-hx, q)), uv: [...profile].reverse().map(q => cuv(q, true)) },
+  ]
+  const len = [0]
+  for (let i = 0; i < n; i++) { const a = profile[i], b = profile[(i + 1) % n]; len.push(len[i] + Math.hypot(b[0] - a[0], b[1] - a[1])) }
+  const total = len[n] || 1
+  for (let i = 0; i < n; i++) {
+    const a = profile[i], b = profile[(i + 1) % n], u0 = len[i] / total, u1 = len[i + 1] / total
+    out.push({ p: [P(hx, a), P(-hx, a), P(-hx, b), P(hx, b)], uv: [[u0, 0], [u0, 1], [u1, 1], [u1, 0]] })
+  }
+  return out
+}
+
+export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus' | 'capsule' | 'tube' | 'pyramid' | 'disc' | 'wedge' | 'stairs'
+export interface ParamDef { key: string; label: string; def: number; min: number; max: number; step: number; int?: boolean }
+export type Params = Record<string, number>
+
+const P = (key: string, label: string, def: number, min: number, max: number, step: number, int = false): ParamDef => ({ key, label, def, min, max, step, int })
+const SIZE = (k: string, l: string, d: number) => P(k, l, d, 0.01, 100, 0.1)
+const SIDES = (d: number, min = 3) => P('sides', 'Sides', d, min, 128, 1, true)
+
+/** Parameters of every primitive (shown in the Numeric panel right after creation). */
+export const PRIMITIVES: Record<PrimitiveKind, { label: string; params: ParamDef[] }> = {
+  box: { label: 'Box', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1), P('seg', 'Segments', 1, 1, 32, 1, true)] },
+  sphere: { label: 'Sphere', params: [SIZE('r', 'Radius', 0.6), SIDES(10), P('rings', 'Rings', 7, 2, 64, 1, true)] },
+  geosphere: { label: 'Geosphere', params: [SIZE('r', 'Radius', 0.6), P('detail', 'Detail', 1, 0, 4, 1, true)] },
+  cylinder: { label: 'Cylinder', params: [SIZE('r', 'Radius', 0.5), SIZE('h', 'Height', 1), SIDES(10), P('seg', 'Segments', 1, 1, 32, 1, true)] },
+  cone: { label: 'Cone', params: [SIZE('r', 'Radius', 0.5), SIZE('h', 'Height', 1), SIDES(10), P('seg', 'Segments', 1, 1, 32, 1, true)] },
+  plane: { label: 'Plane', params: [SIZE('w', 'Width', 1.5), SIZE('d', 'Depth', 1.5), P('seg', 'Segments', 2, 1, 64, 1, true)] },
+  torus: { label: 'Torus', params: [SIZE('r', 'Radius', 0.5), SIZE('t', 'Thickness', 0.18), SIDES(12), P('rings', 'Ring sides', 6, 3, 64, 1, true)] },
+  capsule: { label: 'Capsule', params: [SIZE('r', 'Radius', 0.35), SIZE('h', 'Body height', 0.8), SIDES(10), P('rings', 'Cap rings', 3, 1, 32, 1, true)] },
+  tube: { label: 'Tube', params: [SIZE('r', 'Outer radius', 0.5), SIZE('ri', 'Inner radius', 0.3), SIZE('h', 'Height', 1), SIDES(12)] },
+  pyramid: { label: 'Pyramid', params: [SIZE('w', 'Base width', 1), SIZE('h', 'Height', 1), SIDES(4)] },
+  disc: { label: 'Disc', params: [SIZE('r', 'Radius', 0.6), SIDES(12)] },
+  wedge: { label: 'Wedge', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1)] },
+  stairs: { label: 'Stairs', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1.2), P('steps', 'Steps', 4, 1, 64, 1, true)] },
+}
+
+export function primitiveDefaults(kind: PrimitiveKind): Params {
+  return Object.fromEntries(PRIMITIVES[kind].params.map(p => [p.key, p.def]))
+}
+
+/** Clamp/round user-entered parameters to their definitions. */
+export function cleanParams(defs: ParamDef[], p: Params): Params {
+  const out: Params = {}
+  for (const d of defs) {
+    let v = Number(p[d.key])
+    if (!Number.isFinite(v)) v = d.def
+    v = Math.min(d.max, Math.max(d.min, v))
+    out[d.key] = d.int ? Math.round(v) : v
+  }
+  return out
+}
+
+export function makePolys(kind: PrimitiveKind, params: Params = {}): Poly[] | THREE.BufferGeometry {
+  const q = cleanParams(PRIMITIVES[kind].params, { ...primitiveDefaults(kind), ...params })
   switch (kind) {
-    case 'box': return boxPolys()
-    case 'plane': return planePolys()
-    case 'sphere': return lathePolys(arc(0, 0, 0.6, -Math.PI / 2, Math.PI / 2, 7).map(([x, y]) => [Math.max(0, x), y] as Vec2), 10)
-    case 'geosphere': return new THREE.IcosahedronGeometry(0.6, 1)
-    case 'cylinder': return [...lathePolys([[0.5, -0.5], [0.5, 0.5]], 10), capPoly(0.5, 0.5, 10, true), capPoly(0.5, -0.5, 10, false)]
-    case 'cone': return [...lathePolys([[0.5, -0.5], [0, 0.5]], 10), capPoly(0.5, -0.5, 10, false)]
-    case 'torus': return lathePolys(arc(0.5, 0, 0.18, 0, Math.PI * 2, 6).slice(0, 6), 12, true)
+    case 'box': return boxPolys(q.w, q.h, q.d, q.seg)
+    case 'plane': return planePolys(q.w, q.d, q.seg)
+    case 'sphere': return lathePolys(arc(0, 0, q.r, -Math.PI / 2, Math.PI / 2, q.rings).map(([x, y]) => [Math.max(0, x), y] as Vec2), q.sides)
+    case 'geosphere': return new THREE.IcosahedronGeometry(q.r, q.detail)
+    case 'cylinder': {
+      const prof = Array.from({ length: q.seg + 1 }, (_, i) => [q.r, -q.h / 2 + (q.h * i) / q.seg] as Vec2)
+      return [...lathePolys(prof, q.sides), capPoly(q.r, q.h / 2, q.sides, true), capPoly(q.r, -q.h / 2, q.sides, false)]
+    }
+    case 'cone': {
+      const prof = Array.from({ length: q.seg + 1 }, (_, i) => [q.r * (1 - i / q.seg), -q.h / 2 + (q.h * i) / q.seg] as Vec2)
+      return [...lathePolys(prof, q.sides), capPoly(q.r, -q.h / 2, q.sides, false)]
+    }
+    case 'torus': return lathePolys(arc(q.r, 0, Math.min(q.t, q.r * 0.99), 0, Math.PI * 2, q.rings).slice(0, q.rings), q.sides, true)
+    case 'capsule': {
+      const prof = [...arc(0, -q.h / 2, q.r, -Math.PI / 2, 0, q.rings), ...arc(0, q.h / 2, q.r, 0, Math.PI / 2, q.rings)].map(([x, y]) => [Math.max(0, x), y] as Vec2)
+      return lathePolys(prof, q.sides)
+    }
+    case 'tube': {
+      const ro = q.r, ri = Math.min(q.ri, q.r * 0.98), h = q.h / 2
+      return lathePolys([[ro, -h], [ro, h], [ri, h], [ri, -h]], q.sides, true)
+    }
+    case 'pyramid': {
+      const r = q.sides === 4 ? q.w / Math.SQRT2 : q.w / 2, ph = q.sides === 4 ? Math.PI / 4 : 0
+      return [...lathePolys([[r, -q.h / 2], [0, q.h / 2]], q.sides, false, Math.PI * 2, ph), capPoly(r, -q.h / 2, q.sides, false, ph)]
+    }
+    case 'disc': return [capPoly(q.r, 0, q.sides, true)]
+    case 'wedge': return prismPolys([[-q.d / 2, -q.h / 2], [q.d / 2, -q.h / 2], [-q.d / 2, q.h / 2]], q.w)
+    case 'stairs': {
+      const n = q.steps, d = q.d, h = q.h
+      const prof: Vec2[] = [[-d / 2, -h / 2], [d / 2, -h / 2]]
+      for (let i = 1; i <= n; i++) { const s = d / 2 - ((i - 1) * d) / n, t = -h / 2 + (i * h) / n; prof.push([s, t], [s - d / n, t]) }
+      return prismPolys(prof, q.w)
+    }
   }
 }
 
 /** Append a primitive to the model as a new group, welding coincident vertices. Returns new vertex & face indices. */
-export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0]) {
-  const label = kind[0].toUpperCase() + kind.slice(1)
-  const n = m.groups.filter(gr => gr.name.startsWith(label)).length + 1
-  const src = makePolys(kind)
-  if (Array.isArray(src)) return addPolys(m, src, `${label} ${n}`, at)
-  const r = addGeometry(m, src, `${label} ${n}`, at)
-  src.dispose()
+export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0], params: Params = {}) {
+  const label = PRIMITIVES[kind].label
+  const n = m.groups.filter(gr => gr.name.startsWith(label + ' ')).length + 1
+  const src = makePolys(kind, params)
+  const r = Array.isArray(src) ? addPolys(m, src, `${label} ${n}`, at) : addGeometry(m, src, `${label} ${n}`, at)
+  if (!Array.isArray(src)) src.dispose()
   return r
 }
 
@@ -347,12 +436,31 @@ export function extrudeFaces(m: Model, faces: number[], distance = 0.25): number
     }
     return d
   }
+  const dist = normal.length()
   for (const fi of faces) {
     const f = m.faces[fi]
     const old = [...f.v]
-    for (let i = 0; i < old.length; i++) {
-      const a = old[i], b = old[(i + 1) % old.length]
-      if (edgeCount.get(edgeKey(a, b)) === 1) m.faces.push({ v: [a, b, getDup(b), getDup(a)], uv: [[0, 0], [1, 0], [1, 1], [0, 1]], g: f.g })
+    const n = old.length
+    const cu = f.uv.reduce((s, u) => s + u[0], 0) / n, cv = f.uv.reduce((s, u) => s + u[1], 0) / n
+    for (let i = 0; i < n; i++) {
+      const a = old[i], b = old[(i + 1) % n]
+      if (edgeCount.get(edgeKey(a, b)) !== 1) continue
+      // side wall UVs: the source edge's UVs, extended away from the face by the extrude distance at the
+      // edge's own texel density (UV length / world length), so the texture continues onto the wall
+      const ua = f.uv[i], ub = f.uv[(i + 1) % n]
+      const du = ub[0] - ua[0], dv = ub[1] - ua[1]
+      const uvLen = Math.hypot(du, dv)
+      const pa = m.verts[a], pb = m.verts[b]
+      const wLen = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2])
+      let ox = 0, oy = 0
+      if (uvLen > 1e-9 && wLen > 1e-9) {
+        ox = -dv / uvLen; oy = du / uvLen
+        const mx = (ua[0] + ub[0]) / 2 - cu, my = (ua[1] + ub[1]) / 2 - cv
+        if (ox * mx + oy * my < 0) { ox = -ox; oy = -oy }
+        const k = (dist * uvLen) / wLen
+        ox *= k; oy *= k
+      }
+      m.faces.push({ v: [a, b, getDup(b), getDup(a)], uv: [[ua[0], ua[1]], [ub[0], ub[1]], [ub[0] + ox, ub[1] + oy], [ua[0] + ox, ua[1] + oy]], g: f.g })
     }
     f.v = old.map(getDup)
   }
@@ -467,10 +575,24 @@ export function subdivideFaces(m: Model, faces: number[]): number[] {
         polys.push({ v: [f.v[i], mids[i], ci, mids[p]], uv: [f.uv[i], muvs[i], cu, muvs[p]] })
       }
     }
-    m.faces[fi] = { ...polys[0], g: f.g }
+    m.faces[fi] = { ...f, ...polys[0], g: f.g }
     out.push(fi)
     for (const nf of polys.slice(1)) { out.push(m.faces.length); m.faces.push({ ...nf, g: f.g }) }
   }
+  // unselected neighbours get the new midpoints in their corner lists, so no T-junctions (cracks) remain
+  const done = new Set(out)
+  m.faces.forEach((f, fi) => {
+    if (done.has(fi)) return
+    const n = f.v.length
+    if (!f.v.some((a, i) => mid.has(edgeKey(a, f.v[(i + 1) % n])))) return
+    const v: number[] = [], uv: Vec2[] = []
+    f.v.forEach((a, i) => {
+      v.push(a); uv.push(f.uv[i])
+      const b = f.v[(i + 1) % n], mi = mid.get(edgeKey(a, b))
+      if (mi !== undefined) { v.push(mi); uv.push(muv(f.uv[i], f.uv[(i + 1) % n])) }
+    })
+    m.faces[fi] = { ...f, v, uv }
+  })
   return out
 }
 
