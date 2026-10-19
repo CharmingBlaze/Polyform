@@ -50,6 +50,11 @@ export const commands: Command[] = [
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
   { id: 'tool.joint', label: 'Joint tool', group: 'Tools', keys: 'J', run: () => S().set({ tool: 'joint', mode: 'model', selectMode: 'joint' }) },
   { id: 'tool.point', label: 'Point tool (create vertex)', group: 'Tools', keys: 'Shift+V', run: () => S().set({ tool: 'point', mode: 'model' }) },
+  { id: 'paint.brush', label: 'Paint: brush', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'brush' } }) },
+  { id: 'paint.erase', label: 'Paint: eraser', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'erase' } }) },
+  { id: 'paint.pick', label: 'Paint: colour picker', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'pick' } }) },
+  { id: 'paint.fill', label: 'Paint: fill face', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'fill' } }) },
+  { id: 'paint.mirror', label: 'Paint: toggle mirror X', group: 'Paint', run: () => S().setPaint({ mirror: !S().paint.mirror }) },
   { id: 'tool.paint', label: 'Paint tool', group: 'Tools', run: () => S().set({ tool: 'paint', mode: 'model' }) },
   { id: 'tool.off', label: 'Tool off / back (LightWave Space)', group: 'Tools', keys: 'Space', run: () => {
     const s = S()
@@ -66,8 +71,8 @@ export const commands: Command[] = [
   { id: 'sel.esc', label: 'Cancel / deselect', group: 'Selection', keys: 'Esc', run: () => { const s = S(); if (s.extruding) s.cancelExtrude(); else s.selectNone() } },
   { id: 'sel.invert', label: 'Invert selection', group: 'Selection', keys: 'Ctrl+I', run: () => S().invertSelection() },
   { id: 'sel.linked', label: 'Select linked', group: 'Selection', keys: 'L', run: () => S().selectConnected() },
-  { id: 'sel.grow', label: 'Grow selection', group: 'Selection', keys: ']', run: () => S().growSelection() },
-  { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: '[', run: () => S().shrinkSelection() },
+  { id: 'sel.grow', label: 'Grow selection', group: 'Selection', keys: ']', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.ceil(s.paint.size * 1.25) }); else s.growSelection() } },
+  { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: '[', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.floor(s.paint.size / 1.25) }); else s.shrinkSelection() } },
   { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', run: () => S().hideSelection() },
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },

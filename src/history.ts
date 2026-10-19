@@ -13,7 +13,10 @@ interface Snap {
   /** groups, materials, bones, clips, version as JSON (small) */
   rest: string
 }
-export interface Step { snap: Snap; label: string; tex?: TexPatch; bytes: number }
+/** Swap every patch in (last first) and keep the replaced pixels for the opposite direction. */
+const swapAll = (ps: TexPatch[]) => ps.slice().reverse().map(p => textures.swap(p) ?? p).reverse()
+
+export interface Step { snap: Snap; label: string; tex?: TexPatch[]; bytes: number }
 
 const freezeFace = (f: Face): Face => Object.freeze({ ...f, v: Object.freeze([...f.v]) as number[], uv: Object.freeze(f.uv.map(u => Object.freeze([u[0], u[1]]))) as Face['uv'], ...(f.pin ? { pin: Object.freeze([...f.pin]) as number[] } : {}), ...(f.seam ? { seam: Object.freeze([...f.seam]) as number[] } : {}) })
 const faceKey = (f: Face) => `${f.g}|${f.mat ?? ''}|${f.hidden ? 1 : 0}|${f.v.join(',')}|${f.uv.map(u => `${u[0]},${u[1]}`).join(';')}|${f.pin?.join(',') ?? ''}|${f.seam?.join(',') ?? ''}`
@@ -110,11 +113,14 @@ export class History {
     this.pending = false
     return materialize(this.steps[this.cur].snap)
   }
-  pushTexture(m: Model, patch: TexPatch, label = 'Paint') {
+  /** One undo step that restores these texture patches (a paint stroke may touch several images). */
+  pushTexture(m: Model, patch: TexPatch | TexPatch[], label = 'Paint') {
+    const tex = Array.isArray(patch) ? patch : [patch]
+    if (!tex.length) return
     this.commit(m)
     this.truncate()
-    const bytes = patch.data.data.byteLength + 64
-    this.steps.push({ snap: this.steps[this.cur].snap, label, tex: patch, bytes })
+    const bytes = tex.reduce((a, p) => a + p.data.data.byteLength + 64, 0)
+    this.steps.push({ snap: this.steps[this.cur].snap, label, tex, bytes })
     this.cur++; this.bytes += bytes
     this.enforceCap()
   }
@@ -126,14 +132,14 @@ export class History {
     if (this.cur === 0) return { model: null, ok: false }
     const step = this.steps[this.cur]
     this.cur--
-    if (step.tex) { const back = textures.swap(step.tex); if (back) step.tex = back; return { model: null, ok: true } }
+    if (step.tex) { step.tex = swapAll(step.tex); return { model: null, ok: true } }
     return { model: materialize(this.steps[this.cur].snap), ok: true }
   }
   redo(): { model: Model | null; ok: boolean } {
     if (!this.canRedo()) return { model: null, ok: false }
     this.cur++
     const step = this.steps[this.cur]
-    if (step.tex) { const back = textures.swap(step.tex); if (back) step.tex = back; return { model: null, ok: true } }
+    if (step.tex) { step.tex = swapAll(step.tex); return { model: null, ok: true } }
     return { model: materialize(step.snap), ok: true }
   }
   private truncate() {

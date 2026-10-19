@@ -109,6 +109,9 @@ export const viewCtx: (ViewCtx | null)[] = [null, null, null, null]
 export function Viewport({ pane }: { pane: number }) {
   const host = useRef<HTMLDivElement>(null)
   const hit = useRef<HTMLDivElement>(null)
+  const brushRef = useRef<HTMLDivElement>(null)
+  const painting = useStore(s => s.tool === 'paint' && s.mode === 'model')
+  const brushSize = useStore(s => s.paint.size)
   const [rect, setRect] = useState<null | { x: number; y: number; w: number; h: number }>(null)
   const maximized = useStore(s => s.maximized)
   const layout = useStore(s => s.layout)
@@ -846,7 +849,7 @@ export function Viewport({ pane }: { pane: number }) {
     const tool = st.tool
     if (tool === 'paint') {
       if (st.mode !== 'model') st.set({ mode: 'model' })
-      if (paintStrokeStart(ray(x, y), c)) drag.current = { kind: 'paint' }
+      if (paintStrokeStart(x, y, ray, c, e.ctrlKey || e.metaKey)) drag.current = { kind: 'paint' }
       return
     }
     if (tool === 'joint') {
@@ -911,6 +914,7 @@ export function Viewport({ pane }: { pane: number }) {
     const { x, y } = local(e)
     interaction.hoverPane = pane
     interaction.mouse[pane] = { x, y }
+    if (brushRef.current) { brushRef.current.style.left = `${x}px`; brushRef.current.style.top = `${y}px`; brushRef.current.style.display = 'block' }
     const d = drag.current
     if (!d && activeXf?.hover) { if (activeXf.pane === pane) activeXf.hover(x, y, e.ctrlKey || e.metaKey); return }
     if (!d) {
@@ -925,7 +929,7 @@ export function Viewport({ pane }: { pane: number }) {
     if (d.kind === 'orbit') { orbit(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'pan') { pan(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'zoom') { zoom(Math.exp((y - d.y) * 0.01)); d.x = x; d.y = y; return }
-    if (d.kind === 'paint') { paintAt(ray(x, y)); return }
+    if (d.kind === 'paint') { paintAt(x, y); return }
     if (d.kind === 'rect') {
       d.x1 = x; d.y1 = y
       if (Math.abs(x - d.x0) > TWEAK_PX || Math.abs(y - d.y0) > TWEAK_PX) setRect({ x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) })
@@ -1104,7 +1108,9 @@ export function Viewport({ pane }: { pane: number }) {
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>
       <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel}
+        onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none' }}
         onDoubleClick={() => set({ maximized: maximized !== null ? null : pane })} />
+      {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none' }} />}
       <div className="vp-title">
         <select value={cfg.type} data-testid={`pane-${pane}-view`} onChange={e => setPane({ type: e.target.value as ViewType })} title="View type">
           {(Object.keys(VIEW_LABEL) as ViewType[]).filter(v => v !== 'uv').map(v => <option key={v} value={v}>{VIEW_LABEL[v]}</option>)}

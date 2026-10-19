@@ -22,7 +22,7 @@ export type Shading = 'wire' | 'solid' | 'smooth' | 'textured' | 'texwire'
 export type Layout = '1' | '2h' | '2v' | '3' | '4'
 export interface Pane { type: ViewType; shade: Shading; grid: boolean }
 export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill'
-export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number }
+export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[] }
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
@@ -193,6 +193,7 @@ interface State {
   stitchUVs: () => void
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
+  setPaint: (p: Partial<PaintSettings>) => void
   /** Images library: each image becomes a material named after it (one material per image). With assign, the
    *  selected faces get the first one, in the same undo step. Returns the new material indices. */
   addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
@@ -282,7 +283,7 @@ export const useStore = create<State>((set, get) => ({
   showTexture: true,
   showWire: true,
   activeMat: 0,
-  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512 },
+  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'] },
   numericOpen: false,
   lastOp: null,
   extruding: false,
@@ -913,6 +914,7 @@ export const useStore = create<State>((set, get) => ({
     set({ activeMat: Math.max(0, Math.min(mat, get().model.materials.length - 1)) })
     s.notify(`Removed ${mt.name} (Ctrl+Z restores it)`)
   },
+  setPaint: p => set(s => ({ paint: { ...s.paint, ...p, size: Math.max(1, Math.min(200, p.size ?? s.paint.size)), opacity: Math.max(0.01, Math.min(1, p.opacity ?? s.paint.opacity)), hardness: Math.max(0, Math.min(1, p.hardness ?? s.paint.hardness)) } })),
   setMaterialTexture: (mat, tex) => get().edit(m => { m.materials[mat].texture = tex }, tex ? 'Set texture' : 'Remove texture'),
 }))
 

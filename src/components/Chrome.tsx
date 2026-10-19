@@ -5,20 +5,12 @@ import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
+import { PaintPanel } from './PaintPanel'
+import { CmdBtn } from './CmdBtn'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
 export type Tab = typeof TABS[number]
-
-function CmdBtn({ cmd, label, active, testid }: { cmd: string; label?: string; active?: boolean; testid?: string }) {
-  const c = byId[cmd]
-  if (!c) return null
-  return (
-    <button className={`tool-btn ${active ? 'on' : ''}`} onClick={c.run} title={`${c.label}${c.keys ? `  ·  ${c.keys}` : ''}`} data-testid={testid ?? `cmd-${cmd}`}>
-      <span>{label ?? c.label}</span>{c.keys && <kbd>{c.keys}</kbd>}
-    </button>
-  )
-}
 
 export function Header({ onPalette }: { onPalette: () => void }) {
   const mode = useStore(s => s.mode)
@@ -107,10 +99,7 @@ export function ToolRail() {
           <CmdBtn cmd="view.uv" label="UV workspace" active={uvSpace} testid="uv-workspace" />
           <p className="muted">The UV editor opens beside the 3D view. Selection is shared: pick faces in either side.</p>
         </>}
-        {tab === 'Paint' && <>
-          <CmdBtn cmd="tool.paint" label="Paint brush" active={tool === 'paint'} testid="brush" />
-          <p className="muted">3D painting arrives in the painting step.</p>
-        </>}
+        {tab === 'Paint' && <PaintPanel />}
         {tab === 'Setup' && <>
           <CmdBtn cmd="tool.joint" label="Joint tool" active={tool === 'joint'} testid="joint-tool" />
           <CmdBtn cmd="joint.bind" label="Bind to joint" testid="bind" />
@@ -311,13 +300,13 @@ export function StatusBar() {
   const modalInfo = useStore(s => s.modalInfo)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const hint: Record<string, string> = {
-    select: 'Drag to box-select · Shift add · Ctrl remove · Alt+click loop',
+    select: 'Drag to box-select · Shift add · Ctrl remove · Ctrl+click loop',
     move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid',
     rotate: 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°',
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1',
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',
-    paint: 'Painting arrives in the painting step',
+    paint: 'Drag on the model to paint · Ctrl+click picks a colour · [ ] brush size · Mirror X in the Paint tab',
   }
   const st = useStore.getState()
   return (
