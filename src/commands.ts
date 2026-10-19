@@ -49,6 +49,12 @@ export const commands: Command[] = [
   } },
   { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
+  { id: 'edit.inset', label: 'Inset faces (Animate: insert key)', group: 'Multiply', keys: 'I', run: () => {
+    const s = S()
+    if (s.mode === 'animate') return s.setKey()
+    if (s.selectMode === 'joint') return s.notify('Switch to Face mode to inset')
+    window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'inset' }))
+  } },
   { id: 'tool.joint', label: 'Joint tool', group: 'Tools', keys: 'J', run: () => S().set({ tool: 'joint', mode: 'model', selectMode: 'joint' }) },
   { id: 'tool.point', label: 'Point tool (create vertex)', group: 'Tools', keys: 'Shift+V', run: () => S().set({ tool: 'point', mode: 'model' }) },
   { id: 'paint.brush', label: 'Paint: brush', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'brush' } }) },
@@ -119,7 +125,7 @@ export const commands: Command[] = [
   { id: 'joint.children', label: 'Select joint children', group: 'Setup', run: () => S().selectJointChildren() },
   { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Ctrl+Tab', run: () => { const s = S(); s.setMode(s.mode === 'model' ? 'animate' : 'model') } },
   { id: 'anim.mode2', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => byId['anim.mode'].run() },
-  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', keys: 'I', run: () => S().setKey() },
+  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', run: () => S().setKey() },
   { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },
   { id: 'anim.autokey', label: 'Toggle auto-key (record)', group: 'Animate', run: () => S().set({ autoKey: !S().autoKey }) },
   { id: 'anim.ik', label: 'Toggle IK (drag tip to pose the chain)', group: 'Animate', keys: 'Shift+I', run: () => {

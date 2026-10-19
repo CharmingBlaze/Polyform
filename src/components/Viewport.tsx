@@ -478,6 +478,71 @@ export function Viewport({ pane }: { pane: number }) {
     return L > 1e-6 ? ((x - a.x) * dx + (y - a.y) * dy) / L : 0
   }
 
+
+  /** I: inset selected faces (Model mode). Mouse sets thickness; Enter confirms, Esc undoes. */
+  function startInset() {
+    const st0 = useStore.getState()
+    if (st0.mode !== 'model') { st0.notify('Switch to Model mode to inset'); return }
+    const faces = st0.activeFaces()
+    if (!faces.length) { st0.notify('Select faces to inset'); return }
+    const at0 = interaction.mouse[pane] ?? { x: ctx.current!.w / 2, y: ctx.current!.h / 2 }
+    let amount = 0.08
+    let individual = 0
+    st0.runOp('mul.inset', { inset: amount, individual })
+    const faceCenter = () => {
+      const m = useStore.getState().model, P = sceneManager.posed
+      const c = new THREE.Vector3()
+      let n = 0
+      for (const fi of faces) {
+        const f = m.faces[fi]
+        if (!f) continue
+        f.v.forEach(v => { c.add(new THREE.Vector3(...P[v])); n++ })
+      }
+      return n ? c.multiplyScalar(1 / n) : new THREE.Vector3()
+    }
+    const info = () => useStore.getState().set({
+      modalInfo: `Inset ${amount.toFixed(3)}${individual ? ' · individual' : ''} · move mouse · I toggles individual · Enter confirm · Esc cancel`,
+    })
+    const apply = () => {
+      const st = useStore.getState()
+      if (st.lastOp?.id === 'mul.inset') st.updateOp({ inset: amount, individual })
+      else st.runOp('mul.inset', { inset: amount, individual })
+      info()
+    }
+    const end = (ok: boolean) => {
+      const st = useStore.getState()
+      if (ok) st.commit()
+      else { st.cancelEdit(); st.notify('Inset cancelled') }
+      interaction.modal = false
+      activeXf = null
+      st.set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+    }
+    activeXf = {
+      pane,
+      cancel: () => end(false),
+      confirm: () => end(true),
+      move: () => {},
+      hover: (x) => {
+        const wpp = worldPerPixel(faceCenter())
+        amount = Math.max(0, Math.min(5, (at0.x - x) * wpp + 0.08))
+        apply()
+      },
+      down: (button) => { if (button === 0) end(true); else if (button === 2) end(false) },
+      wheel: () => {},
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return end(false)
+        if (k === 'Enter') return end(true)
+        if (k === 'i' || k === 'I') { individual = individual ? 0 : 1; apply() }
+      },
+    }
+    interaction.modal = true
+    info()
+    // seed selection onto the inset caps (op already selected via applyResult)
+  }
+
   /** Ctrl+R: hover previews the ring, wheel/digits set the cut count, click cuts, then slide; right-click centers. */
   function startLoopCut() {
     let cuts = 1, ring: Ring | null = null, hoverEdge = -1, typed = '', typedAt = 0
@@ -808,6 +873,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (target !== pane || !ctx.current || hidden || activeXf) return
       if (kind === 'loopcut') startLoopCut()
       else if (kind === 'knife') startKnife()
+      else if (kind === 'inset') startInset()
     }
     window.addEventListener('modal-tool', onTool)
     return () => {

@@ -29,7 +29,7 @@ describe('keymap (team/user decision of 2026-10-19)', () => {
   })
   it('unchanged bindings', () => {
     const b = by()
-    expect(b['B']).toBe('op.mul.bevel'); expect(b['I']).toBe('anim.key'); expect(b['K']).toBe('edit.knife')
+    expect(b['B']).toBe('op.mul.bevel'); expect(b['I']).toBe('edit.inset'); expect(b['K']).toBe('edit.knife')
     expect(b['Ctrl+R']).toBe('edit.loopcut'); expect(b['Ctrl+P']).toBe('joint.bind'); expect(b['Tab']).toBe('sel.object')
     expect(b['Ctrl+Tab']).toBe('anim.mode')
     expect(b['1']).toBe('sel.vertex'); expect(b['2']).toBe('sel.edge'); expect(b['3']).toBe('sel.face')
