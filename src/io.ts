@@ -232,12 +232,14 @@ export async function importFile(file: File) {
   }
   if (ext === 'glb' || ext === 'gltf') {
     const model = await importGLTF(await file.arrayBuffer(), file.name)
+    validateModel(model)
     st.edit(m => { m.verts = model.verts; m.vbone = model.vbone; m.faces = model.faces; m.groups = model.groups; m.materials = model.materials; m.bones = model.bones; m.clips = model.clips; m.wires = model.wires }, `Import ${file.name}`)
     st.set({ clip: 0, frame: 0, playing: false, activeMat: 0, ...{ selVerts: new Set(), selFaces: new Set(), selEdges: new Set(), selBones: new Set(), selUV: new Set() } })
     return st.notify(`Imported ${file.name}: ${model.faces.length} faces, ${model.bones.length} joints, ${model.clips.length} clip${model.clips.length === 1 ? '' : 's'}`)
   }
   if (ext === 'ms3d') {
     const model = parseMs3d(await file.arrayBuffer())
+    validateModel(model)
     st.edit(m => { m.verts = model.verts; m.vbone = model.vbone; m.faces = model.faces; m.groups = model.groups; m.materials = model.materials; m.bones = model.bones; m.clips = model.clips; m.wires = model.wires }, `Import ${file.name}`)
     st.set({ clip: 0, frame: 0, playing: false, activeMat: 0, selVerts: new Set(), selFaces: new Set(), selEdges: new Set(), selBones: new Set(), selUV: new Set() })
     return st.notify(`Imported ${file.name}: ${model.faces.length} faces, ${model.bones.length} joints`)

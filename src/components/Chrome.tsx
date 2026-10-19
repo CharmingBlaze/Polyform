@@ -308,12 +308,14 @@ export function StatusBar() {
   const subModes = useStore(s => s.subModes)
   const numericOpen = useStore(s => s.numericOpen)
   const modalInfo = useStore(s => s.modalInfo)
+  const xMirror = useStore(s => s.xMirror)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
+  const mir = xMirror ? ' · X-mirror on' : ''
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Shift add · Ctrl remove · Ctrl+click loop',
-    move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid',
-    rotate: 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°',
-    scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1',
+    move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
+    rotate: 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°' + mir,
+    scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',
     paint: 'Drag on the model to paint · Ctrl+click picks a colour · [ ] brush size · Mirror X in the Paint tab',

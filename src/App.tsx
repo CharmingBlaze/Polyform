@@ -62,7 +62,7 @@ export default function App() {
       <Palette open={palette} onClose={() => setPalette(false)} />
       <Toast />
       <Popup />
-      {dragging && <div className="dropzone"><div>Drop a .glb, .obj, project .json, or a PNG / JPEG / WebP image</div></div>}
+      {dragging && <div className="dropzone"><div>Drop a .glb / .gltf / .obj / .ms3d, a project .json, or a PNG / JPEG / WebP image</div></div>}
     </div>
   )
 }
