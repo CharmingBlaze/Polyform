@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Viewport } from './components/Viewport'
-import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel } from './components/Chrome'
+import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup } from './components/Chrome'
 import { Sidebar, Timeline } from './components/Panels'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
@@ -47,6 +47,7 @@ export default function App() {
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />
       <Toast />
+      <Popup />
       {dragging && <div className="dropzone"><div>Drop a .glb, .obj, project .json, or a PNG / JPEG / WebP image</div></div>}
     </div>
   )

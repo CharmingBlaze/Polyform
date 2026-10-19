@@ -181,3 +181,10 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .clip-pick { max-width: 120px; margin-right: 4px; }
 .icon-btn.rec.on { color: var(--red); }
 .status .hint.modal { color: var(--gold); }
+
+.popup-backdrop { position: fixed; inset: 0; z-index: 60; }
+.popup { position: fixed; min-width: 220px; background: #2b2e33; border: 1px solid #50555c; border-radius: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.5); padding: 4px; }
+.popup-title { font-size: 11px; color: #9aa3ad; padding: 3px 8px 5px; border-bottom: 1px solid #3c4046; margin-bottom: 3px; }
+.popup button { display: flex; gap: 8px; width: 100%; text-align: left; background: none; border: 0; color: #e3e6ea; padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+.popup button:hover { background: #3d6fa8; }
+.popup-n { color: #8a939c; width: 10px; }

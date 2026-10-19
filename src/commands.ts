@@ -33,8 +33,18 @@ export const commands: Command[] = [
     const s = S()
     if (s.tool === 'joint') return s.growJoint()
     if (s.mode !== 'model') return s.notify('Switch to Model mode to extrude')
-    s.extrude()
-    if (useStore.getState().extruding) startModal('extrude')
+    if (s.extrude()) startModal('extrude')
+  } },
+  { id: 'edit.extrudeMenu', label: 'Extrude menu (region / individual / edges / points)', group: 'Multiply', keys: 'Alt+E', run: () => {
+    const s = S()
+    if (s.mode !== 'model' || s.tool === 'joint') return s.notify('Switch to Model mode to extrude')
+    const go = (kind: 'region' | 'individual' | 'edges' | 'verts') => () => { S().set({ popup: null }); if (S().extrude(kind)) startModal('extrude') }
+    s.set({ popup: { title: 'Extrude', items: [
+      { id: 'region', label: 'Extrude Faces (region)', run: go('region') },
+      { id: 'individual', label: 'Extrude Individual Faces', run: go('individual') },
+      { id: 'edges', label: 'Extrude Edges Only', run: go('edges') },
+      { id: 'verts', label: 'Extrude Vertices Only', run: go('verts') },
+    ] } })
   } },
   { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
@@ -102,6 +112,7 @@ export function comboOf(e: KeyboardEvent) {
   if (e.altKey) parts.push('Alt')
   let k = e.key
   if (/^Digit\d$/.test(e.code)) k = e.code.slice(5) // Shift+1 gives '!' on e.key
+  else if (e.altKey && /^Key[A-Z]$/.test(e.code)) k = e.code.slice(3) // macOS Option+E gives '´' on e.key
   else if (k === ' ') k = 'Space'
   else if (k === 'Escape') k = 'Esc'
   else if (k === 'Delete' || k === 'Backspace') k = 'Del'

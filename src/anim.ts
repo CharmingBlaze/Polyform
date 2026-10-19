@@ -76,6 +76,14 @@ export const isIdentityXform = (x: Xform) => x.pos.every(v => v === 0) && x.rot.
 export function vertexGroups(m: Model): number[] {
   const g = new Array(m.verts.length).fill(-1)
   for (const f of m.faces) for (const v of f.v) if (g[v] < 0) g[v] = f.g
+  // points reached only through wire edges (extruded points) belong to the object they grew from
+  for (let changed = m.wires?.length > 0, pass = 0; changed && pass < 64; pass++) {
+    changed = false
+    for (const [a, b] of m.wires) {
+      if (g[a] < 0 && g[b] >= 0) { g[a] = g[b]; changed = true }
+      else if (g[b] < 0 && g[a] >= 0) { g[b] = g[a]; changed = true }
+    }
+  }
   return g
 }
 

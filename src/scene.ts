@@ -280,6 +280,13 @@ class SceneManager {
       }
     }
     if (curMat >= 0) this.meshGeo.addGroup(groupStart, triCount * 3 - groupStart, curMat)
+    // wire (loose) edges: drawn and pickable like face edges
+    for (const [a, b] of m.wires) {
+      const k = a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a
+      if (edges.has(k)) continue
+      edges.add(k); wire.push(...P[a], ...P[b]); this.edges.push(a < b ? [a, b] : [b, a])
+      if (edgeSel && st.selEdges.has(k)) selEdge.push(...P[a], ...P[b])
+    }
     setAttr(this.meshGeo, 'position', pos, 3)
     setAttr(this.meshGeo, 'normal', nrm, 3)
     setAttr(this.meshGeo, 'uv', uv, 2)

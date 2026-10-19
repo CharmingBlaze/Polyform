@@ -50,7 +50,7 @@ export function snapshot(m: Model, prev?: Snap): { snap: Snap; bytes: number } {
   const sameVerts = prev && prev.verts.length === verts.length && verts.every((v, i) => v === prev.verts[i])
   const sameFaces = prev && prev.faces.length === faces.length && faces.every((f, i) => f === prev.faces[i])
   const sameVbone = prev && prev.vbone.length === m.vbone.length && m.vbone.every((b, i) => b === prev.vbone[i])
-  const rest = JSON.stringify({ version: m.version, groups: m.groups, materials: m.materials, bones: m.bones, clips: m.clips })
+  const rest = JSON.stringify({ version: m.version, groups: m.groups, materials: m.materials, bones: m.bones, clips: m.clips, wires: m.wires })
   const snap: Snap = {
     verts: sameVerts ? prev!.verts : Object.freeze(verts),
     faces: sameFaces ? prev!.faces : Object.freeze(faces),
@@ -72,7 +72,7 @@ export function materialize(s: Snap): Model {
     verts: s.verts.map(v => [v[0], v[1], v[2]] as Vec3),
     vbone: [...s.vbone],
     faces: s.faces.map(f => { const o: Face = { v: [...f.v], uv: f.uv.map(u => [u[0], u[1]] as [number, number]), g: f.g }; if (f.hidden) o.hidden = true; if (f.pin) o.pin = [...f.pin]; if (f.mat !== undefined) o.mat = f.mat; return o }),
-    groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips,
+    groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips, wires: rest.wires ?? [],
   }
 }
 

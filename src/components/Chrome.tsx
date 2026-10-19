@@ -267,6 +267,38 @@ export function StatusBar() {
   )
 }
 
+/** Small menu at the mouse (Alt+E). Click an item or press its number; Esc or a click outside closes it. */
+let lastClient = { x: 200, y: 200 }
+if (typeof window !== 'undefined') window.addEventListener('pointermove', e => { lastClient = { x: e.clientX, y: e.clientY } }, true)
+export function Popup() {
+  const p = useStore(s => s.popup)
+  const [at, setAt] = useState(lastClient)
+  useEffect(() => {
+    if (!p) return
+    setAt({ x: Math.min(lastClient.x, window.innerWidth - 240), y: Math.min(lastClient.y, window.innerHeight - 40 - p.items.length * 30) })
+    const close = () => useStore.getState().set({ popup: null })
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopImmediatePropagation()
+      if (e.key === 'Escape') return close()
+      const n = parseInt(e.key, 10)
+      if (n >= 1 && n <= p.items.length) p.items[n - 1].run()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [p])
+  if (!p) return null
+  return (
+    <div className="popup-backdrop" data-testid="popup-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) useStore.getState().set({ popup: null }) }}>
+      <div className="popup" data-testid="popup" style={{ left: at.x, top: at.y }}>
+        <div className="popup-title">{p.title}</div>
+        {p.items.map((it, i) => (
+          <button key={it.id} data-testid={`popup-${it.id}`} onClick={it.run}><span className="popup-n">{i + 1}</span>{it.label}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function Toast() {
   const t = useStore(s => s.toast)
   return t ? <div className="toast" data-testid="toast">{t}</div> : null

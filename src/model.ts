@@ -66,7 +66,7 @@ export interface Clip {
   okeys: Record<number, Record<number, OKey>>
 }
 
-export const PROJECT_VERSION = 2
+export const PROJECT_VERSION = 3
 
 export interface Model {
   version: number
@@ -77,6 +77,8 @@ export interface Model {
   materials: Material[]
   bones: Bone[]
   clips: Clip[]
+  /** loose edges (no face), e.g. from extruding points; editor-only construction geometry, not exported to glTF */
+  wires: [number, number][]
 }
 
 export const newMaterial = (name = 'Material', color = '#ffffff'): Material => ({ name, color, roughness: 0.8, metalness: 0, texture: null })
@@ -84,7 +86,7 @@ export const newClip = (name = 'Animation'): Clip => ({ name, frames: 30, fps: 2
 export const newGroup = (name: string, mat = 0): Group => ({ name, visible: true, mat, smooth: 0, xf: identityXform() })
 
 export function emptyModel(): Model {
-  return { version: PROJECT_VERSION, verts: [], vbone: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()] }
+  return { version: PROJECT_VERSION, verts: [], vbone: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [] }
 }
 
 type Raw = Record<string, unknown> & { textures?: Record<string, string> }
@@ -108,6 +110,8 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
     try { if (Array.isArray(out.faces) && Array.isArray(out.verts) && Array.isArray(out.vbone)) unshareVerts(out as unknown as Model) } catch { /* rejected by validateModel */ }
     return out
   },
+  /** v2 -> v3: loose edges (wires) */
+  2: r => ({ ...r, version: 3, wires: Array.isArray(r.wires) ? r.wires : [] }),
 }
 
 /**
@@ -129,8 +133,8 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
   }
   if (!Array.isArray(r.vbone) || !(r.vbone as unknown[]).length) r.vbone = (r.verts as unknown[]).map(() => -1)
   if (!Array.isArray(r.bones)) r.bones = []
-  const { verts, vbone, faces, groups, materials, bones, clips } = r as unknown as Model
-  return { model: { version: PROJECT_VERSION, verts, vbone, faces, groups, materials, bones, clips }, textures }
+  const { verts, vbone, faces, groups, materials, bones, clips, wires } = r as unknown as Model
+  return { model: { version: PROJECT_VERSION, verts, vbone, faces, groups, materials, bones, clips, wires }, textures }
 }
 
 /** The JSON written to a .polyform.json file. */
@@ -151,7 +155,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/
 /** Throws if the model is structurally invalid (bad indices, non-finite numbers, loops, absurd sizes). */
 export function validateModel(m: Model) {
   if (!m || typeof m !== 'object') throw new Error('Not a Polyform project')
-  for (const k of ['verts', 'vbone', 'faces', 'groups', 'materials', 'bones', 'clips'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
+  for (const k of ['verts', 'vbone', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
   const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length, nm = m.materials.length
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
   const num = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi
@@ -171,6 +175,9 @@ export function validateModel(m: Model) {
     if (!num(g.smooth, 0, 180)) throw new Error(`Group ${i} has an invalid smoothing angle`)
     const x = g.xf
     if (!x || !vec(x.pivot, 3) || !vec(x.pos, 3) || !vec(x.rot, 3) || !vec(x.scale, 3)) throw new Error(`Group ${i} has an invalid transform`)
+  })
+  m.wires.forEach((w, i) => {
+    if (!Array.isArray(w) || w.length !== 2 || !Number.isInteger(w[0]) || !Number.isInteger(w[1]) || w[0] < 0 || w[1] < 0 || w[0] >= nv || w[1] >= nv || w[0] === w[1]) throw new Error(`Wire edge ${i} is invalid`)
   })
   const owner = new Int32Array(nv).fill(-1)
   m.faces.forEach((f, i) => {
@@ -515,6 +522,7 @@ export function removeOrphans(m: Model, candidates?: Iterable<number>) {
   const used = new Array(m.verts.length).fill(candidates ? true : false)
   if (candidates) for (const i of candidates) used[i] = false
   for (const f of m.faces) f.v.forEach(i => (used[i] = true))
+  for (const w of m.wires) { used[w[0]] = true; used[w[1]] = true }
   const map: number[] = []
   const verts: Vec3[] = [], vbone: number[] = []
   m.verts.forEach((v, i) => {
@@ -522,6 +530,20 @@ export function removeOrphans(m: Model, candidates?: Iterable<number>) {
   })
   m.verts = verts; m.vbone = vbone
   for (const f of m.faces) f.v = f.v.map(i => map[i])
+  m.wires = m.wires.map(([a, b]) => [map[a], map[b]] as [number, number])
+}
+
+/** Remap wire endpoints after merging points; drops collapsed and duplicate wires and wires that are now face edges. */
+export function remapWires(m: Model, map: (v: number) => number) {
+  const faceEdges = new Set<number>()
+  for (const f of m.faces) f.v.forEach((a, i) => faceEdges.add(edgeKey(a, f.v[(i + 1) % f.v.length])))
+  const seen = new Set<number>()
+  m.wires = m.wires.map(([a, b]) => [map(a), map(b)] as [number, number]).filter(([a, b]) => {
+    if (a === b) return false
+    const k = edgeKey(a, b)
+    if (seen.has(k) || faceEdges.has(k)) return false
+    seen.add(k); return true
+  })
 }
 
 export function removeEmptyGroups(m: Model) {
@@ -644,7 +666,7 @@ export function extrudeFaces(m: Model, faces: number[], distance = 0.25): number
         const k = (dist * uvLen) / wLen
         ox *= k; oy *= k
       }
-      m.faces.push({ v: [a, b, getDup(b), getDup(a)], uv: [[ua[0], ua[1]], [ub[0], ub[1]], [ub[0] + ox, ub[1] + oy], [ua[0] + ox, ua[1] + oy]], g: f.g })
+      m.faces.push({ v: [a, b, getDup(b), getDup(a)], uv: [[ua[0], ua[1]], [ub[0], ub[1]], [ub[0] + ox, ub[1] + oy], [ua[0] + ox, ua[1] + oy]], g: f.g, ...(f.mat !== undefined ? { mat: f.mat } : {}) })
     }
     f.v = old.map(getDup)
   }
@@ -715,6 +737,7 @@ export function weldVerts(m: Model, verts: number[]) {
   m.verts[target] = c
   const set = new Set(verts)
   for (const f of m.faces) f.v = f.v.map(v => (set.has(v) ? target : v))
+  remapWires(m, v => (set.has(v) ? target : v))
   cleanFaces(m)
   removeOrphans(m, verts.slice(1))
   removeEmptyGroups(m)

@@ -8,6 +8,7 @@ import { sampleBone, sampleObject, skinnedGroups } from './anim'
 import { History } from './history'
 import { defaults, opById, type OpSel } from './ops'
 import { topology } from './topology'
+import * as X from './extrude'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
@@ -74,6 +75,8 @@ interface State {
   gizmoSpace: 'global' | 'local'
   /** status text while a modal transform runs */
   modalInfo: string | null
+  /** small popup menu at the mouse (Alt+E) */
+  popup: { title: string; items: { label: string; id: string; run: () => void }[] } | null
   keyClipboard: KeyClip | null
   texRev: number
   toast: string | null
@@ -114,7 +117,8 @@ interface State {
   updateOp: (params: Params) => void
   addPrimitive: (k: PrimitiveKind) => void
   deleteSelection: () => void
-  extrude: () => void
+  /** start an extrude of the selection (or one Alt+E variant); false if nothing was extruded */
+  extrude: (kind?: X.ExtrudeKind) => boolean
   /** Joint tool E: add a child of the selected joint and let it follow the mouse */
   growJoint: () => void
   knife: () => void
@@ -224,6 +228,7 @@ export const useStore = create<State>((set, get) => ({
   extruding: false,
   gizmoSpace: 'global',
   modalInfo: null,
+  popup: null,
   keyClipboard: null,
   texRev: 0,
   toast: null,
@@ -472,27 +477,49 @@ export const useStore = create<State>((set, get) => ({
       alsoVerts = [...s.selVerts]
     }
     if (s.selectMode === 'edge') M.facesOfVerts(s.model, vertsOfEdges(s.selEdges)).forEach(f => { if (edgesOfFaces(s.model, [f]).size && [...edgesOfFaces(s.model, [f])].some(e => s.selEdges.has(e))) fs.add(f) })
-    if (!fs.size && !alsoVerts.length) return
-    s.edit(m => M.deleteFaces(m, fs, alsoVerts), 'Delete')
+    const sv = new Set(alsoVerts), edgeMode = s.selectMode === 'edge' || s.subModes.includes('edge')
+    const wireHit = ([a, b]: [number, number]) => sv.has(a) || sv.has(b) || (edgeMode && s.selEdges.has(M.edgeKey(a, b)))
+    const wireVerts = s.model.wires.filter(wireHit).flat()
+    if (!fs.size && !alsoVerts.length && !wireVerts.length) return
+    s.edit(m => { m.wires = m.wires.filter(w => !wireHit(w)); M.deleteFaces(m, fs, [...alsoVerts, ...wireVerts]) }, 'Delete')
     s.selectNone()
   },
-  extrude: () => {
+  extrude: kind => {
     const s = get()
-    const faces = s.activeFaces()
-    if (!faces.length) return s.notify('Select faces to extrude')
+    if (s.mode !== 'model' || s.selectMode === 'joint') { s.notify('Switch to Model mode to extrude'); return false }
+    const objMode = s.selectMode === 'object'
+    const faces = s.activeFaces(), verts = objMode ? [] : s.activeVerts(), edges = objMode ? [] : s.activeEdges()
+    const faceMode = objMode || (s.subModes.length === 1 && s.subModes[0] === 'face')
+    if (!faces.length && !verts.length) { s.notify('Select something to extrude'); return false }
     s.checkpoint('Extrude')
-    M.extrudeFaces(s.model, faces, 0)
+    const m = s.model
+    let r: X.ExtrudeResult | null = null
+    if (kind === 'region') r = faces.length ? X.extrudeRegion(m, faces) : null
+    else if (kind === 'individual') r = faces.length ? X.extrudeIndividual(m, faces) : null
+    else if (kind === 'edges') r = edges.length ? X.extrudeEdges(m, edges) : null
+    else if (kind === 'verts') r = verts.length ? X.extrudeVerts(m, verts) : null
+    else r = X.extrudeSelection(m, { verts, edges, faces }, faceMode)
+    if (!r || !r.moved.length) {
+      s.cancelEdit()
+      s.notify(kind === 'region' || kind === 'individual' || faceMode ? 'Select faces to extrude' : kind === 'edges' ? 'Select edges to extrude' : 'Nothing to extrude')
+      return false
+    }
+    X.extrudeSession.cur = r
     s.touch()
-    s.setSelection({ faces })
+    if (r.select.faces && (faceMode || kind === 'region' || kind === 'individual')) s.setSelection({ faces: r.select.faces })
+    else if (r.select.edges && s.subModes.includes('edge') && !s.subModes.includes('vertex')) s.setSelection({ edges: r.select.edges })
+    else s.setSelection({ verts: r.moved })
     set({ extruding: true })
+    return true
   },
   cancelExtrude: () => {
     if (!get().extruding) return
     get().cancelEdit()
+    X.extrudeSession.cur = null
     set({ extruding: false, ...clearSel() })
     get().notify('Extrude cancelled')
   },
-  finishExtrude: () => { if (get().extruding) { set({ extruding: false }); get().commit() } },
+  finishExtrude: () => { if (get().extruding) { X.extrudeSession.cur = null; set({ extruding: false }); get().commit() } },
   growJoint: () => {
     const s = get()
     const parent = [...s.selBones][s.selBones.size - 1]

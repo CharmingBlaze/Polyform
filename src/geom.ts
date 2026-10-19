@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import {
   addPolys, cleanFaces, edgeEnds, edgeKey, extrudeFaces, faceCenter, lathePolys, newell, newGroup, removeEmptyGroups, removeOrphans,
   triangulate, vertsOfFaces, weldVerts, type Face, type Model, type Vec2, type Vec3,
-  unshareVerts,
+  unshareVerts, remapWires,
 } from './model'
 
 export type Axis = 0 | 1 | 2
@@ -331,6 +331,7 @@ export function mergeByDistance(m: Model, verts: number[], dist: number): number
   clusters.forEach(l => { if (l.length > 1) { const c = new THREE.Vector3(); l.forEach(v => c.add(V(m.verts[v]))); c.divideScalar(l.length); m.verts[l[0]] = A(c); l.forEach(v => target.set(v, l[0])) } })
   if (!target.size) return 0
   for (const f of m.faces) f.v = f.v.map(v => target.get(v) ?? v)
+  remapWires(m, v => target.get(v) ?? v)
   cleanFaces(m)
   removeOrphans(m, [...target.keys()].filter(v => target.get(v) !== v))
   removeEmptyGroups(m)

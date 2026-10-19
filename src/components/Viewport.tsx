@@ -10,6 +10,7 @@ import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction } from '../interaction'
 import type { ModalKind } from '../commands'
+import { extrudeSession, updateWallUVs } from '../extrude'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -39,6 +40,8 @@ interface XfDrag {
   axis: 0 | 1 | 2 | null
   /** custom axis vector (extrude along the normal) */
   axisVec: THREE.Vector3 | null
+  /** the extrude normal, restored when an X/Y/Z constraint cycles back to free */
+  normalVec?: THREE.Vector3 | null
   frame: THREE.Quaternion
   space: 'global' | 'local'
   T: Targets
@@ -290,15 +293,16 @@ export function Viewport({ pane }: { pane: number }) {
   }
   const screenAngle = (x: number, y: number, c: { x: number; y: number }) => Math.atan2(y - c.y, x - c.x)
 
-  function beginXf(src: XfDrag['src'], op: GizmoKind, x: number, y: number, opts: { axis?: 0 | 1 | 2 | null; axisVec?: THREE.Vector3 | null; modal?: ModalKind; label?: string } = {}): XfDrag | null {
+  function beginXf(src: XfDrag['src'], op: GizmoKind, x: number, y: number, opts: { axis?: 0 | 1 | 2 | null; axisVec?: THREE.Vector3 | null; modal?: ModalKind; label?: string; verts?: number[] } = {}): XfDrag | null {
     const st = useStore.getState()
-    const T = collectTargets(st)
+    const T = collectTargets(st, st.gizmoSpace, opts.verts)
     if (!T) { st.notify('Select something to transform'); return null }
     if (op === 'scale' && T.keys.size && !T.objs.size) { st.notify('Joints are not scaled — use Move or Rotate'); return null }
     if (needsKeyFirst(st, T)) { st.notify('Auto-key is off: press I to key this frame first'); return null }
     if (T.note) st.notify(T.note)
     const d: XfDrag = {
       kind: 'xf', src, op, axis: opts.axis ?? null, axisVec: opts.axisVec ?? null, frame: T.frame.clone(), space: st.gizmoSpace,
+      normalVec: opts.axisVec ?? null,
       T, x0: x, y0: y, hit0: new THREE.Vector3(), lastAng: 0, accAng: 0, typed: '', started: false,
       label: opts.label ?? (op === 'move' ? 'Move' : op === 'rotate' ? 'Rotate' : 'Scale'), modal: opts.modal, ctrl: false,
     }
@@ -366,7 +370,17 @@ export function Viewport({ pane }: { pane: number }) {
       sceneManager.dragging = true
       if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint')) { if (!st.extruding) st.checkpoint(d.label) }
     }
-    applyXf(d.T, computeXf(d, x, y))
+    const xf = computeXf(d, x, y)
+    const ex = d.modal === 'extrude' ? extrudeSession.cur : null
+    if (ex?.dirs && d.axisVec) {
+      // individual faces: each face's points move along that face's own normal by the same distance
+      const k = xf.t.dot(d.axisVec)
+      d.T.verts.forEach((o, v) => { const n = ex.dirs!.get(v); st.model.verts[v] = n ? [o[0] + n.x * k, o[1] + n.y * k, o[2] + n.z * k] : o })
+      updateWallUVs(st.model, ex.walls, k)
+    } else {
+      applyXf(d.T, xf)
+      if (ex) updateWallUVs(st.model, ex.walls, d.axisVec ? xf.t.dot(d.axisVec) : xf.t.length())
+    }
     if (d.src === 'modal') st.set({ modalInfo: infoOf(d) })
   }
 
@@ -400,13 +414,13 @@ export function Viewport({ pane }: { pane: number }) {
         if (k === 'Escape') return endXf(d, false)
         if (k === 'Enter') { if (!d.started) updateXf(d, last.x, last.y); return endXf(d, true) }
         if (k === 'Control' || k === 'Meta') { d.ctrl = true; updateXf(d, last.x, last.y); return }
-        if (d.src === 'modal' && /^[xyz]$/i.test(k) && !d.axisVec) {
+        if (d.src === 'modal' && /^[xyz]$/i.test(k)) {
           const i = 'xyz'.indexOf(k.toLowerCase()) as 0 | 1 | 2
-          // Blender cycle: global axis -> local axis -> free
+          // Blender cycle: global axis -> local axis -> free (extrude: back to its normal)
           const st = useStore.getState()
-          if (d.axis !== i) { d.axis = i; d.space = 'global'; d.frame = new THREE.Quaternion() }
-          else if (d.space === 'global') { d.space = 'local'; d.frame = collectTargets(st, 'local')?.frame ?? new THREE.Quaternion() }
-          else { d.axis = null; d.space = st.gizmoSpace; d.frame = d.T.frame.clone() }
+          if (d.axis !== i) { d.axis = i; d.space = 'global'; d.frame = new THREE.Quaternion(); d.axisVec = null }
+          else if (d.space === 'global') { d.space = 'local'; d.frame = collectTargets(st, 'local', [...d.T.verts.keys()])?.frame ?? new THREE.Quaternion() }
+          else { d.axis = null; d.space = st.gizmoSpace; d.frame = d.T.frame.clone(); d.axisVec = d.normalVec ?? null }
           d.T.frame = d.op === 'scale' ? d.frame.clone() : d.T.frame
           d.hit0 = planeHit(d, d.x0, d.y0)
           updateXf(d, last.x, last.y); return
@@ -439,9 +453,17 @@ export function Viewport({ pane }: { pane: number }) {
       const at = interaction.mouse[pane] ?? { x: ctx.current.w / 2, y: ctx.current.h / 2 }
       let d: XfDrag | null = null
       if (kind === 'extrude') {
-        const n = new THREE.Vector3()
-        st.activeFaces().forEach(f => n.add(faceNormal(st.model, st.model.faces[f], sceneManager.posed)))
-        d = beginXf('modal', 'move', at.x, at.y, { modal: 'extrude', axisVec: n.lengthSq() > 1e-8 ? n.normalize() : null, label: 'Extrude' })
+        const ex = extrudeSession.cur
+        if (!ex) return
+        let n: THREE.Vector3 | null = null
+        if (ex.normal && ex.select.faces) {
+          // world-space normal of the extruded faces (posed points include the object transform)
+          const w = new THREE.Vector3()
+          ex.select.faces.forEach(f => w.add(faceNormal(st.model, st.model.faces[f], sceneManager.posed)))
+          n = w.lengthSq() > 1e-8 ? w.normalize() : ex.normal.clone()
+        }
+        const label = ex.kind === 'individual' ? 'Extrude individual faces' : ex.kind === 'edges' ? 'Extrude edges' : ex.kind === 'verts' ? 'Extrude points' : 'Extrude'
+        d = beginXf('modal', 'move', at.x, at.y, { modal: 'extrude', axisVec: n, label, verts: ex.moved })
         if (!d) { st.cancelExtrude(); return }
       } else if (kind === 'joint') {
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'joint', label: 'Grow joint' })

@@ -39,14 +39,15 @@ function rootJointOf(m: Model, g: number): number | null {
 }
 
 /** What a transform would act on right now, plus the gizmo center and local frame. Null when nothing is selected. */
-export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace): Targets | null {
+export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace, onlyVerts?: number[]): Targets | null {
   const m = st.model
   const T: Targets = { verts: new Map(), vmat: new Map(), bones: new Map(), keys: new Map(), objs: new Map(), okeys: false, center: new THREE.Vector3(), frame: new THREE.Quaternion(), count: 0 }
   const add = (p: ArrayLike<number>) => { T.center.add(new THREE.Vector3(p[0], p[1], p[2])); T.count++ }
   let frameSet = false
   const setFrame = (q: THREE.Quaternion) => { if (!frameSet && space === 'local') { T.frame.copy(q); frameSet = true } }
   const clip = st.curClip()
-  if (st.mode === 'animate') {
+  if (onlyVerts) addVerts(onlyVerts)
+  else if (st.mode === 'animate') {
     const bones = new Set(st.selBones)
     if (st.selectMode === 'object') {
       const skinned = skinnedGroups(m)
@@ -78,10 +79,15 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
       add([x.pivot[0] + x.pos[0], x.pivot[1] + x.pos[1], x.pivot[2] + x.pos[2]])
       setFrame(eulerQ(x.rot))
     }
-  } else {
+  } else addVerts(st.activeVerts())
+  if (!T.count) return null
+  T.center.divideScalar(T.count)
+  return T
+
+  function addVerts(list: number[]) {
     const vg = vertexGroups(m)
     const mats = new Map<number, THREE.Matrix4>()
-    for (const v of st.activeVerts()) {
+    for (const v of list) {
       T.verts.set(v, v3(m.verts[v]))
       const g = vg[v]
       if (g >= 0) {
@@ -92,9 +98,6 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
       add(sceneManager.posed[v] ?? m.verts[v])
     }
   }
-  if (!T.count) return null
-  T.center.divideScalar(T.count)
-  return T
 }
 
 /** World matrix of a transform about `center`, scaling along `frame`'s axes. */

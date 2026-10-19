@@ -29,7 +29,15 @@ export class Topology {
         else { this.ef.set(k, [fi]); this.edges.push(k); this.ve[a].push(k); this.ve[b].push(k) }
       }
     })
+    for (const [a, b] of m.wires ?? []) {
+      const k = this.key(a, b)
+      if (this.ef.has(k) || this.wire.has(k)) continue
+      this.wire.add(k); this.edges.push(k); this.ve[a].push(k); this.ve[b].push(k)
+    }
   }
+  /** loose edges (no faces) */
+  readonly wire = new Set<number>()
+  isWire(e: number) { return this.wire.has(e) }
 
   key(a: number, b: number) { return a < b ? a * this.N + b : b * this.N + a }
   ends(e: number): [number, number] { return [Math.floor(e / this.N), e % this.N] }
