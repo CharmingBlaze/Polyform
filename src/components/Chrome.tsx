@@ -309,8 +309,16 @@ export function StatusBar() {
   const numericOpen = useStore(s => s.numericOpen)
   const modalInfo = useStore(s => s.modalInfo)
   const xMirror = useStore(s => s.xMirror)
+  const paint = useStore(s => s.paint)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const mir = xMirror ? ' · X-mirror on' : ''
+  const paintHint = (() => {
+    const base = paint.target === 'vertex' ? 'Vertex colours' : 'Image'
+    if (paint.mode === 'erase') return `${base}: erase → transparent · drag on the model or UV editor · [ ] size`
+    if (paint.mode === 'fill') return `${base}: click a face to fill · selected faces fill together · Ctrl+click picks`
+    if (paint.mode === 'pick') return 'Click the model (or UV editor) to pick a colour'
+    return `${base}: drag on the model or UV editor · Ctrl+click picks · [ ] size · Mirror X in the Paint tab`
+  })()
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Shift add · Ctrl remove · Ctrl+click loop',
     move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
@@ -318,7 +326,7 @@ export function StatusBar() {
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',
-    paint: 'Drag on the model or in the UV editor · Ctrl+click picks · [ ] brush size · Erase → transparent · Mirror X in the Paint tab',
+    paint: paintHint,
   }
   const st = useStore.getState()
   return (

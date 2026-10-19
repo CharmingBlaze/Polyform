@@ -980,8 +980,10 @@ export const useStore = create<State>((set, get) => ({
     if (!sm) return
     const s = get(), fresh = sm.make()
     s.edit(m => { m.verts = fresh.verts; m.vbone = fresh.vbone; m.faces = fresh.faces; m.groups = fresh.groups; m.materials = fresh.materials; m.bones = fresh.bones; m.clips = fresh.clips; m.wires = fresh.wires }, `Open sample: ${sm.label}`)
-    set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null })
-    s.notify(`Opened the ${sm.label} sample (Ctrl+Z returns to your scene)`)
+    set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null, autoKey: true })
+    // jump to Animate so Space plays the clip right away
+    s.setWorkspace('animate')
+    s.notify(`Opened the ${sm.label} sample — Space plays · Ctrl+Z returns to your scene`)
     setTimeout(() => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })), 0)
   },
   setPaint: p => set(s => ({ paint: { ...s.paint, ...p, size: Math.max(1, Math.min(200, p.size ?? s.paint.size)), opacity: Math.max(0.01, Math.min(1, p.opacity ?? s.paint.opacity)), hardness: Math.max(0, Math.min(1, p.hardness ?? s.paint.hardness)) } })),

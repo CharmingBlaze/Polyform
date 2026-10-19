@@ -16,7 +16,7 @@ interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCt
 
 let cur: Active | null = null
 /** UV-editor stroke: paints directly in image space of a material. */
-interface UVActive { mat: number; lastUV: [number, number]; lastPx: [number, number]; tex: Map<string, TexStroke>; side: number }
+interface UVActive { mat: number; lastUV: [number, number]; tex: Map<string, TexStroke>; side: number }
 let uvcur: UVActive | null = null
 
 const S = () => useStore.getState()
@@ -311,7 +311,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
     return false
   }
   if (mode !== 'brush' && mode !== 'erase') return false
-  uvcur = { mat, lastUV: [u, v], lastPx: [0, 0], tex: new Map(), side: sidePx }
+  uvcur = { mat, lastUV: [u, v], tex: new Map(), side: sidePx }
   stampUV(uvcur, u, v)
   return true
 }
