@@ -4,6 +4,7 @@ import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, textures } from './textures'
+import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
 
 /**
@@ -165,7 +166,7 @@ class SceneManager {
     useStore.subscribe((st, prev) => {
       if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
-        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d) this.rebuild()
+        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d || st.tool !== prev.tool || st.paint.target !== prev.paint.target) this.rebuild()
     })
     textures.onChange(() => { this.matKey = ''; this.invalidate() })
     this.rebuild()
@@ -243,17 +244,18 @@ class SceneManager {
     const st = useStore.getState()
     const mats = st.model.materials
     const vcm = vcMaterials(st.model)
+    const weightMode = st.tool === 'paint' && st.paint.target === 'weight'
     const alphaKey = mats.map(mt => textures.hasAlpha(mt.texture) ? '1' : '0').join('')
-    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + alphaKey + '|' + [...vcm].join()
+    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + alphaKey + '|' + (weightMode ? 'w' : '') + '|' + [...vcm].join()
     if (key === this.matKey) return
     this.matKey = key
     const dispose = (m: THREE.Mesh) => (m.material as THREE.Material[]).forEach(x => x.dispose())
     Object.values(this.meshes).forEach(dispose)
     const make = (flat: boolean, tex: boolean) => mats.map((mt, mi) => {
-      const own = tex ? textures.three(mt.texture) : null
+      const own = tex && !weightMode ? textures.three(mt.texture) : null
       if (own) applyFilter(own, mt.filter)
-      // the UV checker previews unmapped materials, but would hide vertex colours
-      const map = tex ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
+      // the UV checker previews unmapped materials, but would hide vertex colours; weight paint hides maps so the heat map reads
+      const map = tex && !weightMode ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
       const alpha = !!(own && textures.hasAlpha(mt.texture))
       return new THREE.MeshStandardMaterial({
         color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
@@ -298,6 +300,15 @@ class SceneManager {
     const normals = cornerNormals(m, P, this.visibleFaces)
     const pos: number[] = [], uv: number[] = [], nrm: number[] = [], sel: number[] = [], vcol: number[] = []
     const vcm = vcMaterials(m), tmp = new THREE.Color()
+    const weightBone = st.tool === 'paint' && st.paint.target === 'weight' ? ([...st.selBones].pop() ?? -1) : -1
+    if (weightBone >= 0) ensureSkin(m)
+    const heat = (w: number) => { // blue (0) → cyan → green → yellow → red (1)
+      const t = Math.max(0, Math.min(1, w))
+      if (t < 0.25) { const u = t / 0.25; return [0, u, 1] as const }
+      if (t < 0.5) { const u = (t - 0.25) / 0.25; return [0, 1, 1 - u] as const }
+      if (t < 0.75) { const u = (t - 0.5) / 0.25; return [u, 1, 0] as const }
+      const u = (t - 0.75) / 0.25; return [1, 1 - u, 0] as const
+    }
     const edges = new Set<number>(), wire: number[] = [], selEdge: number[] = []
     this.edges = []
     const faceSel = st.mode === 'model' && (st.selectMode === 'object' || st.subModes.includes('face'))
@@ -313,7 +324,12 @@ class SceneManager {
       const fn = normals[fi]
       for (const t of this.tris(P, f)) {
         this.triFace.push(fi); triCount++
-        for (const c of t) { pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); nrm.push(fn[c].x, fn[c].y, fn[c].z); if (on) sel.push(...P[f.v[c]]); if (vcm.has(fm)) { tmp.set(cornerColor(m, f, c)); vcol.push(tmp.r, tmp.g, tmp.b) } else vcol.push(1, 1, 1) }
+        for (const c of t) {
+          pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); nrm.push(fn[c].x, fn[c].y, fn[c].z); if (on) sel.push(...P[f.v[c]])
+          if (weightBone >= 0) { const [r, g, b] = heat(weightOf(m.skin[f.v[c]], weightBone)); vcol.push(r, g, b) }
+          else if (vcm.has(fm)) { tmp.set(cornerColor(m, f, c)); vcol.push(tmp.r, tmp.g, tmp.b) }
+          else vcol.push(1, 1, 1)
+        }
       }
       const n = f.v.length
       for (let i = 0; i < n; i++) {

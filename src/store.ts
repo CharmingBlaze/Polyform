@@ -30,8 +30,8 @@ export type Shading = 'wire' | 'solid' | 'smooth' | 'textured' | 'texwire'
 export type Layout = '1' | '2h' | '2v' | '3' | '4'
 export interface Pane { type: ViewType; shade: Shading; grid: boolean }
 export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill'
-/** Paint into the face's image, or into per-corner vertex colours (glTF COLOR_0). */
-export type PaintTarget = 'image' | 'vertex'
+/** Paint into the face's image, vertex colours (glTF COLOR_0), or bone weights (up to 4). */
+export type PaintTarget = 'image' | 'vertex' | 'weight'
 export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget }
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }

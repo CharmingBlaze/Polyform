@@ -3,7 +3,7 @@ import { CmdBtn } from './CmdBtn'
 
 const MODES: { mode: PaintMode; label: string; title: string }[] = [
   { mode: 'brush', label: 'Brush', title: 'Paint with the brush colour' },
-  { mode: 'erase', label: 'Erase', title: 'Erase to transparent' },
+  { mode: 'erase', label: 'Erase', title: 'Erase to transparent (image) / subtract weight (weight paint)' },
   { mode: 'pick', label: 'Pick', title: 'Eyedropper: click the model to pick a colour (Ctrl+click while painting)' },
   { mode: 'fill', label: 'Fill', title: 'Fill the clicked face, or all selected faces when it is selected (with Vertex: a flat-coloured face)' },
 ]
@@ -23,9 +23,10 @@ export function PaintPanel() {
   return (
     <div className="paint-panel" data-testid="paint-panel">
       <CmdBtn cmd="tool.paint" label="Paint tool" active={tool === 'paint'} testid="brush" />
-      <div className="seg small paint-modes" title="Paint into the face's image, or into vertex colours (exported as glTF COLOR_0)">
+      <div className="seg small paint-modes" title="Paint into the face's image, vertex colours (COLOR_0), or bone weights (select a joint first)">
         <button className={p.target === 'image' ? 'on' : ''} data-testid="paint-target-image" onClick={() => setPaint({ target: 'image' })}>Image</button>
         <button className={p.target === 'vertex' ? 'on' : ''} data-testid="paint-target-vertex" onClick={() => setPaint({ target: 'vertex' })}>Vertex</button>
+        <button className={p.target === 'weight' ? 'on' : ''} data-testid="paint-target-weight" onClick={() => setPaint({ target: 'weight' })}>Weight</button>
       </div>
       <div className="seg small paint-modes">
         {MODES.map(m => <button key={m.mode} className={p.mode === m.mode ? 'on' : ''} title={m.title} data-testid={`paint-${m.mode}`} onClick={() => setPaint({ mode: m.mode })}>{m.label}</button>)}
@@ -47,7 +48,7 @@ export function PaintPanel() {
           {[64, 128, 256, 512, 1024, 2048].map(n => <option key={n} value={n}>{n}×{n}</option>)}
         </select>
       </label>
-      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint). Drag on the model or in the UV editor." : 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.'} [ ] resize the brush · Ctrl+click picks · Erase → transparent · each stroke is one undo step.</p>
+      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint). Drag on the model or in the UV editor." : p.target === 'vertex' ? 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.' : 'Paints bone weights on the selected joint (heat map). Brush adds, Erase subtracts, Fill replaces. Select a joint in the Outliner first.'} [ ] resize · each stroke is one undo step.</p>
     </div>
   )
 }

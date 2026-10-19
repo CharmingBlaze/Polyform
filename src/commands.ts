@@ -53,6 +53,13 @@ export const commands: Command[] = [
   { id: 'tool.point', label: 'Point tool (create vertex)', group: 'Tools', keys: 'Shift+V', run: () => S().set({ tool: 'point', mode: 'model' }) },
   { id: 'paint.brush', label: 'Paint: brush', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'brush' } }) },
   { id: 'paint.erase', label: 'Paint: eraser', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'erase' } }) },
+  { id: 'paint.weight', label: 'Weight paint', group: 'Setup', run: () => {
+    const s = S()
+    if (!s.model.bones.length) return s.notify('Add joints before weight painting')
+    if (!s.selBones.size) s.notify('Select a joint to paint (Outliner or click a bone)')
+    // Paint tab has brush size / strength; stay in Rig workspace so the skeleton stays visible
+    s.set({ tool: 'paint', mode: 'model', workspace: 'rig', railTab: 'Paint', paint: { ...s.paint, target: 'weight', mode: 'brush' }, showSkeleton: true })
+  } },
   { id: 'paint.pick', label: 'Paint: colour picker', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'pick' } }) },
   { id: 'paint.fill', label: 'Paint: fill face', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'fill' } }) },
   { id: 'paint.mirror', label: 'Paint: toggle mirror X', group: 'Paint', run: () => S().setPaint({ mirror: !S().paint.mirror }) },

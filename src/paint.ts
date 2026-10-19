@@ -3,11 +3,12 @@
 // then lands as ONE undo step holding the before-pixels of the dirty rectangle of each image it touched.
 import * as THREE from 'three'
 import type { ViewCtx } from './components/Viewport'
-import { cornerColor, faceMat, newell, type Model } from './model'
+import { cornerColor, faceMat, newell, type Model, type Skin } from './model'
 import * as P from './paintcore'
 import { sceneManager } from './scene'
 import { history, useStore } from './store'
 import { textures, type TexPatch } from './textures'
+import { ensureSkin, paintVertWeight } from './skin'
 import { faceArea3D, uvArea } from './uvops'
 
 interface Hit { fi: number; uv: [number, number]; point: THREE.Vector3; normal: THREE.Vector3 }
@@ -165,6 +166,8 @@ function fill(a: Active, h: Hit) {
 // ---------- vertex colours ----------
 interface VStroke { ctx: ViewCtx; rayAt: (x: number, y: number) => THREE.Raycaster; last: [number, number]; before: Map<number, P.RGB>; mask: Map<number, number>; changed: boolean }
 let vcur: VStroke | null = null
+interface WStroke { ctx: ViewCtx; rayAt: (x: number, y: number) => THREE.Raycaster; last: [number, number]; bone: number; before: Map<number, Skin>; mask: Map<number, number>; changed: boolean }
+let wcur: WStroke | null = null
 const CK = (fi: number, c: number) => fi * 1024 + c
 const lerpHex = (a: P.RGB, b: P.RGB, t: number) => P.rgbToHex([0, 1, 2].map(i => a[i] + (b[i] - a[i]) * t))
 
@@ -286,6 +289,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
   cur = null; vcur = null; uvcur = null
   const s = S(), mode = pickMod ? 'pick' : s.paint.mode
   if (s.paint.target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
+  if (s.paint.target === 'weight') { s.notify('Weight painting is done in the 3D view'); return false }
   const id = ensureMatTexture(mat)
   if (!id) return false
   if (mode === 'pick') {
@@ -341,11 +345,82 @@ export function paintUVEnd() {
   finish(active, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
 }
 
+
+function activePaintBone(): number {
+  const s = S()
+  const b = [...s.selBones]
+  return b.length ? b[b.length - 1]! : -1
+}
+
+function weightStart(x: number, y: number, h: Hit | null, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, mode: string): boolean {
+  const s = S(), bone = activePaintBone()
+  if (bone < 0) { s.notify('Select a joint to weight-paint'); return false }
+  if (mode === 'pick') return false
+  ensureSkin(s.model)
+  if (mode === 'fill') {
+    const faces = h ? fillFaces(h) : []
+    const verts = new Set<number>()
+    if (faces.length) faces.forEach(fi => s.model.faces[fi].v.forEach(v => verts.add(v)))
+    else s.editVerts().forEach(v => verts.add(v))
+    if (!verts.size && h) s.model.faces[h.fi].v.forEach(v => verts.add(v))
+    if (!verts.size) { s.notify('Nothing to fill: hit a face or select points'); return false }
+    const a = s.paint.opacity
+    s.edit(m => {
+      ensureSkin(m)
+      for (const v of verts) m.skin[v] = paintVertWeight(m.skin[v], bone, a, 'replace')
+      m.vbone = m.skin.map(sk => { let best = -1, bw = 0; for (let i = 0; i < 4; i++) if (sk.joints[i] >= 0 && sk.weights[i] > bw) { bw = sk.weights[i]; best = sk.joints[i] } return best })
+    }, 'Fill weights')
+    return false
+  }
+  s.checkpoint(mode === 'erase' ? 'Subtract weights' : 'Paint weights')
+  wcur = { ctx, rayAt, last: [x, y], bone, before: new Map(), mask: new Map(), changed: false }
+  weightStamp(wcur, x, y)
+  return true
+}
+
+function weightDab(st: WStroke, h: Hit, worldR: number) {
+  const s = S(), m = s.model, Pz = sceneManager.posed, p = s.paint
+  ensureSkin(m)
+  const mode = p.mode === 'erase' ? 'subtract' : 'add'
+  const hp = [h.point.x, h.point.y, h.point.z]
+  for (const fi of sceneManager.visibleFaces) {
+    const f = m.faces[fi]
+    for (let c = 0; c < f.v.length; c++) {
+      const vi = f.v[c], q = Pz[vi]
+      const d = Math.hypot(q[0] - hp[0], q[1] - hp[1], q[2] - hp[2]) / worldR
+      if (d >= 1) continue
+      const a = P.falloff(d, p.hardness) * p.opacity
+      if (a <= (st.mask.get(vi) ?? 0)) continue
+      st.mask.set(vi, a)
+      if (!st.before.has(vi)) {
+        const sk = m.skin[vi]
+        st.before.set(vi, { joints: [...sk.joints] as typeof sk.joints, weights: [...sk.weights] as typeof sk.weights })
+      }
+      m.skin[vi] = paintVertWeight(st.before.get(vi)!, st.bone, a, mode)
+      const sk = m.skin[vi]
+      let best = -1, bw = 0
+      for (let i = 0; i < 4; i++) if (sk.joints[i] >= 0 && sk.weights[i] > bw) { bw = sk.weights[i]; best = sk.joints[i] }
+      m.vbone[vi] = best
+      st.changed = true
+    }
+  }
+}
+
+function weightStamp(st: WStroke, x: number, y: number) {
+  const h = hitOf(st.rayAt(x, y))
+  if (!h) return
+  const p = S().paint, worldR = p.size * worldPerPx(st.ctx, h.point)
+  weightDab(st, h, worldR)
+  if (p.mirror) { const mh = mirrorHit(h); if (mh) weightDab(st, mh, worldR) }
+  S().touch()
+}
+
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false): boolean {
-  cur = null; vcur = null; uvcur = null
+  cur = null; vcur = null; uvcur = null; wcur = null
   const h = hitOf(rayAt(x, y))
   const s = S(), mode = pickMod ? 'pick' : s.paint.mode
+  if (s.paint.target === 'weight') return weightStart(x, y, h, rayAt, ctx, mode)
   if (!h) {
     // strokes may start off the model and paint once they reach it
     if (mode !== 'brush' && mode !== 'erase') return false
@@ -367,7 +442,7 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 
 /** Pointer move during a stroke: stamp along the screen path every size/4 px so fast strokes have no gaps. */
 export function paintAt(x: number, y: number) {
-  const a = cur ?? vcur
+  const a = cur ?? vcur ?? wcur
   if (!a) return
   const step = Math.max(1, S().paint.size / 4)
   const [lx, ly] = a.last, d = Math.hypot(x - lx, y - ly)
@@ -375,7 +450,7 @@ export function paintAt(x: number, y: number) {
   const n = Math.floor(d / step)
   for (let i = 1; i <= n; i++) {
     const px = lx + ((x - lx) * i * step) / d, py = ly + ((y - ly) * i * step) / d
-    if (cur) stampScreen(cur, px, py); else if (vcur) vstamp(vcur, px, py)
+    if (cur) stampScreen(cur, px, py); else if (vcur) vstamp(vcur, px, py); else if (wcur) weightStamp(wcur, px, py)
   }
   const k = (n * step) / d
   a.last = [lx + (x - lx) * k, ly + (y - ly) * k]
@@ -383,16 +458,55 @@ export function paintAt(x: number, y: number) {
 
 export function paintStrokeEnd() {
   if (uvcur) { paintUVEnd(); return }
-  const a = cur, v = vcur
-  cur = null; vcur = null
+  const a = cur, v = vcur, w = wcur
+  cur = null; vcur = null; wcur = null
   if (a) finish(a, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
   if (v) { if (v.changed) S().commit(); else S().cancelEdit() }
+  if (w) { if (w.changed) S().commit(); else S().cancelEdit() }
 }
 
-export const painting = () => !!(cur || vcur || uvcur)
+export const painting = () => !!(cur || vcur || uvcur || wcur)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {
+  /** Paint verts with y >= yMin toward `bone` (e2e / tools). Returns how many verts changed. */
+  paintBone(bone: number, yMin = 0.2, strength = 0.8) {
+    if (bone < 0) return 0
+    const s = S()
+    ensureSkin(s.model)
+    s.checkpoint('Paint weights')
+    let n = 0
+    const m = s.model
+    for (let vi = 0; vi < m.verts.length; vi++) {
+      if (m.verts[vi][1] < yMin) continue
+      m.skin[vi] = paintVertWeight(m.skin[vi], bone, strength, 'add')
+      let best = -1, bw = 0
+      const sk = m.skin[vi]
+      for (let i = 0; i < 4; i++) if (sk.joints[i] >= 0 && sk.weights[i] > bw) { bw = sk.weights[i]; best = sk.joints[i] }
+      m.vbone[vi] = best
+      n++
+    }
+    if (n) s.commit(); else s.cancelEdit()
+    s.touch()
+    return n
+  },
+  tipWeight: (bone?: number) => {
+    const m = S().model, b = bone ?? ([...S().selBones].pop() ?? -1)
+    if (b < 0) return 0
+    ensureSkin(m)
+    return m.skin.reduce((n, sk) => n + (sk.joints.some((j, i) => j === b && sk.weights[i] > 0.05) ? 1 : 0), 0)
+  },
+  weightAt(ctx: ViewCtx, clientX: number, clientY: number) {
+    const r = ctx.el.getBoundingClientRect()
+    const x = clientX - r.left, y = clientY - r.top
+    const rayAt = (px: number, py: number) => {
+      const rc = new THREE.Raycaster()
+      rc.setFromCamera(new THREE.Vector2((px / Math.max(1, ctx.w)) * 2 - 1, -(py / Math.max(1, ctx.h)) * 2 + 1), ctx.camera)
+      return rc
+    }
+    if (paintStrokeStart(x, y, rayAt, ctx, false)) { paintAt(x + 2, y); paintStrokeEnd() }
+    return this.tipWeight()
+  },
   hasAlpha: (id: string) => textures.hasAlpha(id),
   /** Whether the textured viewport material for material `mi` blends alpha. */
   matTransparent: (mi: number) => {

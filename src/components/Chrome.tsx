@@ -110,6 +110,7 @@ export function ToolRail() {
           <CmdBtn cmd="tool.joint" label="Joint tool" active={tool === 'joint'} testid="joint-tool" />
           <CmdBtn cmd="joint.bind" label="Bind to joint" testid="bind" />
           <CmdBtn cmd="joint.autobind" label="Auto bind" testid="auto-bind" />
+          <CmdBtn cmd="paint.weight" label="Weight paint" testid="weight-paint" />
           <CmdBtn cmd="joint.mirror" label="Mirror joints" />
           <CmdBtn cmd="joint.children" label="Select children" />
           <CmdBtn cmd="view.skeleton" label="Show skeleton" />
@@ -313,7 +314,12 @@ export function StatusBar() {
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const mir = xMirror ? ' · X-mirror on' : ''
   const paintHint = (() => {
-    const base = paint.target === 'vertex' ? 'Vertex colours' : 'Image'
+    const base = paint.target === 'weight' ? 'Weight paint' : paint.target === 'vertex' ? 'Vertex colours' : 'Image'
+    if (paint.target === 'weight') {
+      if (paint.mode === 'erase') return 'Weight: erase subtracts the selected joint · select a joint first · heat map shows its influence'
+      if (paint.mode === 'fill') return 'Weight: fill sets the selected joint to Strength on the brushed points'
+      return 'Weight: brush adds the selected joint · Erase subtracts · heat map = influence · select a joint first'
+    }
     if (paint.mode === 'erase') return `${base}: erase → transparent · drag on the model or UV editor · [ ] size`
     if (paint.mode === 'fill') return `${base}: click a face to fill · selected faces fill together · Ctrl+click picks`
     if (paint.mode === 'pick') return 'Click the model (or UV editor) to pick a colour'
