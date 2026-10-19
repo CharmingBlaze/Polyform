@@ -294,7 +294,8 @@ export const useStore = create<State>((set, get) => ({
         const fs = new Set(s.activeFaces())
         const gs = new Set([...fs].map(f => m.faces[f].g))
         const all = new Set(m.faces.map((f, i) => (gs.has(f.g) ? i : -1)).filter(i => i >= 0))
-        set({ selectMode: 'object', selFaces: all, selVerts: M.vertsOfFaces(m, all), selEdges: new Set(), mode: 'model' })
+        // keeps the current mode: Object selection is how objects are animated in Animate mode
+        set({ selectMode: 'object', selFaces: all, selVerts: M.vertsOfFaces(m, all), selEdges: new Set() })
       } else set({ selectMode: 'joint' })
       return
     }
