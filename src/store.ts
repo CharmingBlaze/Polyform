@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { create } from 'zustand'
 import * as M from './model'
 import * as G from './geom'
@@ -109,6 +110,10 @@ interface State {
   addPrimitive: (k: PrimitiveKind) => void
   deleteSelection: () => void
   extrude: () => void
+  /** Joint tool E: add a child of the selected joint and let it follow the mouse */
+  growJoint: () => void
+  knife: () => void
+  loopCut: () => void
   cancelExtrude: () => void
   finishExtrude: () => void
   duplicate: () => void
@@ -471,6 +476,24 @@ export const useStore = create<State>((set, get) => ({
     get().notify('Extrude cancelled')
   },
   finishExtrude: () => { if (get().extruding) { set({ extruding: false }); get().commit() } },
+  growJoint: () => {
+    const s = get()
+    const parent = [...s.selBones][s.selBones.size - 1]
+    if (parent === undefined) return s.notify('Select a joint to grow from (or click to place a root joint)')
+    const m = s.model, pp = m.bones[parent].pos
+    const gp = m.bones[parent].parent
+    const dir = gp >= 0 ? new THREE.Vector3(...pp).sub(new THREE.Vector3(...m.bones[gp].pos)) : new THREE.Vector3(0, 1, 0)
+    if (dir.lengthSq() < 1e-8) dir.set(0, 1, 0)
+    dir.setLength(Math.min(0.5, Math.max(0.1, dir.length())))
+    s.checkpoint('Grow joint')
+    m.bones.push({ name: `Joint ${m.bones.length + 1}`, parent, pos: [pp[0] + dir.x, pp[1] + dir.y, pp[2] + dir.z] })
+    set({ selBones: new Set([m.bones.length - 1]), selectMode: 'joint' })
+    s.touch()
+    s.commit()
+    window.dispatchEvent(new CustomEvent('modal-transform', { detail: 'joint' }))
+  },
+  knife: () => get().notify('Knife arrives with the Extrude / Loop cut / Knife step'),
+  loopCut: () => get().notify('Loop cut arrives with the Extrude / Loop cut / Knife step'),
   duplicate: () => get().runOp('mul.duplicate'),
   weld: () => get().runOp('con.weld'),
   flip: () => get().runOp('con.flip'),

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { commands } from '../src/commands'
 
-describe('keymap', () => {
-  it('no two commands share a shortcut (except deliberate aliases of the same action)', () => {
+const by = () => Object.fromEntries(commands.filter(c => c.keys).map(c => [c.keys!, c.id]))
+
+describe('keymap (team/user decision of 2026-10-19)', () => {
+  it('no two commands share a shortcut', () => {
     const seen = new Map<string, string>()
     const clashes: string[] = []
     for (const c of commands) {
@@ -13,12 +15,24 @@ describe('keymap', () => {
     }
     expect(clashes).toEqual([])
   })
-  it('agreed bindings: W/E/R gizmos, Shift+E extrude, B bevel, I key, Ctrl+P bind, Tab object/edit, Space tool off', () => {
-    const by = Object.fromEntries(commands.filter(c => c.keys).map(c => [c.keys!, c.id]))
-    expect(by['W']).toBe('tool.move'); expect(by['E']).toBe('tool.rotate'); expect(by['R']).toBe('tool.scale')
-    expect(by['Shift+E']).toBe('op.mul.extrude'); expect(by['B']).toBe('op.mul.bevel')
-    expect(by['I']).toBe('anim.key'); expect(by['Ctrl+P']).toBe('joint.bind')
-    expect(by['Tab']).toBe('sel.object'); expect(by['Space']).toBe('tool.off')
-    expect(by['Shift+R']).toBeUndefined() // reserved for modal rotate (R is the scale gizmo)
+  it('E extrudes (and grows a joint in the Joint tool); Shift+E is not extrude', () => {
+    expect(by()['E']).toBe('edit.extrude')
+    expect(by()['Shift+E']).toBeUndefined()
+  })
+  it('no W/E/R gizmo shortcuts: W is unbound and the gizmo tools have no keys', () => {
+    expect(by()['W']).toBeUndefined()
+    for (const id of ['tool.move', 'tool.rotate', 'tool.scale']) expect(commands.find(c => c.id === id)!.keys).toBeUndefined()
+  })
+  it('G / R / S start modal move / rotate / scale; Shift+R is unused', () => {
+    expect(by()['G']).toBe('xf.grab'); expect(by()['R']).toBe('xf.rotateModal'); expect(by()['S']).toBe('xf.scaleModal')
+    expect(by()['Shift+R']).toBeUndefined()
+  })
+  it('unchanged bindings', () => {
+    const b = by()
+    expect(b['B']).toBe('op.mul.bevel'); expect(b['I']).toBe('anim.key'); expect(b['K']).toBe('edit.knife')
+    expect(b['Ctrl+R']).toBe('edit.loopcut'); expect(b['Ctrl+P']).toBe('joint.bind'); expect(b['Tab']).toBe('sel.object')
+    expect(b['Ctrl+Tab']).toBe('anim.mode')
+    expect(b['1']).toBe('sel.vertex'); expect(b['2']).toBe('sel.edge'); expect(b['3']).toBe('sel.face')
+    expect(b['Space']).toBe('tool.off')
   })
 })

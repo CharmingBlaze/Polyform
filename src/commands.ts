@@ -12,13 +12,31 @@ const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}`, label: `${m[0].toUpperCase() + m.slice(1)} mode`, group: 'Selection', keys: String(n), run: () => S().setSelectMode(m) },
   { id: `sel.${m}.add`, label: `Toggle ${m} in combined mode`, group: 'Selection', keys: `Shift+${n}`, run: () => S().setSelectMode(m, true) },
 ]
-const OP_KEYS: Record<string, string> = { 'mul.extrude': 'Shift+E', 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.weld': 'Ctrl+W', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+// Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
+const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.weld': 'M', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+/** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
+export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
+export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
+const modalXf = (t: 'move' | 'rotate' | 'scale') => () => { S().set({ tool: t }); startModal(t) }
 
 export const commands: Command[] = [
   tool('select', 'Select tool', 'Q'),
-  tool('move', 'Move gizmo', 'W'),
-  tool('rotate', 'Rotate gizmo', 'E'),
-  tool('scale', 'Scale gizmo', 'R'),
+  // no W/E/R: the header toggle picks the gizmo type; G/R/S pick it and start a modal transform
+  { id: 'tool.move', label: 'Move gizmo', group: 'Tools', run: () => S().set({ tool: 'move' }) },
+  { id: 'tool.rotate', label: 'Rotate gizmo', group: 'Tools', run: () => S().set({ tool: 'rotate' }) },
+  { id: 'tool.scale', label: 'Scale gizmo', group: 'Tools', run: () => S().set({ tool: 'scale' }) },
+  { id: 'xf.grab', label: 'Grab / move (modal)', group: 'Transform', keys: 'G', run: modalXf('move') },
+  { id: 'xf.rotateModal', label: 'Rotate (modal)', group: 'Transform', keys: 'R', run: modalXf('rotate') },
+  { id: 'xf.scaleModal', label: 'Scale (modal)', group: 'Transform', keys: 'S', run: modalXf('scale') },
+  { id: 'edit.extrude', label: 'Extrude (Joint tool: grow child joint)', group: 'Multiply', keys: 'E', run: () => {
+    const s = S()
+    if (s.tool === 'joint') return s.growJoint()
+    if (s.mode !== 'model') return s.notify('Switch to Model mode to extrude')
+    s.extrude()
+    if (useStore.getState().extruding) startModal('extrude')
+  } },
+  { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
+  { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
   { id: 'tool.joint', label: 'Joint tool', group: 'Tools', keys: 'J', run: () => S().set({ tool: 'joint', mode: 'model', selectMode: 'joint' }) },
   { id: 'tool.point', label: 'Point tool (create vertex)', group: 'Tools', keys: 'Shift+V', run: () => S().set({ tool: 'point', mode: 'model' }) },
   { id: 'tool.paint', label: 'Paint tool', group: 'Tools', run: () => S().set({ tool: 'paint', mode: 'model' }) },
@@ -43,7 +61,7 @@ export const commands: Command[] = [
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
-  ...OPS.filter(o => !o.id.startsWith('prim.')).map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => (o.id === 'mul.extrude' ? S().extrude() : S().runOp(o.id)) })),
+  ...OPS.filter(o => !o.id.startsWith('prim.')).map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
   { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => S().set({ numericOpen: !S().numericOpen }) },
   { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', run: () => S().deleteSelection() },
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
@@ -53,8 +71,9 @@ export const commands: Command[] = [
   { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', run: () => S().autoBindSelection() },
   { id: 'joint.mirror', label: 'Mirror joints (L/R)', group: 'Setup', run: () => S().mirrorSelectedJoints() },
   { id: 'joint.children', label: 'Select joint children', group: 'Setup', run: () => S().selectJointChildren() },
-  { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => { const s = S(); s.set(s.mode === 'model' ? { mode: 'animate', tool: s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' : s.tool, selectMode: s.selectMode === 'object' ? 'object' : 'joint' } : { mode: 'model', playing: false }) } },
-  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', keys: 'I', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.runOp('mul.inset') } },
+  { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Ctrl+Tab', run: () => { const s = S(); s.set(s.mode === 'model' ? { mode: 'animate', tool: s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' : s.tool, selectMode: s.selectMode === 'object' ? 'object' : 'joint' } : { mode: 'model', playing: false }) } },
+  { id: 'anim.mode2', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => byId['anim.mode'].run() },
+  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', keys: 'I', run: () => S().setKey() },
   { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },
   { id: 'anim.autokey', label: 'Toggle auto-key (record)', group: 'Animate', run: () => S().set({ autoKey: !S().autoKey }) },
   { id: 'anim.copy', label: 'Copy keys', group: 'Animate', keys: 'Ctrl+C', run: () => { if (S().mode === 'animate') S().copyKeys() } },
