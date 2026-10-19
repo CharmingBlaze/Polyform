@@ -152,18 +152,27 @@ export async function importFile(file: File) {
 
 // ---------- autosave ----------
 const KEY = 'polyform:autosave'
+const TEX_KEY = 'polyform:texture'
 export async function restoreAutosave() {
   try {
     const m = await idbGet<Model>(KEY)
-    if (m && Array.isArray(m.verts)) { const mm = { ...emptyModel(), ...m }; validateModel(mm); useStore.getState().loadModel(mm); return true }
+    if (m && Array.isArray(m.verts)) {
+      const mm = { ...emptyModel(), ...m }
+      validateModel(mm)
+      mm.texture = (await idbGet<string>(TEX_KEY)) ?? undefined
+      useStore.getState().loadModel(mm)
+      return true
+    }
   } catch { /* ignore */ }
   return false
 }
 let saveTimer = 0
 export function startAutosave() {
   useStore.subscribe((s, p) => {
-    if (s.version === p.version && s.textureUrl === p.textureUrl) return
+    // the texture has its own key and is written only when it changes
+    if (s.textureUrl !== p.textureUrl) idbSet(TEX_KEY, s.textureUrl ?? undefined).catch(() => {})
+    if (s.version === p.version) return
     clearTimeout(saveTimer)
-    saveTimer = window.setTimeout(() => { idbSet(KEY, { ...useStore.getState().model, texture: useStore.getState().textureUrl ?? undefined }).catch(() => {}) }, 600)
+    saveTimer = window.setTimeout(() => { idbSet(KEY, useStore.getState().model).catch(() => {}) }, 600)
   })
 }

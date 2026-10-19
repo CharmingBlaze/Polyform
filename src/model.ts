@@ -46,9 +46,28 @@ export function validateModel(m: Model) {
   m.faces.forEach((f, i) => {
     if (!Array.isArray(f.v) || f.v.length !== 3 || !f.v.every(v => int(v, 0, nv))) throw new Error(`Face ${i} references a missing vertex`)
     if (!int(f.g, 0, ng)) throw new Error(`Face ${i} references a missing group`)
-    if (!Array.isArray(f.uv) || f.uv.length !== 3) throw new Error(`Face ${i} has invalid UVs`)
+    if (!Array.isArray(f.uv) || f.uv.length !== 3 || !f.uv.every(u => Array.isArray(u) && u.length === 2 && u.every(Number.isFinite))) throw new Error(`Face ${i} has invalid UVs`)
   })
-  m.bones.forEach((b, i) => { if (!int(b.parent, -1, nb) || b.parent === i) throw new Error(`Joint ${i} has an invalid parent`) })
+  m.bones.forEach((b, i) => {
+    if (!int(b.parent, -1, nb) || b.parent === i) throw new Error(`Joint ${i} has an invalid parent`)
+    if (!Array.isArray(b.pos) || b.pos.length !== 3 || !b.pos.every(Number.isFinite)) throw new Error(`Joint ${i} has an invalid position`)
+  })
+  // reject parent loops such as 0 -> 1 -> 0
+  m.bones.forEach((_, i) => {
+    let p = m.bones[i].parent, steps = 0
+    while (p >= 0) { if (p === i || ++steps > nb) throw new Error(`Joint ${i} is part of a parent loop`); p = m.bones[p].parent }
+  })
+  if (!int(m.frames, 2, 10001)) throw new Error('Frame count must be between 2 and 10000')
+  if (!int(m.fps, 1, 241)) throw new Error('FPS must be between 1 and 240')
+  if (typeof m.keys !== 'object' || m.keys === null) throw new Error('Keyframes are invalid')
+  const vec3 = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
+  Object.entries(m.keys).forEach(([b, frames]) => {
+    if (!int(Number(b), 0, nb)) throw new Error(`Keyframes reference missing joint ${b}`)
+    Object.entries(frames || {}).forEach(([f, k]) => {
+      if (!int(Number(f), 0, m.frames)) throw new Error(`Joint ${b} has a key at invalid frame ${f}`)
+      if (!k || !vec3(k.rot) || !vec3(k.pos)) throw new Error(`Joint ${b} frame ${f} has an invalid key`)
+    })
+  })
 }
 
 export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus'

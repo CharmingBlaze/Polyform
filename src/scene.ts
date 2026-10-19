@@ -169,6 +169,8 @@ class SceneManager {
       return
     }
     new THREE.TextureLoader().load(url, t => {
+      // a slower, older load must not replace the texture the user picked last
+      if (useStore.getState().textureUrl !== url) { t.dispose(); return }
       if (this.texture !== this.checker) this.texture.dispose()
       t.colorSpace = THREE.SRGBColorSpace
       t.magFilter = THREE.NearestFilter
