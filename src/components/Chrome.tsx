@@ -340,7 +340,7 @@ export function StatusBar() {
     return `${base}: drag on the model or UV editor · Ctrl+click picks · [ ] size · Mirror X in the Paint tab`
   })()
   const hint: Record<string, string> = {
-    select: 'Drag to box-select · Shift add · Ctrl remove · Ctrl+click loop',
+    select: 'Drag to box-select · Shift add · Ctrl remove · Alt+click edge/face loop · L / Ctrl+L linked · Ctrl+/- grow/shrink',
     move: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): drag the tip joint — parents rotate to reach · ` : '') + 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
     rotate: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): rotate orbits the tip · ` : '') + 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°' + mir,
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,

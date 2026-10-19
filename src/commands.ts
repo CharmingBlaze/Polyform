@@ -79,8 +79,12 @@ export const commands: Command[] = [
   { id: 'sel.esc', label: 'Cancel / deselect', group: 'Selection', keys: 'Esc', run: () => { const s = S(); if (s.extruding) s.cancelExtrude(); else s.selectNone() } },
   { id: 'sel.invert', label: 'Invert selection', group: 'Selection', keys: 'Ctrl+I', run: () => S().invertSelection() },
   { id: 'sel.linked', label: 'Select linked', group: 'Selection', keys: 'L', run: () => S().selectConnected() },
-  { id: 'sel.grow', label: 'Grow selection', group: 'Selection', keys: ']', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.ceil(s.paint.size * 1.25) }); else s.growSelection() } },
-  { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: '[', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.floor(s.paint.size / 1.25) }); else s.shrinkSelection() } },
+  { id: 'sel.linked2', label: 'Select linked (Ctrl+L)', group: 'Selection', keys: 'Ctrl+L', run: () => S().selectConnected() },
+  { id: 'sel.grow', label: 'Grow selection', group: 'Selection', keys: 'Ctrl+=', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.ceil(s.paint.size * 1.25) }); else s.growSelection() } },
+  { id: 'sel.grow2', label: 'Grow selection', group: 'Selection', keys: 'Ctrl++', run: () => byId['sel.grow'].run() },
+  { id: 'sel.grow3', label: 'Grow selection (bracket)', group: 'Selection', keys: ']', run: () => byId['sel.grow'].run() },
+  { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: 'Ctrl+-', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.floor(s.paint.size / 1.25) }); else s.shrinkSelection() } },
+  { id: 'sel.shrink2', label: 'Shrink selection (bracket)', group: 'Selection', keys: '[', run: () => byId['sel.shrink'].run() },
   { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', run: () => S().hideSelection() },
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
@@ -158,6 +162,8 @@ export function comboOf(e: KeyboardEvent) {
   else if (k === ' ') k = 'Space'
   else if (k === 'Escape') k = 'Esc'
   else if (k === 'Delete' || k === 'Backspace') k = 'Del'
+  else if (e.code === 'NumpadAdd' || k === 'Add') k = '+'
+  else if (e.code === 'NumpadSubtract' || k === 'Subtract') k = '-'
   else if (k.length === 1) k = k.toUpperCase()
   if (['Control', 'Shift', 'Alt', 'Meta'].includes(k)) return ''
   parts.push(k)

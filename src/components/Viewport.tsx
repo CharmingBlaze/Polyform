@@ -1019,7 +1019,24 @@ export function Viewport({ pane }: { pane: number }) {
     }
     // Alt+click: edge loop (vertex/edge modes) or face loop (face mode)
     if (click && d.alt) {
-      const e2 = pickEdge(d.x0, d.y0)
+      let e2 = pickEdge(d.x0, d.y0)
+      if (e2 < 0) {
+        // solid shading: pick the face under the cursor, then the edge of that face closest to the click
+        const fi = pickFaceScreen(d.x0, d.y0)
+        if (fi >= 0) {
+          const t = topology(m)
+          const es = t.faceEdges(fi)
+          let best = -1, bd = 1e9
+          for (const ek of es) {
+            const [a, b] = t.ends(ek)
+            const mid = new THREE.Vector3(...P[a]).lerp(new THREE.Vector3(...P[b]), 0.5)
+            const scr = project(mid)
+            const dd = (scr.x - d.x0) ** 2 + (scr.y - d.y0) ** 2
+            if (dd < bd) { bd = dd; best = ek }
+          }
+          e2 = best
+        }
+      }
       if (e2 >= 0) st.selectLoop(e2, d.add)
       return
     }

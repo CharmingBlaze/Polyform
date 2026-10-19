@@ -504,17 +504,28 @@ export const useStore = create<State>((set, get) => ({
     const s = get()
     const v = G.connectedVerts(s.model, s.activeVerts())
     if (s.selectMode === 'face' || s.selectMode === 'object') s.setSelection({ faces: M.facesOfVerts(s.model, v, true) })
-    else s.setSelection({ verts: v })
+    else if (s.selectMode === 'edge') {
+      const t = topology(s.model)
+      s.setSelection({ edges: t.edges.filter(e => { const [a, b] = t.ends(e); return v.has(a) && v.has(b) }) })
+    } else s.setSelection({ verts: v })
   },
   growSelection: () => {
     const s = get()
     const v = G.growVerts(s.model, new Set(s.activeVerts()))
-    if (s.selectMode === 'face') s.setSelection({ faces: M.facesOfVerts(s.model, v, true) }); else s.setSelection({ verts: v })
+    if (s.selectMode === 'face') s.setSelection({ faces: M.facesOfVerts(s.model, v, true) })
+    else if (s.selectMode === 'edge') {
+      const t = topology(s.model)
+      s.setSelection({ edges: t.edges.filter(e => { const [a, b] = t.ends(e); return v.has(a) && v.has(b) }) })
+    } else s.setSelection({ verts: v })
   },
   shrinkSelection: () => {
     const s = get()
     const v = G.shrinkVerts(s.model, new Set(s.activeVerts()))
-    if (s.selectMode === 'face') s.setSelection({ faces: M.facesOfVerts(s.model, v, true) }); else s.setSelection({ verts: v })
+    if (s.selectMode === 'face') s.setSelection({ faces: M.facesOfVerts(s.model, v, true) })
+    else if (s.selectMode === 'edge') {
+      const t = topology(s.model)
+      s.setSelection({ edges: t.edges.filter(e => { const [a, b] = t.ends(e); return v.has(a) && v.has(b) }) })
+    } else s.setSelection({ verts: v })
   },
   selectLoop: (e, add) => {
     const s = get(), t = topology(s.model)
