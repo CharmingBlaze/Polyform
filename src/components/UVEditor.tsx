@@ -46,7 +46,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const model = useStore(s => s.model)
   // image of the first selected face's material, else the active material
   const firstSel = [...selFaces].find(f => model.faces[f])
-  const shownMat = firstSel !== undefined ? faceMat(model, model.faces[firstSel]) : Math.min(activeMat, model.materials.length - 1)
+  const [pick, setPick] = useState<{ mat: number; sel: Set<number> } | null>(null)
+  const autoMat = firstSel !== undefined ? faceMat(model, model.faces[firstSel]) : Math.min(activeMat, model.materials.length - 1)
+  // the dropdown overrides the shown image until the selection changes
+  const shownMat = pick && pick.sel === selFaces && model.materials[pick.mat] ? pick.mat : autoMat
   const texId = model.materials[shownMat]?.texture ?? null
   const texImg = texId && !checker ? textures.canvas(texId) : null
   const [, force] = useState(0)
@@ -345,6 +348,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-toolbar">
         {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => <B key={t} id={t} on={tool === t} label={t[0].toUpperCase() + t.slice(1)} tip={t === 'select' ? 'Select (click / drag); drag a selected element to move it' : `${t} (or ${t === 'move' ? 'G' : t === 'rotate' ? 'R' : 'S'} while hovering)`} onClick={() => setTool(t)} />)}
         <span className="grow" />
+        <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
+          {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
+        </select>
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
         <button title="Reset view" data-testid="uv-reset-view" onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>⟲</button>
       </div>

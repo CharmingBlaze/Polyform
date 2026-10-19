@@ -1,8 +1,10 @@
 // E2E: UV workspace and images (build step 5). Auto UV runs xatlas in a Web Worker.
 import { chromium } from 'playwright-core'
+import validator from 'gltf-validator'
+import fs from 'node:fs'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'
 const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
-const p = await b.newPage({ viewport: { width: 1440, height: 900 } })
+const p = await b.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true })
 const errs = []; p.on('pageerror', e => errs.push(e.message))
 await p.goto(url); await p.waitForFunction(() => window.__polyform && window.__polyformViews?.[0] && window.__polyformScene); await p.waitForTimeout(400)
 const results = []
@@ -139,6 +141,64 @@ const sceneUV = () => S(() => Array.from(window.__polyformScene.meshGeo.getAttri
 }
 await S(() => window.__polyform.getState().setSelection({ faces: [4] })); await frame()
 await p.screenshot({ path: '/workspace/shot-uv-workspace.png' })
+
+// 5. Images library + per-face materials: two images on different faces of a box, export, validate
+{
+  await reset()
+  await p.click('[data-testid="tab-uv"]'); await frame()
+  await p.click('[data-testid="uv-proj-box"]'); await frame()
+  // two real PNG files (8×8 red, 16×8 blue) through the file input
+  const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 2, 2); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
+  const red = Buffer.from(await png(8, 8, '#e04040'), 'base64'), blue = Buffer.from(await png(16, 8, '#4060e0'), 'base64')
+  const mats0 = await S(() => window.__polyform.getState().model.materials.length)
+  await p.setInputFiles('[data-testid="img-add"]', [{ name: 'red.png', mimeType: 'image/png', buffer: red }, { name: 'blue.png', mimeType: 'image/png', buffer: blue }])
+  await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n + 2, mats0, { timeout: 5000 }).catch(() => {})
+  const A = mats0, Bm = mats0 + 1
+  check('Add image: both files land in the Images library', (await p.locator('[data-testid^="img-row-"]').count()) === 2 && (await p.textContent(`[data-testid="img-row-${A}"]`)).includes('red') && (await p.textContent(`[data-testid="img-row-${Bm}"]`)).includes('16×8'))
+  check('each image row has a thumbnail', (await p.locator('.images .thumb').evaluateAll(els => els.filter(e => e.src.startsWith('data:image/png')).length)) === 2)
+  await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0, 1, 4, 5] }) })
+  await p.click(`[data-testid="img-row-${A}"]`); await p.click('[data-testid="img-assign"]'); await frame()
+  await S(() => window.__polyform.getState().setSelection({ faces: [2, 3] }))
+  await p.click(`[data-testid="img-row-${Bm}"]`); await p.click('[data-testid="img-assign"]'); await frame()
+  const mats = await S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => (f.mat !== undefined ? f.mat : m.groups[f.g].mat)) })
+  check('Assign to selection: faces 0,1,4,5 get red, 2,3 get blue', JSON.stringify(mats) === JSON.stringify([A, A, Bm, Bm, A, A]), JSON.stringify(mats))
+  check('rows count the faces using each image', (await p.textContent(`[data-testid="img-uses-${A}"]`)).trim() === '4 f' && (await p.textContent(`[data-testid="img-uses-${Bm}"]`)).trim() === '2 f')
+  check('the UV editor shows the selected face\'s image', (await p.inputValue('[data-testid="uv-image"]')) === String(Bm))
+  await p.keyboard.press('Control+z'); await frame()
+  check('one Ctrl+Z undoes the assignment', JSON.stringify(await S(() => window.__polyform.getState().model.faces.map(f => f.mat ?? -1))) === JSON.stringify([A, A, -1, -1, A, A]))
+  await p.keyboard.press('Control+Shift+z'); await frame()
+  // drop an image on the 3D view with a face selected: added + assigned in one step
+  await S(() => window.__polyform.getState().setSelection({ faces: [3] }))
+  const green = await png(4, 4, '#40e060')
+  const dt = await p.evaluateHandle(b64 => { const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0)); const d = new DataTransfer(); d.items.add(new File([bytes], 'green.png', { type: 'image/png' })); return d }, green)
+  await p.dispatchEvent('[data-testid="views"]', 'drop', { dataTransfer: dt })
+  await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n + 3, mats0, { timeout: 5000 }).catch(() => {})
+  check('dropping an image on the 3D view with faces selected assigns it', (await S(() => window.__polyform.getState().model.faces[3].mat)) === mats0 + 2)
+  await p.keyboard.press('Control+z'); await frame()
+  check('one Ctrl+Z reverts the drop (image and assignment)', JSON.stringify(await S(() => [window.__polyform.getState().model.materials.length, window.__polyform.getState().model.faces[3].mat])) === JSON.stringify([mats0 + 2, Bm]))
+  await S(() => window.__polyform.getState().setSelection({ faces: [0, 1, 4, 5] })); await frame()
+  await p.screenshot({ path: '/workspace/shot-images.png' })
+  // export
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press('Control+e')])
+  const file = '/tmp/polyform-uv-images.glb'; await dl.saveAs(file)
+  const bytes = new Uint8Array(fs.readFileSync(file))
+  const report = await validator.validateBytes(bytes)
+  check('export: validator 0 errors', report.issues.numErrors === 0, JSON.stringify(report.issues.messages.filter(m => m.severity === 0).slice(0, 3)))
+  const dv = new DataView(bytes.buffer), jlen = dv.getUint32(12, true)
+  const gltf = JSON.parse(new TextDecoder().decode(bytes.slice(20, 20 + jlen)))
+  const bin = bytes.slice(20 + jlen + 8)
+  const prims = gltf.meshes.flatMap(me => me.primitives)
+  check('export: two images on two face sets = 2 primitives', prims.length === 2, String(prims.length))
+  const texOf = pr => gltf.materials[pr.material]?.pbrMetallicRoughness?.baseColorTexture?.index
+  const imgs = prims.map(pr => gltf.images[gltf.textures[texOf(pr)]?.source])
+  check('export: each primitive has its own baseColorTexture', prims.every(pr => texOf(pr) !== undefined) && new Set(imgs.map(i => JSON.stringify(i))).size === 2)
+  check('export: 2 embedded PNG images, unused ones omitted', gltf.images.length === 2 && gltf.images.every(i => i.mimeType === 'image/png' && i.bufferView !== undefined))
+  // "re-import": decode the embedded PNG headers and match the sizes
+  const sizeOf = im => { const bv = gltf.bufferViews[im.bufferView]; const d = new DataView(bin.buffer, bin.byteOffset + (bv.byteOffset || 0), bv.byteLength); return `${d.getUint32(16)}x${d.getUint32(20)}` }
+  const sizes = imgs.map(sizeOf).sort()
+  check('re-import: the two embedded images are the 16×8 and 8×8 files', JSON.stringify(sizes) === '["16x8","8x8"]', JSON.stringify(sizes))
+  check('export: primitive triangle counts 8 (red) + 4 (blue)', JSON.stringify(prims.map(pr => gltf.accessors[pr.indices].count / 3).sort()) === '[4,8]', JSON.stringify(prims.map(pr => pr.indices !== undefined && gltf.accessors[pr.indices].count)))
+}
 await b.close()
 for (const [n, ok, info] of results) console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info)
 console.log('pageErrors', JSON.stringify(errs))

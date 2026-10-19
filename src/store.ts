@@ -183,6 +183,9 @@ interface State {
   autoUV: () => Promise<boolean>
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
+  /** Images library: each image becomes a material named after it (one material per image). With assign, the
+   *  selected faces get the first one, in the same undo step. Returns the new material indices. */
+  addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
 }
 
 let toastTimer = 0
@@ -833,6 +836,24 @@ export const useStore = create<State>((set, get) => ({
     if (!faces.length) return s.notify('Select faces (or objects) to assign a material')
     s.edit(m => faces.forEach(f => { if (m.groups[m.faces[f].g].mat === mat) delete m.faces[f].mat; else m.faces[f].mat = mat }), 'Assign material')
     set({ activeMat: mat })
+  },
+  addImages: (imgs, assign = false) => {
+    const s = get()
+    if (!imgs.length) return []
+    const faces = assign ? s.activeFaces() : []
+    const out: number[] = []
+    s.edit(m => {
+      for (const im of imgs) {
+        const base = im.name.replace(/\.[^.]+$/, '') || 'Image'
+        let name = base, k = 2
+        while (m.materials.some(mt => mt.name === name)) name = `${base} ${k++}`
+        out.push(m.materials.length)
+        m.materials.push({ ...M.newMaterial(name, '#ffffff'), texture: im.id })
+      }
+      for (const f of faces) { if (m.groups[m.faces[f].g].mat === out[0]) delete m.faces[f].mat; else m.faces[f].mat = out[0] }
+    }, faces.length ? 'Add image and assign' : 'Add image')
+    set({ activeMat: out[0] })
+    return out
   },
   setMaterialTexture: (mat, tex) => get().edit(m => { m.materials[mat].texture = tex }, tex ? 'Set texture' : 'Remove texture'),
 }))

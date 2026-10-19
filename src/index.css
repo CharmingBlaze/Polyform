@@ -202,3 +202,8 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .draw-hint { font-size: 11px; padding: 4px 8px 6px; line-height: 1.4; }
 .draw-btns { display: flex; gap: 6px; padding: 4px 8px 8px; }
 .draw-btns .tool-btn { flex: 1; justify-content: center; }
+
+.images .img-row { gap: 8px; }
+.images .thumb { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; background: #0f1116; border: 1px solid var(--line); border-radius: 4px; }
+.images .name small { margin-left: 6px; font-weight: 400; }
+.images.drop { outline: 2px dashed var(--accent, #7c6cff); outline-offset: -4px; }

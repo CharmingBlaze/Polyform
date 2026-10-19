@@ -217,10 +217,11 @@ export async function importFile(file: File) {
     return st.notify(`Opened ${file.name}`)
   }
   if (/^(png|jpe?g|webp)$/.test(ext)) {
+    // add to the Images library; with faces selected it is assigned to them in the same undo step
     const id = await importImage(file)
-    const mat = st.activeMat
-    st.setMaterialTexture(mat, id)
-    return st.notify(`Image applied to ${st.model.materials[mat].name}`)
+    const assign = st.selectMode !== 'joint' && st.activeFaces().length > 0
+    const [mat] = st.addImages([{ id, name: file.name }], assign)
+    return st.notify(assign ? `${file.name} assigned to the selected faces` : `${file.name} added to Images (material ${useStore.getState().model.materials[mat].name})`)
   }
   let obj: THREE.Object3D
   if (ext === 'obj') obj = new OBJLoader().parse(await file.text())

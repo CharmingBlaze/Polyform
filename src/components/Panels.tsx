@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
 import { useStore } from '../store'
-import { triCount } from '../model'
+import { faceMat, triCount } from '../model'
+import { textures } from '../textures'
+import { importImage } from '../io'
 import { UVEditor } from './UVEditor'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
   const [tab, setTab] = useState<'scene' | 'joints' | 'uv'>('scene')
   const mode = useStore(s => s.mode)
+  const uvSpace = useStore(s => s.uvSpace)
   useEffect(() => { if (mode === 'animate' && tab === 'scene') setTab('joints') }, [mode])
+  useEffect(() => { if (uvSpace) setTab('uv') }, [uvSpace])
   return (
     <aside className="sidebar">
       <div className="tabs">
         <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Groups</button>
         <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>
-        <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> UV / Texture</button>
+        <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>
       </div>
       <div className="tab-body">
         {tab === 'scene' && <Groups />}
@@ -257,6 +261,68 @@ function FrameInput({ frame, max, onSet }: { frame: number; max: number; onSet: 
 
 function UVSide() {
   const uvSpace = useStore(s => s.uvSpace)
-  if (!uvSpace) return <UVEditor />
-  return <div className="list"><Empty title="UV editor is open beside the 3D view" body="Close the UV workspace (Map tab › UV workspace) to edit UVs here." /></div>
+  return (
+    <>
+      <Images />
+      {!uvSpace && <div className="card"><div className="label">UV editor</div><UVEditor /></div>}
+    </>
+  )
+}
+
+const thumbs = new Map<string, { v: number; url: string }>()
+function thumb(id: string) {
+  const v = textures.entryVersion(id), hit = thumbs.get(id)
+  if (hit && hit.v === v) return hit.url
+  const src = textures.canvas(id)
+  if (!src) return ''
+  const c = document.createElement('canvas'), k = 44 / Math.max(src.width, src.height)
+  c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k))
+  const g = c.getContext('2d')!; g.imageSmoothingEnabled = false; g.drawImage(src, 0, 0, c.width, c.height)
+  const url = c.toDataURL('image/png')
+  thumbs.set(id, { v, url })
+  return url
+}
+
+/** Images library: every image is a material; assign it to the selected faces (per-face materials). */
+function Images() {
+  const m = useStore(s => s.model)
+  useStore(s => s.version); useStore(s => s.texRev)
+  const activeMat = useStore(s => s.activeMat)
+  const selFaces = useStore(s => s.selFaces)
+  const [editing, setEditing] = useState<number | null>(null)
+  const [over, setOver] = useState(false)
+  const st = useStore.getState()
+  const imgs = m.materials.map((mt, i) => ({ mt, i })).filter(x => x.mt.texture && textures.has(x.mt.texture))
+  const uses = (i: number) => m.faces.reduce((n, f) => n + (faceMat(m, f) === i ? 1 : 0), 0)
+  const add = async (files: File[], assign: boolean) => {
+    const got: { id: string; name: string }[] = []
+    for (const f of files) {
+      try { got.push({ id: await importImage(f), name: f.name }) } catch (e) { useStore.getState().notify(String((e as Error).message || e)) }
+    }
+    if (got.length) useStore.getState().addImages(got, assign)
+  }
+  return (
+    <div className={`list images ${over ? 'drop' : ''}`} data-testid="images"
+      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOver(true) }} onDragLeave={() => setOver(false)}
+      onDrop={e => { e.preventDefault(); e.stopPropagation(); setOver(false); void add([...e.dataTransfer.files], false) }}>
+      <div className="btn-row">
+        <label className="btn primary" data-testid="img-add-btn">Add image…<input data-testid="img-add" type="file" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden onChange={e => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; void add(fs, false) }} /></label>
+        <button data-testid="img-assign" disabled={!imgs.some(x => x.i === activeMat) || !selFaces.size} title="Give the selected faces the highlighted image" onClick={() => st.assignMaterial(activeMat)}>Assign to selection</button>
+      </div>
+      {!imgs.length && <Empty title="No images yet" body="Add PNG, JPEG or WebP images, or drop them here. Dropping an image on the 3D view with faces selected assigns it right away." />}
+      {imgs.map(({ mt, i }) => {
+        const sz = textures.size(mt.texture!)
+        return (
+          <div key={i} className={`row img-row ${activeMat === i ? 'on' : ''}`} data-testid={`img-row-${i}`} onClick={() => useStore.setState({ activeMat: i })}
+            onDoubleClick={() => setEditing(i)}>
+            <img className="thumb" src={thumb(mt.texture!)} alt="" />
+            {editing === i
+              ? <input autoFocus defaultValue={mt.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.materials[i].name = e.target.value || mt.name), 'Rename image'); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
+              : <span className="name">{mt.name}<small className="dim">{sz ? ` ${sz.w}×${sz.h}` : ''}</small></span>}
+            <span className="meta" data-testid={`img-uses-${i}`}>{uses(i)} f</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
