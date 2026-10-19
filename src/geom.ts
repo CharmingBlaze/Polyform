@@ -5,6 +5,7 @@ import {
   triangulate, vertsOfFaces, weldVerts, type Face, type Model, type Vec2, type Vec3,
   unshareVerts, remapWires,
 } from './model'
+import { appendVert, appendVertCopy } from './skin'
 
 export type Axis = 0 | 1 | 2
 const V = (p: Vec3) => new THREE.Vector3(p[0], p[1], p[2])
@@ -13,8 +14,7 @@ const A = (v: THREE.Vector3): Vec3 => [v.x, v.y, v.z]
 // ---------------------------------------------------------------- points & polygons
 
 export function createVertex(m: Model, p: Vec3, bone = -1): number {
-  m.verts.push([...p] as Vec3); m.vbone.push(bone)
-  return m.verts.length - 1
+  return appendVert(m, p, bone)
 }
 
 /**
@@ -273,7 +273,7 @@ export function mirrorFaces(m: Model, faces: number[], axis: Axis, center = 0, c
     p[axis] = 2 * center - p[axis]
     if (!copy) { m.verts[v] = p; map.set(v, v); return }
     if (Math.abs(m.verts[v][axis] - center) < weldEps) { map.set(v, v); return }
-    map.set(v, m.verts.length); m.verts.push(p); m.vbone.push(m.vbone[v])
+    map.set(v, appendVertCopy(m, v)); m.verts[map.get(v)!] = p  // position overridden after copy
   })
   const out: number[] = []
   for (const fi of faces) {
@@ -353,7 +353,7 @@ export function separateFaces(m: Model, faces: number[], name: string): number {
     for (const fi of faces) m.faces[fi].v = m.faces[fi].v.map(v => {
       if (!outside.has(v)) return v
       let d = dup.get(v)
-      if (d === undefined) { d = m.verts.length; m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); dup.set(v, d) }
+      if (d === undefined) { d = appendVertCopy(m, v); dup.set(v, d) }
       return d
     })
   }
@@ -508,7 +508,7 @@ export function arrayFaces(m: Model, faces: number[], count: number, offset: Vec
     const map = new Map<number, number>()
     verts.forEach(v => {
       const p = V(m.verts[v]).sub(c).multiplyScalar(s).applyQuaternion(q).add(c).add(new THREE.Vector3(...offset).multiplyScalar(k))
-      map.set(v, m.verts.length); m.verts.push(A(p)); m.vbone.push(m.vbone[v])
+      const ni = appendVertCopy(m, v); m.verts[ni] = A(p); map.set(v, ni)
     })
     for (const fi of faces) {
       const f = m.faces[fi]
@@ -524,7 +524,7 @@ export function unweldFaces(m: Model, faces: number[]) {
   const seen = new Set<number>()
   for (const fi of faces) m.faces[fi].v = m.faces[fi].v.map(v => {
     if (!seen.has(v)) { seen.add(v); return v }
-    m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); return m.verts.length - 1
+    return appendVertCopy(m, v)
   })
 }
 

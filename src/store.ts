@@ -7,6 +7,7 @@ import { pairs as xPairs, type XMirror } from './xmirror'
 import * as G from './geom'
 import * as B from './bones'
 import { sampleBone, sampleObject, skinnedGroups } from './anim'
+import { setVertBone } from './skin'
 import { History } from './history'
 import { defaults, opById, type OpSel } from './ops'
 import { topology } from './topology'
@@ -739,7 +740,7 @@ export const useStore = create<State>((set, get) => ({
     if (bone === undefined) return s.notify('Select a joint first (Joints panel or Setup tab)')
     if (!verts.length) return s.notify('Select points or faces to bind')
     let cleared: ReturnType<typeof B.clearObjectKeysOfSkinned> = []
-    s.edit(m => { verts.forEach(v => (m.vbone[v] = bone)); cleared = B.clearObjectKeysOfSkinned(m) }, 'Bind to joint')
+    s.edit(m => { verts.forEach(v => setVertBone(m, v, bone)); cleared = B.clearObjectKeysOfSkinned(m) }, 'Bind to joint')
     s.notify(`Bound ${verts.length} points to ${s.model.bones[bone].name}${clearedNote(cleared)}`)
   },
   unbindSelection: () => {
@@ -748,7 +749,7 @@ export const useStore = create<State>((set, get) => ({
     // Joint tool with joints selected: unbind everything bound to them
     if (s.selectMode === 'joint' && s.selBones.size) verts = s.model.vbone.map((b, i) => (s.selBones.has(b) ? i : -1)).filter(i => i >= 0)
     if (!verts.length) return s.notify('Nothing to unbind: select bound points or joints')
-    s.edit(m => verts.forEach(v => (m.vbone[v] = -1)), 'Unbind')
+    s.edit(m => verts.forEach(v => setVertBone(m, v, -1)), 'Unbind')
     s.notify(`Unbound ${verts.length} points`)
   },
   selectBoundPoints: () => {
@@ -979,7 +980,7 @@ export const useStore = create<State>((set, get) => ({
     const sm = SAMPLES.find(x => x.id === id)
     if (!sm) return
     const s = get(), fresh = sm.make()
-    s.edit(m => { m.verts = fresh.verts; m.vbone = fresh.vbone; m.faces = fresh.faces; m.groups = fresh.groups; m.materials = fresh.materials; m.bones = fresh.bones; m.clips = fresh.clips; m.wires = fresh.wires }, `Open sample: ${sm.label}`)
+    s.edit(m => { m.verts = fresh.verts; m.vbone = fresh.vbone; m.skin = fresh.skin; m.faces = fresh.faces; m.groups = fresh.groups; m.materials = fresh.materials; m.bones = fresh.bones; m.clips = fresh.clips; m.wires = fresh.wires }, `Open sample: ${sm.label}`)
     set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null, autoKey: true })
     // jump to Animate so Space plays the clip right away
     s.setWorkspace('animate')

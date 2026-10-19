@@ -5,6 +5,7 @@ import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
+import { ensureSkin } from './skin'
 import { useStore } from './store'
 import { importGLTF } from './gltfImport'
 import { parseMs3d } from './ms3d'
@@ -84,7 +85,15 @@ export function buildExportScene(m: Model) {
         const v = f.v[c]
         pos.push(...P[v]); nrm.push(N[i][c].x, N[i][c].y, N[i][c].z); uv.push(f.uv[c][0], f.uv[c][1])
         if (vcm.size) { if (vcm.has(mt)) tmp.set(cornerColor(m, f, c)); else tmp.setRGB(1, 1, 1); col.push(tmp.r, tmp.g, tmp.b) }
-        si.push(m.vbone[v] >= 0 ? m.vbone[v] + 1 : 0, 0, 0, 0); sw.push(1, 0, 0, 0) // one joint per point, weight 1 (unbound -> Root)
+        {
+          ensureSkin(m)
+          const sk = m.skin[v]
+          // glTF joint 0 = Root; our bone i → joint i+1. Unbound → Root weight 1.
+          if (!sk || sk.joints.every((j, k) => j < 0 || sk.weights[k] <= 0)) { si.push(0, 0, 0, 0); sw.push(1, 0, 0, 0) }
+          else {
+            for (let k = 0; k < 4; k++) { si.push(sk.joints[k] >= 0 && sk.weights[k] > 0 ? sk.joints[k] + 1 : 0); sw.push(sk.joints[k] >= 0 ? sk.weights[k] : 0) }
+          }
+        }
         count++
       }
     }

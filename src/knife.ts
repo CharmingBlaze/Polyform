@@ -9,6 +9,7 @@
  */
 import * as THREE from 'three'
 import { edgeKey, edgeEnds, triangulate, type Face, type Model, type Vec2, type Vec3 } from './model'
+import { appendVertCopy, appendVertLerp } from './skin'
 import { topology, type Topology } from './topology'
 
 export type KPoint =
@@ -201,10 +202,7 @@ export function applyKnife(m: Model, chords: Chord[]): number[] {
     const list = edgeNew.get(key) ?? []
     let hit = list.find(x => Math.abs(x.t - k.t) < 1e-6)
     if (!hit) {
-      const pa = m.verts[k.a], pb = m.verts[k.b]
-      hit = { t: k.t, v: m.verts.length }
-      m.verts.push([pa[0] + (pb[0] - pa[0]) * k.t, pa[1] + (pb[1] - pa[1]) * k.t, pa[2] + (pb[2] - pa[2]) * k.t])
-      m.vbone.push(k.t <= 0.5 ? m.vbone[k.a] : m.vbone[k.b])
+      hit = { t: k.t, v: appendVertLerp(m, k.a, k.b, k.t) }
       list.push(hit); edgeNew.set(key, list)
     }
     return hit.v
@@ -221,8 +219,8 @@ export function applyKnife(m: Model, chords: Chord[]): number[] {
         p[0] += q[0] * k.w[i]; p[1] += q[1] * k.w[i]; p[2] += q[2] * k.w[i]
         uv[0] += u[0] * k.w[i]; uv[1] += u[1] * k.w[i]
       }
-      r = { v: m.verts.length, uv }
-      m.verts.push(p); m.vbone.push(m.vbone[f.v[k.c[0]]])
+      r = { v: appendVertCopy(m, f.v[k.c[0]]), uv }
+      m.verts[r.v] = p
       innerV.set(k, r)
     }
     return r

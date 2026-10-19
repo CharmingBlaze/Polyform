@@ -8,7 +8,8 @@
  * texel density once the final distance is known (updateWallUVs), so the texture continues onto the wall.
  */
 import * as THREE from 'three'
-import { edgeKey, faceNormal, newGroup, remapWires, type Face, type Model, type Vec2, type Vec3 } from './model'
+import { edgeKey, faceNormal, newGroup, remapWires, type Face, type Model, type Vec2 } from './model'
+import { appendVertCopy } from './skin'
 
 export type ExtrudeKind = 'region' | 'individual' | 'edges' | 'verts'
 
@@ -57,7 +58,7 @@ function dupper(m: Model) {
   const map = new Map<number, number>()
   const get = (v: number) => {
     let d = map.get(v)
-    if (d === undefined) { d = m.verts.length; m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); map.set(v, d) }
+    if (d === undefined) { d = appendVertCopy(m, v); map.set(v, d) }
     return d
   }
   return { map, get }

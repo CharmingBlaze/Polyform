@@ -2,6 +2,7 @@
 import * as THREE from 'three'
 import type { Clip, Model, Vec3 } from './model'
 import { skinnedGroups } from './anim'
+import { ensureSkin, remapSkin, setVertBone, syncVbone } from './skin'
 
 export function descendants(m: Model, b: number): number[] {
   const out: number[] = []
@@ -18,7 +19,9 @@ export function sortBones(m: Model) {
   const map: number[] = []
   order.forEach((o, i) => (map[o] = i))
   m.bones = order.map(o => ({ ...m.bones[o], parent: m.bones[o].parent >= 0 ? map[m.bones[o].parent] : -1 }))
-  m.vbone = m.vbone.map(b => (b >= 0 ? map[b] : -1))
+  ensureSkin(m)
+  m.skin = m.skin.map(sk => remapSkin(sk, old => (old >= 0 ? map[old] : -1)))
+  syncVbone(m)
   for (const c of m.clips) { const k: Clip['keys'] = {}; Object.entries(c.keys).forEach(([b, v]) => (k[map[Number(b)]] = v)); c.keys = k }
 }
 
@@ -57,12 +60,18 @@ export function mirrorJoints(m: Model, sel: number[]): number[] {
   }
   // originals without a side marker become .L so the pair reads Arm.L / Arm.R
   for (const b of set) if (mirrorName(m.bones[b].name) === `${m.bones[b].name}.R`) m.bones[b].name = `${m.bones[b].name}.L`
-  m.vbone = m.vbone.map((b, i) => {
-    const t = twin.get(b)
-    if (t === undefined) return b
-    const side = Math.sign(m.bones[b].pos[0]) || 1
-    return Math.sign(m.verts[i][0]) === -side && Math.abs(m.verts[i][0]) > 1e-4 ? t : b
+  ensureSkin(m)
+  m.skin = m.skin.map((sk, i) => {
+    // rebind each influence that was mirrored when the vert lies on the opposite side
+    const joints = sk.joints.map(b => {
+      const t = twin.get(b)
+      if (t === undefined) return b
+      const side = Math.sign(m.bones[b].pos[0]) || 1
+      return Math.sign(m.verts[i][0]) === -side && Math.abs(m.verts[i][0]) > 1e-4 ? t : b
+    }) as typeof sk.joints
+    return { joints, weights: [...sk.weights] as typeof sk.weights }
   })
+  syncVbone(m)
   return set.map(b => twin.get(b)!)
 }
 
@@ -90,7 +99,7 @@ export function autoBind(m: Model, verts: number[]): number {
     p.set(...(m.verts[v] as Vec3))
     let best = 0, bd = Infinity
     for (const s of segs) { const d = distToSegment(p, s.a, s.b); if (d < bd - 1e-9) { bd = d; best = s.j } }
-    m.vbone[v] = best
+    setVertBone(m, v, best)
   }
   return verts.length
 }

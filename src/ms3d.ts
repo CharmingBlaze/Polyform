@@ -90,6 +90,7 @@ export function parseMs3d(buf: ArrayBuffer): Model {
   m.materials = mats.length ? mats.map(x => newMaterial(x.name, x.color)) : [newMaterial()]
   m.verts = verts.map(v => v.p)
   m.vbone = verts.map(() => -1)
+  m.skin = verts.map(() => ({ joints: [-1, -1, -1, -1] as [number, number, number, number], weights: [0, 0, 0, 0] as [number, number, number, number] }))
 
   // joints first (parent-by-name), rest pose = local pos accumulated to world
   const jIndex = new Map<string, number>()
@@ -114,7 +115,13 @@ export function parseMs3d(buf: ArrayBuffer): Model {
     return { name: j.name, parent, pos: wp }
   })
   // bind vertices (bone index is into original joint list)
-  verts.forEach((v, i) => { m.vbone[i] = v.bone >= 0 && v.bone < joints.length ? (remap.get(v.bone) ?? -1) : -1 })
+  verts.forEach((v, i) => {
+    const b = v.bone >= 0 && v.bone < joints.length ? (remap.get(v.bone) ?? -1) : -1
+    m.vbone[i] = b
+    m.skin[i] = b >= 0
+      ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] }
+      : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
+  })
 
   if (groups.length) {
     groups.forEach((g, gi) => {

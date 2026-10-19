@@ -18,7 +18,7 @@ function part(m: Model, g: number, polys: Poly[], at: Vec3, bone: number, color:
     const q: Vec3 = [p[0] + at[0], p[1] + at[1], p[2] + at[2]]
     const k = q.map(x => Math.round(x * 1e5)).join()
     let v = weld.get(k)
-    if (v === undefined) { v = m.verts.length; m.verts.push(q); m.vbone.push(bone); weld.set(k, v) }
+    if (v === undefined) { v = m.verts.length; m.verts.push(q); m.vbone.push(bone); m.skin.push({ joints: [bone, -1, -1, -1], weights: [1, 0, 0, 0] }); weld.set(k, v) }
     return v
   }
   for (const poly of polys) {

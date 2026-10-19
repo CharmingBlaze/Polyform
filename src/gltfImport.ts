@@ -2,6 +2,8 @@
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { emptyModel, identityXform, newClip, newGroup, newMaterial, type Key, type Model, type OKey, type Vec2, type Vec3 } from './model'
+import { normalizeSkin, primaryJoint } from './skin'
+import type { Skin } from './model'
 import { textures } from './textures'
 
 const eulerOf = (q: THREE.Quaternion): Vec3 => {
@@ -116,14 +118,19 @@ export async function gltfToModel(gltf: GLTF, name = 'Imported'): Promise<Model>
       if (vi === undefined) {
         vi = m.verts.length
         m.verts.push([tmp.x, tmp.y, tmp.z])
-        let bone = -1
+        const sk: Skin = { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
         if (skinned && skinI && skinW) {
-          let best = 0, bw = -1
-          for (let j = 0; j < 4; j++) { const w = skinW.getComponent(i, j); if (w > bw) { bw = w; best = skinI.getComponent(i, j) } }
-          const bobj = sm.skeleton.bones[best]
-          bone = bobj && boneIndex.has(bobj) ? boneIndex.get(bobj)! : -1
+          for (let j = 0; j < 4; j++) {
+            const w = skinW.getComponent(i, j)
+            const bobj = sm.skeleton.bones[skinI.getComponent(i, j)]
+            const bone = bobj && boneIndex.has(bobj) ? boneIndex.get(bobj)! : -1
+            sk.joints[j] = bone
+            sk.weights[j] = bone >= 0 ? w : 0
+          }
         }
-        m.vbone.push(bone)
+        const norm = normalizeSkin(sk)
+        m.skin.push(norm)
+        m.vbone.push(primaryJoint(norm))
         weld.set(k, vi)
       }
       remap[i] = vi

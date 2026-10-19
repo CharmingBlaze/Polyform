@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { Clip, Key, Model, OKey, Vec3, Xform } from './model'
+import { ensureSkin, isBound } from './skin'
 
 const ZERO: Key = { rot: [0, 0, 0], pos: [0, 0, 0] }
 
@@ -134,14 +135,21 @@ export function posedVerts(m: Model, frame: number | null, clip: Clip | undefine
   }
   if (frame === null || !m.bones.length) return base
   const mats = boneMatrices(m, frame, clip)
+  ensureSkin(m)
   const skin = mats.map((w, i) => w.clone().multiply(new THREE.Matrix4().makeTranslation(-m.bones[i].pos[0], -m.bones[i].pos[1], -m.bones[i].pos[2])))
-  const v = new THREE.Vector3()
+  const acc = new THREE.Vector3(), tmp = new THREE.Vector3()
   return m.verts.map((_, i) => {
-    const b = m.vbone[i]
+    const sk = m.skin[i]
     const q = base[i]
-    if (b < 0 || !skin[b]) return q
-    v.set(q[0], q[1], q[2]).applyMatrix4(skin[b])
-    return [v.x, v.y, v.z]
+    if (!sk || !isBound(sk)) return q
+    acc.set(0, 0, 0)
+    for (let k = 0; k < 4; k++) {
+      const b = sk.joints[k], w = sk.weights[k]
+      if (b < 0 || w <= 0 || !skin[b]) continue
+      tmp.set(q[0], q[1], q[2]).applyMatrix4(skin[b])
+      acc.addScaledVector(tmp, w)
+    }
+    return [acc.x, acc.y, acc.z] as Vec3
   })
 }
 

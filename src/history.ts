@@ -3,12 +3,14 @@
  * reference between states (content-interned, frozen), so a step costs only what it changed plus one array of
  * references. Texture strokes are steps that carry a pixel patch instead. Capped by estimated bytes.
  */
-import type { Face, Model, Vec3 } from './model'
+import type { Face, Model, Skin, Vec3 } from './model'
+import { ensureSkin, primaryJoint, singleSkin } from './skin'
 import { textures, type TexPatch } from './textures'
 
 interface Snap {
   verts: readonly Vec3[]
   vbone: readonly number[]
+  skin: readonly Skin[]
   faces: readonly Face[]
   /** groups, materials, bones, clips, version as JSON (small) */
   rest: string
@@ -52,17 +54,22 @@ export function snapshot(m: Model, prev?: Snap): { snap: Snap; bytes: number } {
   })
   const sameVerts = prev && prev.verts.length === verts.length && verts.every((v, i) => v === prev.verts[i])
   const sameFaces = prev && prev.faces.length === faces.length && faces.every((f, i) => f === prev.faces[i])
+  ensureSkin(m)
   const sameVbone = prev && prev.vbone.length === m.vbone.length && m.vbone.every((b, i) => b === prev.vbone[i])
+  const skinEq = (a: Skin, b: Skin) => a.joints.every((j, i) => j === b.joints[i]) && a.weights.every((w, i) => w === b.weights[i])
+  const sameSkin = prev && prev.skin.length === m.skin.length && m.skin.every((sk, i) => skinEq(sk, prev.skin[i]))
   const rest = JSON.stringify({ version: m.version, groups: m.groups, materials: m.materials, bones: m.bones, clips: m.clips, wires: m.wires })
   const snap: Snap = {
     verts: sameVerts ? prev!.verts : Object.freeze(verts),
     faces: sameFaces ? prev!.faces : Object.freeze(faces),
     vbone: sameVbone ? prev!.vbone : Object.freeze([...m.vbone]),
+    skin: sameSkin ? prev!.skin : Object.freeze(m.skin.map(sk => Object.freeze({ joints: Object.freeze([...sk.joints]) as Skin['joints'], weights: Object.freeze([...sk.weights]) as Skin['weights'] }))),
     rest: prev && prev.rest === rest ? prev.rest : rest,
   }
   if (!sameVerts) bytes += verts.length * 8
   if (!sameFaces) bytes += faces.length * 8
   if (!sameVbone) bytes += m.vbone.length * 8
+  if (!sameSkin) bytes += m.skin.length * 32
   if (!prev || prev.rest !== rest) bytes += rest.length * 2
   return { snap, bytes }
 }
@@ -70,10 +77,15 @@ export function snapshot(m: Model, prev?: Snap): { snap: Snap; bytes: number } {
 /** A fresh, mutable model from a snapshot (never aliases history). */
 export function materialize(s: Snap): Model {
   const rest = JSON.parse(s.rest)
+  const skin = (s.skin?.length ? s.skin : s.vbone.map(b => singleSkin(b))).map(sk => ({
+    joints: [sk.joints[0], sk.joints[1], sk.joints[2], sk.joints[3]] as Skin['joints'],
+    weights: [sk.weights[0], sk.weights[1], sk.weights[2], sk.weights[3]] as Skin['weights'],
+  }))
   return {
     version: rest.version,
     verts: s.verts.map(v => [v[0], v[1], v[2]] as Vec3),
-    vbone: [...s.vbone],
+    vbone: skin.map(primaryJoint),
+    skin,
     faces: s.faces.map(f => { const o: Face = { v: [...f.v], uv: f.uv.map(u => [u[0], u[1]] as [number, number]), g: f.g }; if (f.hidden) o.hidden = true; if (f.pin) o.pin = [...f.pin]; if (f.seam) o.seam = [...f.seam]; if (f.vc) o.vc = [...f.vc]; if (f.mat !== undefined) o.mat = f.mat; return o }),
     groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips, wires: rest.wires ?? [],
   }
@@ -100,7 +112,7 @@ export class History {
     this.pending = false
     const prev = this.steps[this.cur].snap
     const { snap, bytes } = snapshot(m, prev)
-    if (snap.verts === prev.verts && snap.faces === prev.faces && snap.vbone === prev.vbone && snap.rest === prev.rest) return // no-op edit
+    if (snap.verts === prev.verts && snap.faces === prev.faces && snap.vbone === prev.vbone && snap.skin === prev.skin && snap.rest === prev.rest) return // no-op edit
     this.truncate()
     this.steps.push({ snap, label: this.pendingLabel, bytes })
     this.cur++; this.bytes += bytes

@@ -112,12 +112,18 @@ export interface Clip {
   okeys: Record<number, Record<number, OKey>>
 }
 
-export const PROJECT_VERSION = 3
+export const PROJECT_VERSION = 4
+
+/** Up to 4 bone influences (glTF JOINTS_0 / WEIGHTS_0). joints[i] = bone index or -1; weight 0 = unused. */
+export type Skin = { joints: [number, number, number, number]; weights: [number, number, number, number] }
 
 export interface Model {
   version: number
   verts: Vec3[]
+  /** Primary joint per vertex (−1 = unbound). Kept in sync with `skin` (highest weight). */
   vbone: number[]
+  /** Up to 4 joint weights per vertex. Length always matches verts. */
+  skin: Skin[]
   faces: Face[]
   groups: Group[]
   materials: Material[]
@@ -132,7 +138,30 @@ export const newClip = (name = 'Animation'): Clip => ({ name, frames: 30, fps: 2
 export const newGroup = (name: string, mat = 0): Group => ({ name, visible: true, mat, smooth: 0, xf: identityXform() })
 
 export function emptyModel(): Model {
-  return { version: PROJECT_VERSION, verts: [], vbone: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [] }
+  return { version: PROJECT_VERSION, verts: [], vbone: [], skin: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [] }
+}
+
+
+/** Push an unbound skin slot matching a newly pushed vertex. */
+const pushUnboundSkin = (m: Model) => {
+  m.vbone.push(-1)
+  if (!m.skin) m.skin = []
+  m.skin.push({ joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] })
+}
+/** Push a copy of vertex `src`'s skin (and keep vbone in sync via the caller pushing vbone). */
+const pushSkinOf = (m: Model, src: number) => {
+  if (!m.skin) m.skin = []
+  // during early migrations skin may lag behind verts; pad then copy
+  while (m.skin.length < m.verts.length - 1) {
+    const b = m.vbone[m.skin.length] ?? -1
+    m.skin.push(b >= 0 ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] } : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] })
+  }
+  const sk = m.skin[src]
+  if (sk) m.skin.push({ joints: [sk.joints[0], sk.joints[1], sk.joints[2], sk.joints[3]], weights: [sk.weights[0], sk.weights[1], sk.weights[2], sk.weights[3]] })
+  else {
+    const b = m.vbone[src] ?? -1
+    m.skin.push(b >= 0 ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] } : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] })
+  }
 }
 
 type Raw = Record<string, unknown> & { textures?: Record<string, string> }
@@ -158,6 +187,18 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
   },
   /** v2 -> v3: loose edges (wires) */
   2: r => ({ ...r, version: 3, wires: Array.isArray(r.wires) ? r.wires : [] }),
+  /** v3 -> v4: per-vertex skin (up to 4 weights); vbone kept as the primary joint */
+  3: r => {
+    const verts = Array.isArray(r.verts) ? (r.verts as unknown[]) : []
+    const vbone = Array.isArray(r.vbone) ? (r.vbone as number[]) : verts.map(() => -1)
+    const skin = verts.map((_, i) => {
+      const b = Number.isInteger(vbone[i]) ? vbone[i] : -1
+      return b >= 0
+        ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] }
+        : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
+    })
+    return { ...r, version: 4, skin, vbone: vbone.length === verts.length ? vbone : verts.map(() => -1) }
+  },
 }
 
 /**
@@ -179,8 +220,17 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
   }
   if (!Array.isArray(r.vbone) || !(r.vbone as unknown[]).length) r.vbone = (r.verts as unknown[]).map(() => -1)
   if (!Array.isArray(r.bones)) r.bones = []
-  const { verts, vbone, faces, groups, materials, bones, clips, wires } = r as unknown as Model
-  return { model: { version: PROJECT_VERSION, verts, vbone, faces, groups, materials, bones, clips, wires }, textures }
+  if (!Array.isArray(r.skin) || (r.skin as unknown[]).length !== (r.verts as unknown[]).length) {
+    const vbone = r.vbone as number[]
+    r.skin = (r.verts as unknown[]).map((_, i) => {
+      const b = Number.isInteger(vbone[i]) ? vbone[i] : -1
+      return b >= 0
+        ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] }
+        : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
+    })
+  }
+  const { verts, vbone, skin, faces, groups, materials, bones, clips, wires } = r as unknown as Model
+  return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires }, textures }
 }
 
 /** The JSON written to a .polyform.json file. */
@@ -200,14 +250,31 @@ const TEX_ID = /^[\w-]{1,64}$/
 /** Throws if the model is structurally invalid (bad indices, non-finite numbers, loops, absurd sizes). */
 export function validateModel(m: Model) {
   if (!m || typeof m !== 'object') throw new Error('Not a Polyform project')
-  for (const k of ['verts', 'vbone', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
+  for (const k of ['verts', 'vbone', 'skin', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
   const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length, nm = m.materials.length
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
   const num = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi
   const vec = (v: unknown, n: number) => Array.isArray(v) && v.length === n && v.every(x => typeof x === 'number' && Number.isFinite(x))
   m.verts.forEach((v, i) => { if (!vec(v, 3)) throw new Error(`Vertex ${i} is invalid`) })
   if (m.vbone.length !== nv) throw new Error('Vertex/bone table length mismatch')
+
+  // heal in-memory models that only set vbone (tests / older code paths)
+  if (!Array.isArray(m.skin) || m.skin.length !== nv) {
+    const skin = (m.skin ?? []) as Skin[]
+    while (skin.length < nv) {
+      const b = m.vbone[skin.length] ?? -1
+      skin.push(b >= 0 ? { joints: [b, -1, -1, -1], weights: [1, 0, 0, 0] } : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] })
+    }
+    skin.length = nv
+    m.skin = skin
+  }
+  if (m.skin.length !== nv) throw new Error('Vertex/skin table length mismatch')
   m.vbone.forEach((b, i) => { if (!int(b, -1, nb)) throw new Error(`Vertex ${i} references missing joint ${b}`) })
+  m.skin.forEach((sk, i) => {
+    if (!sk || !vec(sk.joints, 4) || !vec(sk.weights, 4)) throw new Error(`Vertex ${i} has invalid skin`)
+    sk.joints.forEach((j, k) => { if (!int(j, -1, nb)) throw new Error(`Vertex ${i} skin joint ${k} references missing joint ${j}`) })
+    sk.weights.forEach((w, k) => { if (!num(w, 0, 1)) throw new Error(`Vertex ${i} skin weight ${k} out of range`) })
+  })
   if (!nm) throw new Error('Project needs at least one material')
   m.materials.forEach((mt, i) => {
     if (!mt || typeof mt.name !== 'string' || !HEX.test(String(mt.color))) throw new Error(`Material ${i} is invalid`)
@@ -546,7 +613,7 @@ export function addPolys(m: Model, polys: Poly[], name: string, at: Vec3 = [0, 0
     const x = p[0] + at[0], y = p[1] + at[1], z = p[2] + at[2]
     const k = `${weldKey(x)},${weldKey(y)},${weldKey(z)}`
     let vi = weld.get(k)
-    if (vi === undefined) { vi = m.verts.length; m.verts.push([x, y, z]); m.vbone.push(-1); weld.set(k, vi); newVerts.push(vi) }
+    if (vi === undefined) { vi = m.verts.length; m.verts.push([x, y, z]); pushUnboundSkin(m); weld.set(k, vi); newVerts.push(vi) }
     return vi
   }
   const g = m.groups.length
@@ -578,7 +645,7 @@ export function addGeometry(m: Model, geo: THREE.BufferGeometry, name: string, a
     let vi = weld.get(k)
     if (vi === undefined) {
       vi = m.verts.length
-      m.verts.push([x, y, z]); m.vbone.push(-1)
+      m.verts.push([x, y, z]); pushUnboundSkin(m)
       weld.set(k, vi); newVerts.push(vi)
     }
     remap.push(vi)
@@ -607,11 +674,15 @@ export function removeOrphans(m: Model, candidates?: Iterable<number>) {
   for (const f of m.faces) f.v.forEach(i => (used[i] = true))
   for (const w of m.wires) { used[w[0]] = true; used[w[1]] = true }
   const map: number[] = []
-  const verts: Vec3[] = [], vbone: number[] = []
+  const verts: Vec3[] = [], vbone: number[] = [], skin: Skin[] = []
   m.verts.forEach((v, i) => {
-    if (used[i]) { map[i] = verts.length; verts.push(v); vbone.push(m.vbone[i]) }
+    if (used[i]) {
+      map[i] = verts.length; verts.push(v); vbone.push(m.vbone[i])
+      const sk = m.skin[i]
+      skin.push(sk ? { joints: [...sk.joints] as Skin['joints'], weights: [...sk.weights] as Skin['weights'] } : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] })
+    }
   })
-  m.verts = verts; m.vbone = vbone
+  m.verts = verts; m.vbone = vbone; m.skin = skin
   for (const f of m.faces) f.v = f.v.map(i => map[i])
   m.wires = m.wires.map(([a, b]) => [map[a], map[b]] as [number, number])
 }
@@ -720,7 +791,7 @@ export function extrudeFaces(m: Model, faces: number[], distance = 0.25): number
       const p = m.verts[vi]
       d = m.verts.length
       m.verts.push([p[0] + normal.x, p[1] + normal.y, p[2] + normal.z])
-      m.vbone.push(m.vbone[vi])
+      m.vbone.push(m.vbone[vi]); pushSkinOf(m, vi)
       dup.set(vi, d)
     }
     return d
@@ -789,7 +860,7 @@ export function duplicateFaces(m: Model, faces: number[]): number[] {
     const f = m.faces[fi]
     const v = f.v.map(vi => {
       let d = map.get(vi)
-      if (d === undefined) { d = m.verts.length; m.verts.push([...m.verts[vi]] as Vec3); m.vbone.push(m.vbone[vi]); map.set(vi, d) }
+      if (d === undefined) { d = m.verts.length; m.verts.push([...m.verts[vi]] as Vec3); m.vbone.push(m.vbone[vi]); pushSkinOf(m, vi); map.set(vi, d) }
       return d
     })
     out.push(m.faces.length)
@@ -844,7 +915,7 @@ export function subdivideFaces(m: Model, faces: number[]): number[] {
       const pa = m.verts[a], pb = m.verts[b]
       i = m.verts.length
       m.verts.push([(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2])
-      m.vbone.push(m.vbone[a])
+      m.vbone.push(m.vbone[a]); pushSkinOf(m, a) // midpoints inherit; callers that lerp UVs should lerpSkin when two sides differ
       mid.set(k, i)
     }
     return i
@@ -863,7 +934,7 @@ export function subdivideFaces(m: Model, faces: number[]): number[] {
     } else {
       const c = faceCenter(m.verts, f)
       const ci = m.verts.length
-      m.verts.push([c.x, c.y, c.z]); m.vbone.push(m.vbone[f.v[0]])
+      m.verts.push([c.x, c.y, c.z]); m.vbone.push(m.vbone[f.v[0]]); pushSkinOf(m, f.v[0])
       const cu: Vec2 = [f.uv.reduce((s, u) => s + u[0], 0) / n, f.uv.reduce((s, u) => s + u[1], 0) / n]
       for (let i = 0; i < n; i++) {
         const p = (i + n - 1) % n
@@ -901,6 +972,10 @@ export function deleteBones(m: Model, bones: Set<number>) {
   }
   const newBones = m.bones.filter((_, i) => !bones.has(i)).map(b => ({ ...b, parent: resolveParent(b.parent) }))
   m.vbone = m.vbone.map(b => (b < 0 ? -1 : bones.has(b) ? resolveParent(m.bones[b].parent) : map[b]))
+  m.skin = m.skin.map(sk => {
+    const joints = sk.joints.map(j => (j < 0 ? -1 : bones.has(j) ? resolveParent(m.bones[j].parent) : map[j])) as Skin['joints']
+    return { joints, weights: [...sk.weights] as Skin['weights'] }
+  })
   for (const c of m.clips) {
     const keys: Clip['keys'] = {}
     Object.entries(c.keys).forEach(([b, k]) => { const i = Number(b); if (!bones.has(i)) keys[map[i]] = k })
@@ -939,7 +1014,7 @@ export function unshareVerts(m: Model): number {
       if (o === f.g) return v
       const k = `${v}:${f.g}`
       let c = copies.get(k)
-      if (c === undefined) { c = m.verts.length; m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); copies.set(k, c); n++ }
+      if (c === undefined) { c = m.verts.length; m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); pushSkinOf(m, v); copies.set(k, c); n++ }
       return c
     })
   }

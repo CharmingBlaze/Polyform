@@ -5,6 +5,7 @@
  * slid together along the ring edges (slideCut), keeping their spacing.
  */
 import { edgeKey, type Face, type Model, type Vec2, type Vec3 } from './model'
+import { appendVertLerp } from './skin'
 import { topology } from './topology'
 
 /** Ring edges oriented so that A[i]-A[i+1] and B[i]-B[i+1] are the quad sides between consecutive ring edges. */
@@ -67,9 +68,7 @@ export function loopCut(m: Model, ring: Ring, n: number): CutRec {
   for (let i = 0; i < E; i++) {
     NV[i] = []
     for (let k = 1; k <= n; k++) {
-      const t = cutT(k, n), v = m.verts.length
-      m.verts.push(lerp3(m.verts[A[i]], m.verts[B[i]], t))
-      m.vbone.push(t <= 0.5 ? m.vbone[A[i]] : m.vbone[B[i]])
+      const t = cutT(k, n), v = appendVertLerp(m, A[i], B[i], t)
       NV[i][k] = v
       rec.verts.push({ v, a: A[i], b: B[i], k })
     }
