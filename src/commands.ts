@@ -1,5 +1,6 @@
 import { useStore, type EditMode, type Tool } from './store'
 import { exportGLB, exportOBJ, saveProject } from './io'
+import { pairs as xPairs } from './xmirror'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import { isModalActive, overUV } from './interaction'
@@ -118,6 +119,7 @@ export const commands: Command[] = [
   { id: 'view.frameAll', label: 'Frame all', group: 'View', keys: 'Home', run: () => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })) },
   { id: 'view.max', label: 'Maximize / restore view', group: 'View', keys: 'Shift+Space', run: () => S().set({ maximized: S().maximized !== null ? null : 1 }) },
   { id: 'view.skeleton', label: 'Toggle skeleton', group: 'View', run: () => S().set({ showSkeleton: !S().showSkeleton }) },
+  { id: 'edit.xmirror', label: 'Toggle X-mirror editing', group: 'Edit', keys: 'Alt+X', run: () => { const s = S(); const on = !s.xMirror; s.set({ xMirror: on, xMirrorMap: on ? xPairs(s.model) : null }); s.notify(on ? 'X-mirror on: edits on one side update the other' : 'X-mirror off') } },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
   { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
   { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },

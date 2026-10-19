@@ -58,6 +58,7 @@ export function ToolRail() {
   const axis = useStore(s => s.axis)
   const snap = useStore(s => s.snap)
   const autoKey = useStore(s => s.autoKey)
+  const xMirror = useStore(s => s.xMirror)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
@@ -90,6 +91,7 @@ export function ToolRail() {
           <div className="axis-row">
             {(['x', 'y', 'z'] as const).map(a => <button key={a} className={`axis-btn ${a} ${axis[a] ? 'on' : ''}`} title={`Allow ${a.toUpperCase()}`} onClick={() => set({ axis: { ...axis, [a]: !axis[a] } })}>{a.toUpperCase()}</button>)}
             <button className={`axis-btn ${snap ? 'on' : ''}`} onClick={() => set({ snap: !snap })} title="Grid snap (Ctrl inverts while dragging)">Snap</button>
+            <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="X-mirror editing (Alt+X): transforms on one side update the paired verts across X = 0">X-Mirror</button>
           </div>
         </>}
         {tab === 'Multiply' && ops('Multiply')}

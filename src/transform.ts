@@ -6,6 +6,7 @@
 import * as THREE from 'three'
 import type { Model, Vec3 } from './model'
 import { boneMatrices, sampleBone, sampleObject, skinnedGroups, vertexGroups, xformMatrix } from './anim'
+import { applyMirror, pairs as xPairs } from './xmirror'
 import { useStore } from './store'
 import { sceneManager } from './scene'
 
@@ -124,6 +125,11 @@ export function applyXf(T: Targets, x: Xf) {
     else p.applyMatrix4(W)
     m.verts[v] = [p.x, p.y, p.z]
   })
+  if (st.xMirror && T.verts.size) {
+    const xm = xPairs(m, st.xMirrorMap)
+    applyMirror(m, xm, T.verts.keys())
+    if (xm !== st.xMirrorMap) useStore.setState({ xMirrorMap: xm })
+  }
   T.bones.forEach((o, b) => { p.set(o[0], o[1], o[2]).applyMatrix4(W); m.bones[b].pos = [p.x, p.y, p.z] })
   const ci = Math.min(st.clip, m.clips.length - 1)
   T.objs.forEach((o, g) => {

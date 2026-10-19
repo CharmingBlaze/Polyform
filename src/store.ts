@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { interaction, isModalActive } from './interaction'
 import * as M from './model'
 import { SAMPLES, type SampleId } from './samples'
+import { pairs as xPairs, type XMirror } from './xmirror'
 import * as G from './geom'
 import * as B from './bones'
 import { sampleBone, sampleObject, skinnedGroups } from './anim'
@@ -74,6 +75,9 @@ interface State {
   playSpeed: number
   autoKey: boolean
   onion: boolean
+  /** X-mirror editing: transforms on one side update the paired verts across X = 0. */
+  xMirror: boolean
+  xMirrorMap: XMirror | null
   showSkeleton: boolean
   /** Blender-style 3D cursor: Shift+right-click places it; Shift+A adds a joint there */
   cursor3d: Vec3
@@ -281,6 +285,8 @@ export const useStore = create<State>((set, get) => ({
   playSpeed: 1,
   autoKey: true,
   onion: false,
+  xMirror: false,
+  xMirrorMap: null,
   showSkeleton: true,
   cursor3d: [0, 0, 0],
   layout: '4',
@@ -348,7 +354,7 @@ export const useStore = create<State>((set, get) => ({
   toast: null,
 
   set: p => set(p as State),
-  touch: () => { M.normalizeCorners(get().model); set(s => ({ version: s.version + 1 })) },
+  touch: () => { M.normalizeCorners(get().model); set(s => ({ version: s.version + 1, ...(s.xMirror ? { xMirrorMap: xPairs(s.model, s.xMirrorMap) } : {}) })) },
   checkpoint: (label = 'Edit') => {
     history.begin(get().model, label)
     set(s => ({ histRev: s.histRev + 1, lastOp: null }))
@@ -363,14 +369,14 @@ export const useStore = create<State>((set, get) => ({
     if (s.extruding) return s.cancelExtrude()
     const r = history.undo(s.model)
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   doRedo: () => {
     const s = get()
     const r = history.redo()
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
