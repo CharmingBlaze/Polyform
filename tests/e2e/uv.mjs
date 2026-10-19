@@ -179,6 +179,8 @@ await p.screenshot({ path: '/workspace/shot-uv-workspace.png' })
   check('after undoing the drop, Assign to selection is enabled again', await p.isEnabled('[data-testid="img-assign"]'))
   await S(() => window.__polyform.getState().setSelection({ faces: [0, 1, 4, 5] })); await frame()
   await p.screenshot({ path: '/workspace/shot-images.png' })
+  await p.click(`[data-testid="img-filter-${Bm}"]`); await frame()
+  check('filter toggle: blue becomes linear (undoable model change)', (await S(n => window.__polyform.getState().model.materials[n].filter, Bm)) === 'linear' && (await p.textContent(`[data-testid="img-filter-${Bm}"]`)) === 'Smooth')
   // export
   const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press('Control+e')])
   const file = '/tmp/polyform-uv-images.glb'; await dl.saveAs(file)
@@ -197,6 +199,10 @@ await p.screenshot({ path: '/workspace/shot-uv-workspace.png' })
   // "re-import": decode the embedded PNG headers and match the sizes
   const sizeOf = im => { const bv = gltf.bufferViews[im.bufferView]; const d = new DataView(bin.buffer, bin.byteOffset + (bv.byteOffset || 0), bv.byteLength); return `${d.getUint32(16)}x${d.getUint32(20)}` }
   const sizes = imgs.map(sizeOf).sort()
+  function sizeOfPrim(pr) { return sizeOf(gltf.images[gltf.textures[texOf(pr)].source]) }
+  const samp = pr => { const t = gltf.textures[texOf(pr)]; const sm = gltf.samplers?.[t.sampler] ?? {}; return [sm.magFilter, sm.minFilter] }
+  const byImg = Object.fromEntries(prims.map(pr => [sizeOfPrim(pr), samp(pr)]))
+  check('export: samplers carry the filtering (8×8 nearest, 16×8 linear)', JSON.stringify(byImg['8x8']) === '[9728,9984]' && JSON.stringify(byImg['16x8']) === '[9729,9987]', JSON.stringify(byImg))
   check('re-import: the two embedded images are the 16×8 and 8×8 files', JSON.stringify(sizes) === '["16x8","8x8"]', JSON.stringify(sizes))
   check('export: primitive triangle counts 8 (red) + 4 (blue)', JSON.stringify(prims.map(pr => gltf.accessors[pr.indices].count / 3).sort()) === '[4,8]', JSON.stringify(prims.map(pr => pr.indices !== undefined && gltf.accessors[pr.indices].count)))
   // remove an image, with undo

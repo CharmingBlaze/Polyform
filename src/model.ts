@@ -58,7 +58,10 @@ export interface Material {
   metalness: number
   /** Texture id (pixels live outside the model so undo snapshots stay small), or null. */
   texture: string | null
+  /** Image filtering; nearest (crisp pixels) when absent. Exported as the glTF sampler. */
+  filter?: TexFilter
 }
+export type TexFilter = 'nearest' | 'linear'
 export interface Bone { name: string; parent: number; pos: Vec3 }
 export interface Key { rot: Vec3; pos: Vec3 }
 /** Object key: absolute transform of an (unskinned) object at a frame. */
@@ -178,6 +181,7 @@ export function validateModel(m: Model) {
     if (!mt || typeof mt.name !== 'string' || !HEX.test(String(mt.color))) throw new Error(`Material ${i} is invalid`)
     if (!num(mt.roughness, 0, 1) || !num(mt.metalness, 0, 1)) throw new Error(`Material ${i} has invalid roughness/metalness`)
     if (mt.texture !== null && !(typeof mt.texture === 'string' && TEX_ID.test(mt.texture))) throw new Error(`Material ${i} has an invalid texture id`)
+    if (mt.filter !== undefined && mt.filter !== 'nearest' && mt.filter !== 'linear') throw new Error(`Material ${i} has an invalid filter`)
   })
   m.groups.forEach((g, i) => {
     if (!g || typeof g.name !== 'string' || typeof g.visible !== 'boolean') throw new Error(`Group ${i} is invalid`)

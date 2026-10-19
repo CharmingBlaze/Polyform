@@ -207,3 +207,4 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .images .thumb { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; background: #0f1116; border: 1px solid var(--line); border-radius: 4px; }
 .images .name small { margin-left: 6px; font-weight: 400; }
 .images.drop { outline: 2px dashed var(--accent, #7c6cff); outline-offset: -4px; }
+.mini-toggle { font-size: 10px; padding: 1px 6px; border-radius: 4px; }

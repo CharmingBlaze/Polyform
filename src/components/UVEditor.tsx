@@ -83,7 +83,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const g = c.getContext('2d')!
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
     g.fillStyle = '#101217'; g.fillRect(0, 0, size.w, size.h)
-    g.imageSmoothingEnabled = false
+    g.imageSmoothingEnabled = useStore.getState().model.materials[shownMat]?.filter === 'linear'
     const drawImg = (x: number, y: number) => {
       if (texImg) { try { g.drawImage(texImg as CanvasImageSource, x, y, side, side) } catch { /* not loaded */ } return }
       const n = 8, cs = side / n

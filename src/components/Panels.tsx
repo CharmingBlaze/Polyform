@@ -324,6 +324,8 @@ function Images() {
               ? <input autoFocus defaultValue={mt.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.materials[i].name = e.target.value || mt.name), 'Rename image'); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
               : <span className="name">{mt.name}<small className="dim">{sz ? ` ${sz.w}×${sz.h}` : ''}</small></span>}
             <span className="meta" data-testid={`img-uses-${i}`}>{uses(i)} f</span>
+            <button className="mini-toggle" data-testid={`img-filter-${i}`} title={mt.filter === 'linear' ? 'Linear filtering (smooth). Click for nearest (crisp pixels)' : 'Nearest filtering (crisp pixels). Click for linear (smooth)'}
+              onClick={e => { e.stopPropagation(); st.setImageFilter(i, mt.filter === 'linear' ? 'nearest' : 'linear') }}>{mt.filter === 'linear' ? 'Smooth' : 'Pixel'}</button>
             <button className="icon-btn" data-testid={`img-remove-${i}`} title="Remove from the library (faces fall back to the default material; Ctrl+Z restores)" onClick={e => { e.stopPropagation(); st.removeImage(i) }}><Trash2 size={13} /></button>
           </div>
         )

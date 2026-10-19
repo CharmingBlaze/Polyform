@@ -1,5 +1,13 @@
 import * as THREE from 'three'
 
+/** Set a texture's filtering (glTF sampler): nearest = crisp pixels, linear = smooth, both with mipmaps. */
+export function applyFilter(tex: THREE.Texture, filter: 'nearest' | 'linear' | undefined) {
+  const lin = filter === 'linear'
+  const mag = lin ? THREE.LinearFilter : THREE.NearestFilter, min = lin ? THREE.LinearMipmapLinearFilter : THREE.NearestMipmapNearestFilter
+  if (tex.magFilter !== mag || tex.minFilter !== min) { tex.magFilter = mag; tex.minFilter = min; tex.needsUpdate = true }
+  return tex
+}
+
 /** A rectangle of pixels saved for undo/redo of a paint stroke. */
 export interface TexPatch { id: string; x: number; y: number; data: ImageData }
 

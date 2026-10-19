@@ -3,7 +3,7 @@ import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerNormals, faceMat, triangulate, type Face, type Vec3 } from './model'
-import { textures } from './textures'
+import { applyFilter, textures } from './textures'
 
 /**
  * Camera layers. Each pane's camera enables the layers for its view type and shading:
@@ -233,7 +233,9 @@ class SceneManager {
     const dispose = (m: THREE.Mesh) => (m.material as THREE.Material[]).forEach(x => x.dispose())
     Object.values(this.meshes).forEach(dispose)
     const make = (flat: boolean, tex: boolean) => mats.map(mt => {
-      const map = tex ? textures.three(mt.texture) ?? (st.showTexture ? this.checker : null) : null
+      const own = tex ? textures.three(mt.texture) : null
+      if (own) applyFilter(own, mt.filter)
+      const map = tex ? own ?? (st.showTexture ? this.checker : null) : null
       return new THREE.MeshStandardMaterial({
         color: mt.color, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,

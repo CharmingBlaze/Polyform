@@ -188,6 +188,7 @@ interface State {
   addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
   /** remove an image (its material) from the library; faces using it fall back to the default material */
   removeImage: (mat: number) => void
+  setImageFilter: (mat: number, filter: M.TexFilter) => void
 }
 
 let toastTimer = 0
@@ -857,6 +858,7 @@ export const useStore = create<State>((set, get) => ({
     set({ activeMat: out[0] })
     return out
   },
+  setImageFilter: (mat, filter) => get().edit(m => { if (filter === 'linear') m.materials[mat].filter = 'linear'; else delete m.materials[mat].filter }, 'Image filtering'),
   removeImage: mat => {
     const s = get(), mt = s.model.materials[mat]
     if (!mt) return

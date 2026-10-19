@@ -5,7 +5,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { addGeometry, cornerNormals, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
-import { textures } from './textures'
+import { applyFilter, textures } from './textures'
 import { useStore } from './store'
 
 function download(data: BlobPart, name: string, type: string) {
@@ -33,7 +33,9 @@ export function buildExportScene(m: Model) {
   root.name = 'Model'
   const name = uniqueNamer()
   const materials = m.materials.map(mt => {
-    const tex = textures.three(mt.texture)
+    // per-material sampler: clone shares the image, so the exporter still embeds it once
+    const src = textures.three(mt.texture)
+    const tex = src ? applyFilter(src.clone(), mt.filter) : null
     const mat = new THREE.MeshStandardMaterial({ color: mt.color, roughness: mt.roughness, metalness: mt.metalness, map: tex })
     mat.name = mt.name
     return mat
