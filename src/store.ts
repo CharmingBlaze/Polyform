@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { create } from 'zustand'
-import { isModalActive } from './interaction'
+import { interaction, isModalActive } from './interaction'
 import * as M from './model'
 import * as G from './geom'
 import * as B from './bones'
@@ -24,6 +24,11 @@ export interface PaintSettings { color: string; size: number; hardness: number; 
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
+
+/** Primitive drawing: the box, which axes the user has dragged, the view that drew the footprint, segments. */
+export interface DrawState { kind: PrimitiveKind; min: Vec3; max: Vec3; has: boolean; seg: number; axes: [boolean, boolean, boolean]; view: string | null }
+/** Model before the drawn primitive (the preview is regenerated from it on every change). */
+let drawBase: Model | null = null
 
 export const history = new History()
 const clearedNote = (c: { name: string; keys: number }[]) =>
@@ -116,6 +121,14 @@ interface State {
   runOp: (id: string, params?: Params) => void
   updateOp: (params: Params) => void
   addPrimitive: (k: PrimitiveKind) => void
+  /** interactive primitive drawing (LightWave style): a box dragged in any view, the primitive fitted inside */
+  draw: DrawState | null
+  armDraw: (k: PrimitiveKind) => void
+  /** set the box (min/max corners, world); starts the undo step on first use and regenerates the preview */
+  drawSet: (box: { min: Vec3; max: Vec3 }, extra?: Partial<Pick<DrawState, 'axes' | 'view'>>) => void
+  drawSeg: (value: number) => void
+  confirmDraw: () => void
+  cancelDraw: () => void
   deleteSelection: () => void
   /** start an extrude of the selection (or one Alt+E variant); false if nothing was extruded */
   extrude: (kind?: X.ExtrudeKind) => boolean
@@ -228,6 +241,7 @@ export const useStore = create<State>((set, get) => ({
   extruding: false,
   gizmoSpace: 'global',
   modalInfo: null,
+  draw: null,
   popup: null,
   keyClipboard: null,
   texRev: 0,
@@ -465,6 +479,45 @@ export const useStore = create<State>((set, get) => ({
     get().runOp(`add.${k}`, {})
     if (get().selectMode === 'vertex') set({ selectMode: 'face', subModes: ['face'], lastEdit: 'face' })
     set({ numericOpen: true })
+  },
+  armDraw: k => {
+    const s = get()
+    if (s.draw?.has) s.confirmDraw()
+    if (get().selectMode === 'joint') set({ selectMode: 'object', subModes: ['face'] })
+    set({ mode: 'model', draw: { kind: k, min: [0, 0, 0], max: [0, 0, 0], has: false, seg: M.segOf(k, M.primitiveDefaults(k)), axes: [false, false, false], view: null } })
+  },
+  drawSet: (box, extra = {}) => {
+    const s = get(), d = s.draw
+    if (!d) return
+    if (!d.has) { s.checkpoint(`Draw ${M.PRIMITIVES[d.kind].label}`); drawBase = M.cloneModel(s.model) }
+    const nd: DrawState = { ...d, ...extra, min: [...box.min] as Vec3, max: [...box.max] as Vec3, has: true }
+    const m = M.cloneModel(drawBase!)
+    const r = M.fitPrimitive(m, nd.kind, nd.min, nd.max, nd.seg)
+    interaction.modal = true
+    set(st => ({ model: m, version: st.version + 1, draw: nd, selFaces: new Set(r.faces), selVerts: new Set(r.verts), selEdges: new Set() }))
+  },
+  drawSeg: value => {
+    const d = get().draw
+    if (!d) return
+    const seg = M.clampSeg(d.kind, value)
+    set({ draw: { ...d, seg } })
+    if (d.has) get().drawSet({ min: d.min, max: d.max })
+  },
+  confirmDraw: () => {
+    const d = get().draw
+    if (!d) return
+    interaction.modal = false
+    drawBase = null
+    set({ draw: null })
+    if (d.has) get().commit()
+  },
+  cancelDraw: () => {
+    const d = get().draw
+    if (!d) return
+    interaction.modal = false
+    drawBase = null
+    set({ draw: null })
+    if (d.has) { get().cancelEdit(); get().selectNone() }
   },
   deleteSelection: () => {
     const s = get()

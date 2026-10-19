@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
@@ -18,7 +18,8 @@
     "test:tweak": "node tests/e2e/run.mjs tweak.mjs",
     "test:extrude": "node tests/e2e/run.mjs extrude.mjs",
     "test:loopcut": "node tests/e2e/run.mjs loopcut.mjs",
-    "test:knife": "node tests/e2e/run.mjs knife.mjs"
+    "test:knife": "node tests/e2e/run.mjs knife.mjs",
+    "test:drawprim": "node tests/e2e/run.mjs drawprim.mjs"
   },
   "dependencies": {
     "idb-keyval": "6.3.0",

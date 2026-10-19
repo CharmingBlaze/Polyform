@@ -188,3 +188,7 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .popup button { display: flex; gap: 8px; width: 100%; text-align: left; background: none; border: 0; color: #e3e6ea; padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
 .popup button:hover { background: #3d6fa8; }
 .popup-n { color: #8a939c; width: 10px; }
+
+.draw-hint { font-size: 11px; padding: 4px 8px 6px; line-height: 1.4; }
+.draw-btns { display: flex; gap: 6px; padding: 4px 8px 8px; }
+.draw-btns .tool-btn { flex: 1; justify-content: center; }

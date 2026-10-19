@@ -27,6 +27,8 @@ type Drag =
   | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean }
   | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number }
   | { kind: 'paint' }
+  | { kind: 'draw'; phase: 'foot' | 'height'; p0: THREE.Vector3; x0: number; y0: number; moved: boolean; h0?: number }
+  | { kind: 'drawHandle'; axis: number; side: 0 | 1; x0: number; y0: number; v: { x: number; y: number }; min: Vec3; max: Vec3 }
   | { kind: 'press'; x0: number; y0: number; hit: Hit; wasSelected: boolean; add: boolean }
   | XfDrag
 
@@ -64,6 +66,29 @@ const AXIS_NAME = ['X', 'Y', 'Z']
 let gizmoDirty = true
 let gizmoState: { center: THREE.Vector3; frame: THREE.Quaternion } | null = null
 useStore.subscribe(() => { gizmoDirty = true; sceneManager.invalidate() })
+
+/** Primitive drawing: the box's 12 edges and its 6 face-center handles. */
+export function drawHandles(min: Vec3, max: Vec3): { axis: number; side: 0 | 1; p: Vec3 }[] {
+  const c: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2]
+  const out: { axis: number; side: 0 | 1; p: Vec3 }[] = []
+  for (let a = 0; a < 3; a++) for (const side of [0, 1] as const) { const p = [...c] as Vec3; p[a] = side ? max[a] : min[a]; out.push({ axis: a, side, p }) }
+  return out
+}
+function boxLines(min: Vec3, max: Vec3): number[] {
+  const P = (i: number): Vec3 => [i & 1 ? max[0] : min[0], i & 2 ? max[1] : min[1], i & 4 ? max[2] : min[2]]
+  const out: number[] = []
+  for (let i = 0; i < 8; i++) for (const bit of [1, 2, 4]) if (!(i & bit)) out.push(...P(i), ...P(i | bit))
+  return out
+}
+let drawOverlay = false
+useStore.subscribe((st, prev) => {
+  if (st.draw === prev.draw) return
+  const d = st.draw
+  if (d?.has) { sceneManager.setToolOverlay(boxLines(d.min, d.max), drawHandles(d.min, d.max).flatMap(h => h.p)); drawOverlay = true }
+  else if (drawOverlay) { sceneManager.setToolOverlay(null); drawOverlay = false }
+})
+/** Which world axes a view shows (horizontal, vertical) and the one it looks along. */
+const VIEW_AXES: Record<string, [number, number, number]> = { top: [0, 2, 1], bottom: [0, 2, 1], front: [0, 1, 2], back: [0, 1, 2], left: [2, 1, 0], right: [2, 1, 0], persp: [0, 2, 1] }
 /** the drag that owns the current transform (only one at a time across panes) */
 let activeXf: {
   pane: number; cancel: () => void; confirm: () => void; key: (e: KeyboardEvent) => void; move: (e: PointerEvent) => void
@@ -282,7 +307,7 @@ export function Viewport({ pane }: { pane: number }) {
     if (gizmoDirty) { gizmoDirty = false; const T = kind ? collectTargets(st) : null; gizmoState = T ? { center: T.center, frame: T.frame } : null }
     const d = drag.current
     const hideForModal = activeXf && d?.kind !== 'xf' && interaction.modal
-    giz.root.visible = !!kind && !!gizmoState && !hideForModal
+    giz.root.visible = !!kind && !!gizmoState && !hideForModal && !useStore.getState().draw
     if (!giz.root.visible || !gizmoState) return
     const cam = c.camera
     const wpp = cam instanceof THREE.OrthographicCamera ? (cam.top - cam.bottom) / cam.zoom / c.h
@@ -651,6 +676,88 @@ export function Viewport({ pane }: { pane: number }) {
     info()
   }
 
+  // ---------- primitive drawing (LightWave style bounding box) ----------
+  /** Point on this view's drawing plane: the ground in perspective, the plane through the origin in flat views. */
+  const drawPoint = (x: number, y: number, snap: boolean): THREE.Vector3 | null => {
+    const [, , k] = VIEW_AXES[cfg.type]
+    const n = new THREE.Vector3(); n.setComponent(k, 1)
+    const p = ray(x, y).ray.intersectPlane(new THREE.Plane(n, 0), new THREE.Vector3())
+    if (!p) return null
+    if (snap) { const g = useStore.getState().gridStep; p.set(Math.round(p.x / g) * g, Math.round(p.y / g) * g, Math.round(p.z / g) * g) }
+    return p
+  }
+  function drawDown(x: number, y: number, ctrl: boolean) {
+    const st = useStore.getState(), d = st.draw!
+    if (drag.current?.kind === 'draw' && drag.current.phase === 'height') { drag.current = null; return } // click ends the height
+    if (d.has) {
+      for (const h of drawHandles(d.min, d.max)) {
+        const sp = project(h.p)
+        if (Math.hypot(sp.x - x, sp.y - y) > 9) continue
+        const q = [...h.p] as Vec3; q[h.axis] += 1
+        const s1 = project(q)
+        // a handle pointing into the screen can't be dragged here (and must not block drawing in this view)
+        if (Math.hypot(s1.x - sp.x, s1.y - sp.y) < 5) continue
+        drag.current = { kind: 'drawHandle', axis: h.axis, side: h.side, x0: x, y0: y, v: { x: s1.x - sp.x, y: s1.y - sp.y }, min: [...d.min] as Vec3, max: [...d.max] as Vec3 }
+        return
+      }
+    }
+    const p0 = drawPoint(x, y, st.snap !== ctrl)
+    if (p0) drag.current = { kind: 'draw', phase: 'foot', p0, x0: x, y0: y, moved: false }
+  }
+  function drawMove(dd: Extract<Drag, { kind: 'draw' | 'drawHandle' }>, x: number, y: number, shift: boolean, ctrl: boolean) {
+    const st = useStore.getState(), d = st.draw
+    if (!d) { drag.current = null; return }
+    const snap = st.snap !== ctrl, g = st.gridStep
+    const snapV = (v: number) => (snap ? Math.round(v / g) * g : v)
+    if (dd.kind === 'drawHandle') {
+      const L = dd.v.x ** 2 + dd.v.y ** 2
+      if (L < 1e-6) return
+      const k = ((x - dd.x0) * dd.v.x + (y - dd.y0) * dd.v.y) / L
+      const min = [...dd.min] as Vec3, max = [...dd.max] as Vec3
+      if (dd.side) max[dd.axis] = Math.max(min[dd.axis] + 1e-3, snapV(dd.max[dd.axis] + k))
+      else min[dd.axis] = Math.min(max[dd.axis] - 1e-3, snapV(dd.min[dd.axis] + k))
+      st.drawSet({ min, max })
+      return
+    }
+    if (dd.phase === 'height') {
+      const h = Math.max(1e-3, snapV((dd.h0 ?? 1) + (dd.y0 - y) * worldPerPixel(new THREE.Vector3(...d.min).lerp(new THREE.Vector3(...d.max), 0.5))))
+      const min = [...d.min] as Vec3, max = [...d.max] as Vec3
+      min[1] = 0; max[1] = shift ? Math.max(max[0] - min[0], max[2] - min[2]) : h
+      st.drawSet({ min, max })
+      return
+    }
+    if (!dd.moved && Math.hypot(x - dd.x0, y - dd.y0) < 3) return
+    dd.moved = true
+    const p1 = drawPoint(x, y, snap)
+    if (!p1) return
+    const [i, j, k] = VIEW_AXES[cfg.type]
+    let a1 = p1.getComponent(i), b1 = p1.getComponent(j)
+    const a0 = dd.p0.getComponent(i), b0 = dd.p0.getComponent(j)
+    if (shift) {
+      const side = Math.max(Math.abs(a1 - a0), Math.abs(b1 - b0))
+      a1 = a0 + (a1 < a0 ? -side : side); b1 = b0 + (b1 < b0 ? -side : side)
+    }
+    const min = [...d.min] as Vec3, max = [...d.max] as Vec3
+    const firstAxes = d.view ? VIEW_AXES[d.view] : null
+    if (d.has && d.view && !isPersp && d.view !== 'persp' && firstAxes && firstAxes[2] !== k) {
+      // a second flat view sets only the axis the footprint view couldn't show
+      const newAxis = firstAxes[2]
+      const [lo, hi] = newAxis === i ? [Math.min(a0, a1), Math.max(a0, a1)] : [Math.min(b0, b1), Math.max(b0, b1)]
+      if (shift) { const side = Math.max(max[firstAxes[0]] - min[firstAxes[0]], max[firstAxes[1]] - min[firstAxes[1]]); min[newAxis] = lo; max[newAxis] = lo + side }
+      else { min[newAxis] = lo; max[newAxis] = Math.max(lo + 1e-3, hi) }
+      const axes = [...d.axes] as [boolean, boolean, boolean]; axes[newAxis] = true
+      st.drawSet({ min, max }, { axes })
+      return
+    }
+    min[i] = Math.min(a0, a1); max[i] = Math.max(a0, a1, min[i] + 1e-3)
+    min[j] = Math.min(b0, b1); max[j] = Math.max(b0, b1, min[j] + 1e-3)
+    const si = max[i] - min[i], sj = max[j] - min[j]
+    const depth = shift ? Math.max(si, sj) : Math.min(si, sj)
+    if (isPersp) { min[k] = 0; max[k] = depth } else { min[k] = -depth / 2; max[k] = depth / 2 }
+    const axes: [boolean, boolean, boolean] = [false, false, false]; axes[i] = true; axes[j] = true
+    st.drawSet({ min, max }, { view: cfg.type, axes })
+  }
+
   // window listeners for the active transform (modal transforms keep working outside the pane)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -728,6 +835,7 @@ export function Viewport({ pane }: { pane: number }) {
     if (e.button === 1 || (e.button === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y }; return }
     if (e.button === 2 || (e.button === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
     if (e.button !== 0) return
+    if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still
     const h: Handle | null = gizmo.current.hit(ray(x, y))
     if (h) {
@@ -813,6 +921,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (before !== gizmo.current.hovered) sceneManager.invalidate()
       return
     }
+    if (d.kind === 'draw' || d.kind === 'drawHandle') { drawMove(d, x, y, e.shiftKey, e.ctrlKey || e.metaKey); return }
     if (d.kind === 'orbit') { orbit(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'pan') { pan(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'zoom') { zoom(Math.exp((y - d.y) * 0.01)); d.x = x; d.y = y; return }
@@ -843,6 +952,14 @@ export function Viewport({ pane }: { pane: number }) {
 
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current
+    if (d?.kind === 'drawHandle') { drag.current = null; return }
+    if (d?.kind === 'draw') {
+      const dr = useStore.getState().draw
+      // perspective: after the footprint, lift the mouse to set the height, click to finish
+      if (d.phase === 'foot' && d.moved && isPersp && dr?.has) { const { y } = local(e); drag.current = { ...d, phase: 'height', y0: y, h0: dr.max[1] - dr.min[1] }; return }
+      if (d.phase === 'foot') drag.current = null
+      return
+    }
     if (d?.kind === 'xf') { if (d.src !== 'modal') endXf(d, true); return }
     if (d?.kind === 'press') {
       drag.current = null
@@ -930,7 +1047,7 @@ export function Viewport({ pane }: { pane: number }) {
     return best
   }
 
-  const onWheel = (e: React.WheelEvent) => { if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return } zoom(Math.exp(e.deltaY * 0.0012)) }
+  const onWheel = (e: React.WheelEvent) => { const dr = useStore.getState().draw; if (dr?.has) { useStore.getState().drawSeg(dr.seg + (e.deltaY < 0 ? 1 : -1)); return } if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return } zoom(Math.exp(e.deltaY * 0.0012)) }
 
   const frameSelection = (all = false) => {
     const c = ctx.current!

@@ -4,7 +4,7 @@ import { history, useStore, type EditMode, type Layout } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
 import { OPS, opById } from '../ops'
-import { PRIMITIVES, triCount, type ParamDef, type PrimitiveKind } from '../model'
+import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -78,7 +78,7 @@ export function ToolRail() {
       <div className="tool-list">
         {tab === 'Create' && <>
           <h4>Primitives</h4>
-          {(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => <CmdBtn key={k} cmd={`add.${k}`} label={PRIMITIVES[k].label} testid={`prim-${k}`} />)}
+          {(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => <PrimBtn key={k} kind={k} />)}
           <h4>Points</h4>
           <CmdBtn cmd="tool.point" label="Point" active={tool === 'point'} />
           <CmdBtn cmd="op.con.face" label="Make polygon" />
@@ -138,6 +138,78 @@ export function ToolRail() {
 }
 
 /** LightWave's "n" Numeric window: edit the last operation's parameters live. */
+/** Primitive button: click arms box drawing; double-click drops a default one at the origin. */
+function PrimBtn({ kind }: { kind: PrimitiveKind }) {
+  const armed = useStore(s => s.draw?.kind === kind)
+  return (
+    <button className={`tool-btn ${armed ? 'on' : ''}`} data-testid={`prim-${kind}`}
+      title={`${PRIMITIVES[kind].label}: drag a box in any view (Shift equal sides, Ctrl grid) · double-click or Enter drops one at the origin`}
+      onClick={() => useStore.getState().armDraw(kind)}
+      onDoubleClick={() => { const s = useStore.getState(); s.cancelDraw(); s.addPrimitive(kind) }}>
+      <span>{PRIMITIVES[kind].label}</span>
+    </button>
+  )
+}
+
+/** While drawing a primitive: live box size and segments, Enter confirms, Esc cancels. */
+export function DrawPanel() {
+  const d = useStore(s => s.draw)
+  useEffect(() => {
+    if (!d) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const inField = t?.tagName === 'INPUT'
+      if (e.key === 'Enter') {
+        e.preventDefault(); e.stopImmediatePropagation()
+        if (inField) (t as HTMLInputElement).blur()
+        const s = useStore.getState()
+        if (s.draw?.has) s.confirmDraw()
+        else if (s.draw) { const k = s.draw.kind; s.cancelDraw(); s.addPrimitive(k) }
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); e.stopImmediatePropagation()
+        useStore.getState().cancelDraw()
+      } else if (!inField && (e.key === '+' || e.key === '=' || e.key === '-') && useStore.getState().draw?.has) {
+        e.preventDefault(); e.stopImmediatePropagation()
+        const s = useStore.getState(); s.drawSeg(s.draw!.seg + (e.key === '-' ? -1 : 1))
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [d])
+  if (!d) return null
+  const label = PRIMITIVES[d.kind].label
+  const size = (i: number) => +(d.max[i] - d.min[i]).toFixed(4)
+  const setSize = (i: number, v: number) => {
+    if (!(v > 0)) return
+    const min = [...d.min] as Vec3, max = [...d.max] as Vec3
+    const c = (min[i] + max[i]) / 2
+    min[i] = c - v / 2; max[i] = c + v / 2
+    useStore.getState().drawSet({ min, max })
+  }
+  return (
+    <div className="numeric" data-testid="draw-panel">
+      <div className="numeric-head"><b>Draw {label}</b><span className="grow" /></div>
+      {!d.has ? <div className="muted draw-hint">Drag a box in any view · Shift equal sides · Ctrl snaps to the grid · Enter drops one at the origin · Esc cancels</div> : <>
+        {['X', 'Y', 'Z'].map((a, i) => (
+          <label className="pf" key={a}><span>Size {a}</span>
+            <input type="number" step={0.1} min={0.001} data-testid={`draw-s${a.toLowerCase()}`} value={size(i)} onChange={e => setSize(i, parseFloat(e.target.value))} />
+          </label>
+        ))}
+        {SEG_KEY[d.kind] && (
+          <label className="pf"><span>Segments</span>
+            <input type="number" step={1} data-testid="draw-seg" value={d.seg} onChange={e => useStore.getState().drawSeg(parseInt(e.target.value, 10))} />
+          </label>
+        )}
+        <div className="muted draw-hint">Drag the handles to resize · wheel or +/- segments · drag in another flat view for depth</div>
+        <div className="draw-btns">
+          <button className="tool-btn" data-testid="draw-ok" onClick={() => useStore.getState().confirmDraw()}>Create (Enter)</button>
+          <button className="tool-btn" data-testid="draw-cancel" onClick={() => useStore.getState().cancelDraw()}>Cancel (Esc)</button>
+        </div>
+      </>}
+    </div>
+  )
+}
+
 export function NumericPanel() {
   const open = useStore(s => s.numericOpen)
   const lo = useStore(s => s.lastOp)

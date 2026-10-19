@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Viewport } from './components/Viewport'
-import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup } from './components/Chrome'
+import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel } from './components/Chrome'
 import { Sidebar, Timeline } from './components/Panels'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
@@ -42,7 +42,7 @@ export default function App() {
           </div>
           <Timeline />
         </div>
-        <div className="right-col"><NumericPanel /><Sidebar /></div>
+        <div className="right-col"><DrawPanel /><NumericPanel /><Sidebar /></div>
       </div>
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />

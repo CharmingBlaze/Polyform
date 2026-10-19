@@ -444,6 +444,41 @@ export function makePolys(kind: PrimitiveKind, params: Params = {}): Poly[] | TH
   }
 }
 
+/** The parameter the mouse wheel / segment field changes while drawing a primitive. */
+export const SEG_KEY: Record<PrimitiveKind, string | null> = {
+  box: 'seg', sphere: 'sides', geosphere: 'detail', cylinder: 'sides', cone: 'sides', plane: 'seg', torus: 'sides',
+  capsule: 'sides', tube: 'sides', pyramid: 'sides', disc: 'sides', wedge: null, stairs: 'steps',
+}
+export const segOf = (k: PrimitiveKind, p: Params) => (SEG_KEY[k] ? p[SEG_KEY[k]!] : 1)
+export function clampSeg(k: PrimitiveKind, v: number): number {
+  const key = SEG_KEY[k]
+  if (!key) return 1
+  const d = PRIMITIVES[k].params.find(x => x.key === key)!
+  return Math.round(Math.min(d.max, Math.max(d.min, Number.isFinite(v) ? v : d.def)))
+}
+
+/**
+ * Add a primitive stretched to fit exactly inside the box min..max (world). Flat primitives (plane, disc) sit at the
+ * box's middle on their flat axis. The sphere's rings follow its sides so the wheel refines it evenly.
+ */
+export function fitPrimitive(m: Model, kind: PrimitiveKind, min: Vec3, max: Vec3, seg: number) {
+  const params: Params = {}
+  const key = SEG_KEY[kind]
+  if (key) params[key] = clampSeg(kind, seg)
+  if (kind === 'sphere') params.rings = Math.max(2, Math.round(clampSeg(kind, seg) * 0.7))
+  const r = addPrimitive(m, kind, [0, 0, 0], params)
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (const v of r.verts) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], m.verts[v][i]); hi[i] = Math.max(hi[i], m.verts[v][i]) }
+  for (const v of r.verts) {
+    const p = m.verts[v]
+    m.verts[v] = [0, 1, 2].map(i => {
+      const ext = hi[i] - lo[i]
+      return ext < 1e-9 ? (min[i] + max[i]) / 2 : min[i] + ((p[i] - lo[i]) / ext) * (max[i] - min[i])
+    }) as Vec3
+  }
+  return r
+}
+
 /** Append a primitive to the model as a new group, welding coincident vertices. Returns new vertex & face indices. */
 export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0], params: Params = {}, mat = 0) {
   const label = PRIMITIVES[kind].label
