@@ -89,11 +89,6 @@ describe('edit ops', () => {
     expect(openEdges(m)).toBe(0); expect(windingConsistent(m)).toBe(true)
     expect(signedVolume(m)).toBeCloseTo(v, 6)
   })
-  it('subdivide of a single face leaves T-junctions (documents behaviour)', () => {
-    const m = M.emptyModel(); M.addPrimitive(m, 'box')
-    M.subdivideFaces(m, [0]); invariants(m)
-    expect(openEdges(m)).toBeGreaterThan(0)
-  })
   it('weld merges verts, drops degenerate faces, keeps indices valid', () => {
     const m = M.emptyModel(); M.addPrimitive(m, 'box')
     const f = m.faces[0]

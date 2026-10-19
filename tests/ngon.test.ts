@@ -82,3 +82,14 @@ describe('extrude on quads', () => {
     for (const w of m.faces.slice(n0)) expect(topUV).toContain(w.uv[0].join(','))
   })
 })
+
+describe('partial subdivide', () => {
+  it('subdividing one face of a box leaves no T-junctions (neighbours get the midpoints)', () => {
+    const m = M.emptyModel(); M.addPrimitive(m, 'box')
+    const top = m.faces.findIndex(f => M.faceNormal(m, f).y > 0.9)
+    const v0 = volume(m)
+    M.subdivideFaces(m, [top]); valid(m)
+    expect(edges(m).open).toBe(0); expect(edges(m).dupDirected).toBe(0)
+    expect(volume(m)).toBeCloseTo(v0, 6)
+  })
+})
