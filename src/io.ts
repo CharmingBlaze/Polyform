@@ -3,6 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
+import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
 import { ensureSkin } from './skin'
@@ -200,7 +201,7 @@ export function exportOBJ(m: Model, name = 'model') {
   download(mtl, `${name}.mtl`, 'text/plain')
 }
 
-const usedTextures = (m: Model) => m.materials.map(mt => mt.texture).filter((t): t is string => !!t)
+const usedTextures = (m: Model) => [...new Set([...m.materials.map(mt => mt.texture).filter((t): t is string => !!t), ...usedRefTextures(m)])]
 
 export function saveProject(m: Model, name = 'model') {
   download(JSON.stringify(projectFile(m, textures.serialize(usedTextures(m)))), `${name}.polyform.json`, 'application/json')

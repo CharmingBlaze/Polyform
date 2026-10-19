@@ -4,6 +4,7 @@ import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, textures } from './textures'
+import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
 
@@ -88,6 +89,8 @@ class SceneManager {
   private matKey = ''
   boneObjs: THREE.Object3D[] = []
   onionObjs: THREE.Object3D[] = []
+  refsGroup = new THREE.Group()
+  private refMeshes = new Map<string, THREE.Mesh>()
 
   constructor() {
     const s = this.scene
@@ -152,6 +155,7 @@ class SceneManager {
     this.boneObjs = [bones, joints, boneFill]
     this.onionObjs = []
     this.ensureOnion(4) // up to 3 steps each side
+    this.refsGroup.layers.enableAll(); s.add(this.refsGroup)
 
     // 3D cursor: a small red/white crosshair, always on top
     const cur = new THREE.LineSegments(this.cursorGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false }))
@@ -166,7 +170,7 @@ class SceneManager {
     useStore.subscribe((st, prev) => {
       if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
-        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d || st.tool !== prev.tool || st.paint.target !== prev.paint.target) this.rebuild()
+        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.showRefs !== prev.showRefs || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d || st.tool !== prev.tool || st.paint.target !== prev.paint.target) this.rebuild()
     })
     textures.onChange(() => { this.matKey = ''; this.invalidate() })
     this.rebuild()
@@ -438,7 +442,51 @@ class SceneManager {
         slot++
       }
     }
+    this.syncRefs(m.refs ?? [], st.showRefs !== false)
     this.invalidate()
+  }
+
+  /** Sync textured planes for viewport reference images. */
+  private syncRefs(refs: RefImage[], show: boolean) {
+    const keep = new Set<string>()
+    for (const r of refs) {
+      keep.add(r.id)
+      let mesh = this.refMeshes.get(r.id)
+      const tex = textures.three(r.texture)
+      if (!mesh) {
+        const geo = new THREE.PlaneGeometry(1, 1)
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          opacity: r.opacity,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        })
+        mesh = new THREE.Mesh(geo, mat)
+        mesh.frustumCulled = false
+        mesh.renderOrder = -1
+        mesh.layers.enableAll()
+        this.refsGroup.add(mesh)
+        this.refMeshes.set(r.id, mesh)
+      }
+      const mat = mesh.material as THREE.MeshBasicMaterial
+      if (mat.map !== tex) { mat.map = tex; mat.needsUpdate = true }
+      mat.opacity = r.opacity
+      mat.visible = true
+      mesh.visible = show && r.visible && !!tex
+      mesh.position.set(r.pos[0], r.pos[1], r.pos[2])
+      mesh.rotation.set(r.rot[0], r.rot[1], r.rot[2])
+      mesh.scale.set(r.size[0], r.size[1], 1)
+      mesh.name = r.id
+    }
+    for (const [id, mesh] of [...this.refMeshes]) {
+      if (keep.has(id)) continue
+      this.refsGroup.remove(mesh)
+      mesh.geometry.dispose()
+      ;(mesh.material as THREE.Material).dispose()
+      this.refMeshes.delete(id)
+    }
   }
 }
 

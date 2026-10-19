@@ -11,7 +11,7 @@
     "lint:errors": "eslint . --quiet",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
@@ -25,7 +25,8 @@
     "test:joints": "node tests/e2e/run.mjs joints.mjs",
     "test:timeline": "node tests/e2e/run.mjs timeline.mjs",
     "test:uv": "node tests/e2e/run.mjs uv.mjs",
-    "test:ik": "node tests/e2e/run.mjs ik.mjs"
+    "test:ik": "node tests/e2e/run.mjs ik.mjs",
+    "test:refs": "node tests/e2e/run.mjs refs.mjs"
   },
   "dependencies": {
     "comlink": "4.4.2",

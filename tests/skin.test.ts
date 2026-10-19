@@ -15,7 +15,7 @@ describe('skin (4 weights)', () => {
       materials: [{ name: 'M', color: '#ffffff', roughness: 0.8, metalness: 0, texture: null }],
       bones: [{ name: 'J', parent: -1, pos: [0, 0, 0] }],
       clips: [{ name: 'A', frames: 30, fps: 24, loop: true, interp: 'linear', keys: {}, okeys: {} }],
-      wires: [],
+      wires: [], refs: [],
     }
     const { model } = migrateProject(raw)
     expect(model.version).toBe(PROJECT_VERSION)

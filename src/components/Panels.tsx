@@ -7,6 +7,7 @@ import { importImage } from '../io'
 import { UVEditor } from './UVEditor'
 import { Outliner } from './Outliner'
 import { DopeSheet } from './DopeSheet'
+import { RefsPanel } from './RefsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
@@ -212,6 +213,7 @@ function UVSide() {
   return (
     <>
       <Images />
+      <RefsPanel />
       {!uvSpace && <div className="card"><div className="label">UV editor</div><UVEditor /></div>}
     </>
   )

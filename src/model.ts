@@ -112,10 +112,24 @@ export interface Clip {
   okeys: Record<number, Record<number, OKey>>
 }
 
-export const PROJECT_VERSION = 4
+export const PROJECT_VERSION = 5
 
 /** Up to 4 bone influences (glTF JOINTS_0 / WEIGHTS_0). joints[i] = bone index or -1; weight 0 = unused. */
 export type Skin = { joints: [number, number, number, number]; weights: [number, number, number, number] }
+
+/** Viewport reference image (modeling guide). Not exported to glTF. */
+export interface RefImage {
+  id: string
+  name: string
+  texture: string
+  pos: Vec3
+  /** Euler XYZ radians. */
+  rot: Vec3
+  /** World-space width and height. */
+  size: [number, number]
+  opacity: number
+  visible: boolean
+}
 
 export interface Model {
   version: number
@@ -131,6 +145,8 @@ export interface Model {
   clips: Clip[]
   /** loose edges (no face), e.g. from extruding points; editor-only construction geometry, not exported to glTF */
   wires: [number, number][]
+  /** Viewport reference images (guides). */
+  refs: RefImage[]
 }
 
 export const newMaterial = (name = 'Material', color = '#ffffff'): Material => ({ name, color, roughness: 0.8, metalness: 0, texture: null })
@@ -138,7 +154,7 @@ export const newClip = (name = 'Animation'): Clip => ({ name, frames: 30, fps: 2
 export const newGroup = (name: string, mat = 0): Group => ({ name, visible: true, mat, smooth: 0, xf: identityXform() })
 
 export function emptyModel(): Model {
-  return { version: PROJECT_VERSION, verts: [], vbone: [], skin: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [] }
+  return { version: PROJECT_VERSION, verts: [], vbone: [], skin: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [], refs: [] }
 }
 
 
@@ -199,6 +215,7 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
     })
     return { ...r, version: 4, skin, vbone: vbone.length === verts.length ? vbone : verts.map(() => -1) }
   },
+  4: (r) => ({ ...r, version: 5, refs: Array.isArray(r.refs) ? r.refs : [] }),
 }
 
 /**
@@ -229,8 +246,8 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
         : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
     })
   }
-  const { verts, vbone, skin, faces, groups, materials, bones, clips, wires } = r as unknown as Model
-  return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires }, textures }
+  const { verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs } = r as unknown as Model
+  return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs: Array.isArray(refs) ? refs : [] }, textures }
 }
 
 /** The JSON written to a .polyform.json file. */
@@ -250,7 +267,8 @@ const TEX_ID = /^[\w-]{1,64}$/
 /** Throws if the model is structurally invalid (bad indices, non-finite numbers, loops, absurd sizes). */
 export function validateModel(m: Model) {
   if (!m || typeof m !== 'object') throw new Error('Not a Polyform project')
-  for (const k of ['verts', 'vbone', 'skin', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
+  if (!Array.isArray(m.refs)) m.refs = []
+  for (const k of ['verts', 'vbone', 'skin', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires', 'refs'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
   const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length, nm = m.materials.length
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
   const num = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi
@@ -290,6 +308,15 @@ export function validateModel(m: Model) {
     if (!x || !vec(x.pivot, 3) || !vec(x.pos, 3) || !vec(x.rot, 3) || !vec(x.scale, 3)) throw new Error(`Group ${i} has an invalid transform`)
   })
   m.wires.forEach((w, i) => {
+  m.refs.forEach((rf, i) => {
+    if (!rf || typeof rf !== 'object') throw new Error(`Reference ${i} is invalid`)
+    if (typeof rf.id !== 'string' || !rf.id) throw new Error(`Reference ${i} needs an id`)
+    if (typeof rf.name !== 'string') throw new Error(`Reference ${i} needs a name`)
+    if (typeof rf.texture !== 'string' || !TEX_ID.test(rf.texture)) throw new Error(`Reference ${i} has a bad texture id`)
+    if (!vec(rf.pos, 3) || !vec(rf.rot, 3) || !vec(rf.size, 2)) throw new Error(`Reference ${i} has bad transform`)
+    if (!num(rf.opacity, 0, 1)) throw new Error(`Reference ${i} opacity out of range`)
+    if (typeof rf.visible !== 'boolean') throw new Error(`Reference ${i} visibility must be boolean`)
+  })
     if (!Array.isArray(w) || w.length !== 2 || !Number.isInteger(w[0]) || !Number.isInteger(w[1]) || w[0] < 0 || w[1] < 0 || w[0] >= nv || w[1] >= nv || w[0] === w[1]) throw new Error(`Wire edge ${i} is invalid`)
   })
   const owner = new Int32Array(nv).fill(-1)

@@ -83,6 +83,11 @@ export function ToolRail() {
           <h4>Samples</h4>
           <CmdBtn cmd="sample.character" label="Character + walk" testid="sample-character" />
           <CmdBtn cmd="sample.windmill" label="Windmill" testid="sample-windmill" />
+          <h4>Reference</h4>
+          <button className="tool-btn" data-testid="ref-add-rail" title="Add a viewport reference image"
+            onClick={() => { useStore.getState().set({ sideTab: 'uv' }); setTimeout(() => document.querySelector<HTMLElement>('[data-testid="ref-add-btn"]')?.click(), 50) }}>
+            <span>Add reference…</span>
+          </button>
         </>}
         {tab === 'Modify' && <>
           <h4>Transform</h4>

@@ -85,6 +85,7 @@ interface State {
   xMirror: boolean
   xMirrorMap: XMirror | null
   showSkeleton: boolean
+  showRefs: boolean
   /** Blender-style 3D cursor: Shift+right-click places it; Shift+A adds a joint there */
   cursor3d: Vec3
   addJointAtCursor: () => void
@@ -297,6 +298,7 @@ export const useStore = create<State>((set, get) => ({
   xMirror: false,
   xMirrorMap: null,
   showSkeleton: true,
+  showRefs: true,
   cursor3d: [0, 0, 0],
   layout: '4',
   panes: DEFAULT_PANES,
