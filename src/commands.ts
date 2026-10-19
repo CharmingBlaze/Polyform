@@ -94,7 +94,7 @@ export const commands: Command[] = [
   { id: 'paint.fill', label: 'Paint: fill face', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'fill' } }) },
   { id: 'paint.mirror', label: 'Paint: toggle mirror X', group: 'Paint', run: () => S().setPaint({ mirror: !S().paint.mirror }) },
   { id: 'tool.paint', label: 'Paint tool', group: 'Tools', run: () => S().set({ tool: 'paint', mode: 'model' }) },
-  { id: 'tool.off', label: 'Tool off / back (LightWave Space)', group: 'Tools', keys: 'Space', run: () => {
+  { id: 'tool.off', label: 'Play / pause (Animate) · tool off (Model)', group: 'Tools', keys: 'Space', run: () => {
     const s = S()
     if (s.mode === 'animate') return s.set({ playing: !s.playing })
     if (s.extruding) return
@@ -207,7 +207,7 @@ export const commands: Command[] = [
   { id: 'sample.windmill', label: 'Open sample: Windmill (animated prop)', group: 'File', run: () => S().openSample('windmill') },
   { id: 'file.open', label: 'Open / import…', group: 'File', keys: 'Ctrl+O', run: openFile },
   { id: 'file.save', label: 'Save project (.json)', group: 'File', keys: 'Ctrl+S', run: () => saveProject(S().model) },
-  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => exportGLB(S().model).then(w => S().notify(w.length ? `Exported model.glb with ${w.length} warning(s): ${w[0]}` : 'Exported model.glb')) },
+  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => { const s = S(); if (!s.model.faces.length && !s.model.bones.length) return s.notify('Nothing to export yet — add a shape or open a sample'); return exportGLB(s.model).then(w => s.notify(w.length ? `Exported model.glb with ${w.length} warning(s): ${w[0]}` : 'Exported model.glb')) } },
   { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => exportOBJ(S().model) },
 ]
 

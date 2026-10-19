@@ -58,7 +58,7 @@ export function HintBar() {
   let text: ReactNode, acts: ReactNode = null
   if (ws === 'model') {
     if (!f.faces) { text = 'Start with a primitive from the Create tab, a sample, or open a file.'; acts = <><Act onClick={() => useStore.getState().addPrimitive('box')} label="Add box" testid="hint-box" primary /><Act cmd="sample.character" label="Sample character" testid="hint-sample" /><Act cmd="file.open" label="Open…" testid="hint-open" /></> }
-    else { text = <>Shape it: <kbd>E</kbd> extrude · <kbd>Ctrl+R</kbd> loop cut · <kbd>K</kbd> knife · <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform · <kbd>Tab</kbd> cycles point / edge / face.</>; acts = <Next to="uv" /> }
+    else { text = <>Shape it: <kbd>E</kbd> extrude · <kbd>Ctrl+R</kbd> loop cut · <kbd>K</kbd> knife · <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> point / edge / face · <kbd>Tab</kbd> object.</>; acts = <Next to="uv" /> }
   } else if (ws === 'uv') {
     if (!f.faces) text = 'Nothing to unwrap yet: add a shape in Model first.'
     else if (f.noUV) { text = `${f.noUV} face${f.noUV === 1 ? ' has' : 's have'} no UVs. Auto UV unwraps everything in one click.`; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
@@ -67,6 +67,7 @@ export function HintBar() {
     if (!f.faces) text = 'Nothing to paint yet: add a shape in Model first.'
     else if (f.noUV) { text = 'Paint needs UVs to paint into an image (Vertex painting works without).'; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
     else if (!f.painted) text = 'Drag on the model or in the UV editor to paint; the first stroke creates the image. Fill makes flat faces, Ctrl+click picks a colour.'
+    else if (!f.images && f.vcolor) { text = 'Vertex colours are set. Paint an image (first stroke creates one) or continue — Mirror X, [ ] brush size.'; acts = <Next to="rig" /> }
     else { text = 'Painted. Each stroke is one undo step; [ ] resize the brush; Mirror X paints both sides.'; acts = <Next to="rig" /> }
   } else if (ws === 'rig') {
     if (!f.joints) { text = 'Click in a view with the Joint tool to place a root joint; E extrudes a child joint, Shift+A adds one at the 3D cursor.'; acts = <Act cmd="tool.joint" label="Joint tool" testid="hint-joint" primary /> }
@@ -77,7 +78,10 @@ export function HintBar() {
     else { text = <>Animated. <kbd>Space</kbd> plays · drag keys in the dope sheet · add clips for more actions.</>; acts = <Next to="export" /> }
   } else {
     const item = (ok: boolean, label: string, opt = false) => <span className={`chk ${ok ? 'ok' : opt ? 'opt' : 'no'}`}>{ok ? <Check size={12} /> : <Circle size={10} />} {label}</span>
-    text = <span className="checklist" data-testid="export-checklist">{item(f.faces > 0, `${f.faces} faces`)}{item(f.faces > 0 && !f.noUV, 'UVs', true)}{item(f.painted, 'painted', true)}{item(f.joints > 0 && f.bound === f.points, 'rigged', true)}{item(f.keyed > 0, `${f.keyed} animated clip${f.keyed === 1 ? '' : 's'}`, true)}</span>
+    text = <span className="checklist" data-testid="export-checklist">
+      <span className="export-how" data-testid="export-how">Ctrl+E downloads a .glb (mesh, UVs, images, skins, all clips). Open it in a glTF viewer or a game engine.</span>
+      {item(f.faces > 0, `${f.faces} faces`)}{item(f.faces > 0 && !f.noUV, 'UVs', true)}{item(f.painted, 'painted', true)}{item(f.joints > 0 && f.bound === f.points, 'rigged', true)}{item(f.keyed > 0, `${f.keyed} animated clip${f.keyed === 1 ? '' : 's'}`, true)}
+    </span>
     acts = <><Act cmd="file.glb" label="Export .glb" testid="hint-export" primary /><Act cmd="file.save" label="Save project" testid="hint-save" /></>
   }
   return (

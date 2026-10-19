@@ -163,7 +163,10 @@ export function ToolRail() {
           <CmdBtn cmd="file.obj" label="Export .obj" />
           <CmdBtn cmd="file.save" label="Save project" />
           <CmdBtn cmd="file.open" label="Open / import" />
-          <p className="muted">glTF 2.0 binary: one primitive per material, skins, all clips, images embedded.</p>
+          <p className="muted" data-testid="export-blurb">
+            <b>How to run:</b> <code>npm install && npm run dev</code> → open the URL → Sample character (or build your own) → Space plays the walk → Ctrl+E exports.
+            <br /><b>What working looks like:</b> a .glb with mesh, materials/images, skin (if rigged), and named clips that loop in any glTF viewer. Project files are .polyform.json (Save / Open). Drop .glb/.gltf/.obj/.ms3d/images to import.
+          </p>
         </>}
       </div>
     </aside>
@@ -384,7 +387,7 @@ export function StatusBar() {
       <span>{m.groups.length} groups</span><span>{m.bones.length} joints</span>
       <span className="sel" data-testid="sel-count">Selected: {sv} v · {se} e · {sf} f · {sb} j</span>
       <span className="grow" />
-      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint">{modalInfo ?? hint[tool]}</span>
+      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint">{modalInfo ?? (mode === 'animate' && tool !== 'paint' ? `Animate: Space play/pause · I key · scrub the timeline · ${hint[tool]}` : hint[tool])}</span>
       <button className={`ghost small ${numericOpen ? 'on' : ''}`} onClick={byId['edit.numeric'].run} title="Numeric panel · N">Numeric</button>
     </footer>
   )
