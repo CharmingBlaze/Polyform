@@ -3,7 +3,7 @@
 // then lands as ONE undo step holding the before-pixels of the dirty rectangle of each image it touched.
 import * as THREE from 'three'
 import type { ViewCtx } from './components/Viewport'
-import { faceMat } from './model'
+import { cornerColor, faceMat, newell, type Model } from './model'
 import * as P from './paintcore'
 import { sceneManager } from './scene'
 import { history, useStore } from './store'
@@ -145,20 +145,7 @@ function pick(h: Hit): boolean {
 
 /** Fill the clicked face, or every selected face when the clicked one is selected (and their mirrors). */
 function fill(a: Active, h: Hit) {
-  const s = S(), sel = s.mode === 'model' && s.selFaces.has(h.fi) ? [...s.selFaces] : [h.fi]
-  const faces = new Set(sel)
-  if (s.paint.mirror) for (const fi of sel) {
-    // the mirror of a face: the face hit at its mirrored centroid
-    const f = s.model.faces[fi], P3 = sceneManager.posed
-    if (!f || !P3.length) continue
-    const c = new THREE.Vector3()
-    f.v.forEach(v => c.add(new THREE.Vector3(...P3[v])))
-    c.divideScalar(f.v.length)
-    const n = new THREE.Vector3()
-    for (let i = 0; i < f.v.length; i++) { const p = P3[f.v[i]], q = P3[f.v[(i + 1) % f.v.length]]; n.x += (p[1] - q[1]) * (p[2] + q[2]); n.y += (p[2] - q[2]) * (p[0] + q[0]); n.z += (p[0] - q[0]) * (p[1] + q[1]) }
-    const mh = mirrorHit({ fi, uv: [0, 0], point: c, normal: n.normalize() })
-    if (mh) faces.add(mh.fi)
-  }
+  const s = S(), faces = fillFaces(h)
   for (const fi of faces) {
     const id = texOf(fi)
     if (!id) continue
@@ -169,12 +156,105 @@ function fill(a: Active, h: Hit) {
   finish(a, 'Fill')
 }
 
+
+// ---------- vertex colours ----------
+interface VStroke { ctx: ViewCtx; rayAt: (x: number, y: number) => THREE.Raycaster; last: [number, number]; before: Map<number, P.RGB>; mask: Map<number, number>; changed: boolean }
+let vcur: VStroke | null = null
+const CK = (fi: number, c: number) => fi * 1024 + c
+const lerpHex = (a: P.RGB, b: P.RGB, t: number) => P.rgbToHex([0, 1, 2].map(i => a[i] + (b[i] - a[i]) * t))
+
+/** Set one corner to before ⊕ target × coverage (coverage only grows within a stroke). */
+function paintCorner(m: Model, fi: number, c: number, a: number, st: VStroke | null, target: (fi: number) => P.RGB) {
+  const f = m.faces[fi], k = CK(fi, c)
+  if (st) { if (a <= (st.mask.get(k) ?? 0)) return; st.mask.set(k, a); if (!st.before.has(k)) st.before.set(k, P.hexToRgb(cornerColor(m, f, c))) }
+  const from = st ? st.before.get(k)! : P.hexToRgb(cornerColor(m, f, c))
+  const next = lerpHex(from, target(fi), a)
+  if (!f.vc) f.vc = f.v.map((_v, i) => cornerColor(m, f, i))
+  if (f.vc[c] !== next) { f.vc = f.vc.map((x, i) => (i === c ? next : x)); if (st) st.changed = true }
+}
+
+const vTarget = (m: Model) => {
+  const p = S().paint, brush = P.hexToRgb(p.color)
+  // the eraser paints back toward the material colour
+  return p.mode === 'erase' ? (fi: number) => P.hexToRgb(m.materials[faceMat(m, m.faces[fi])]?.color ?? '#ffffff') : () => brush
+}
+
+/** Paint every corner within the brush sphere around a hit (faces turned well away from the hit are skipped). */
+function vdab(st: VStroke, h: Hit, worldR: number) {
+  const m = S().model, Pz = sceneManager.posed, p = S().paint, target = vTarget(m)
+  const hp = [h.point.x, h.point.y, h.point.z]
+  for (const fi of sceneManager.visibleFaces) {
+    const f = m.faces[fi]
+    let n: THREE.Vector3 | null = null
+    for (let c = 0; c < f.v.length; c++) {
+      const q = Pz[f.v[c]]
+      const d = Math.hypot(q[0] - hp[0], q[1] - hp[1], q[2] - hp[2]) / worldR
+      if (d >= 1) continue
+      if (!n) { n = newell(Pz, f.v); if (n.lengthSq() > 0 && n.normalize().dot(h.normal) < -0.3) break }
+      paintCorner(m, fi, c, P.falloff(d, p.hardness) * p.opacity, st, target)
+    }
+  }
+}
+
+function vstamp(st: VStroke, x: number, y: number) {
+  const h = hitOf(st.rayAt(x, y))
+  if (!h) return
+  const p = S().paint, worldR = p.size * worldPerPx(st.ctx, h.point)
+  vdab(st, h, worldR)
+  if (p.mirror) { const mh = mirrorHit(h); if (mh) vdab(st, mh, worldR) }
+  S().touch()
+}
+
+/** Faces a fill covers: the selection when the clicked face is in it, else the clicked face; plus mirrors. */
+function fillFaces(h: Hit): number[] {
+  const s = S(), sel = s.mode === 'model' && s.selFaces.has(h.fi) ? [...s.selFaces] : [h.fi]
+  const faces = new Set(sel)
+  if (s.paint.mirror) for (const fi of sel) {
+    const f = s.model.faces[fi], P3 = sceneManager.posed
+    if (!f || !P3.length) continue
+    const c = new THREE.Vector3()
+    f.v.forEach(v => c.add(new THREE.Vector3(...P3[v])))
+    c.divideScalar(f.v.length)
+    const mh = mirrorHit({ fi, uv: [0, 0], point: c, normal: newell(P3, f.v).normalize() })
+    if (mh) faces.add(mh.fi)
+  }
+  return [...faces]
+}
+
+function vertexStart(x: number, y: number, h: Hit, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, mode: string): boolean {
+  const s = S(), m = s.model
+  if (mode === 'pick') {
+    // the corner nearest the hit
+    const f = m.faces[h.fi], Pz = sceneManager.posed
+    let best = 0, bd = Infinity
+    f.v.forEach((v, c) => { const q = Pz[v], d = (q[0] - h.point.x) ** 2 + (q[1] - h.point.y) ** 2 + (q[2] - h.point.z) ** 2; if (d < bd) { bd = d; best = c } })
+    s.setPaint({ color: cornerColor(m, f, best) })
+    return false
+  }
+  if (mode === 'fill') {
+    const faces = fillFaces(h), op = s.paint.opacity
+    s.edit(mm => { const target = vTarget(mm); for (const fi of faces) mm.faces[fi].v.forEach((_v, c) => paintCorner(mm, fi, c, op, null, target)) }, 'Fill vertex colours')
+    return false
+  }
+  s.checkpoint(s.paint.mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint')
+  vcur = { ctx, rayAt, last: [x, y], before: new Map(), mask: new Map(), changed: false }
+  vstamp(vcur, x, y)
+  return true
+}
+
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false): boolean {
-  cur = null
+  cur = null; vcur = null
   const h = hitOf(rayAt(x, y))
-  if (!h) return false
   const s = S(), mode = pickMod ? 'pick' : s.paint.mode
+  if (!h) {
+    // strokes may start off the model and paint once they reach it
+    if (mode !== 'brush' && mode !== 'erase') return false
+    if (s.paint.target === 'vertex') { s.checkpoint(mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint'); vcur = { ctx, rayAt, last: [x, y], before: new Map(), mask: new Map(), changed: false } }
+    else cur = { rayAt, ctx, last: [x, y], tex: new Map() }
+    return true
+  }
+  if (s.paint.target === 'vertex') return vertexStart(x, y, h, rayAt, ctx, mode)
   if (mode === 'pick') { pick(h); return false }
   const f = s.model.faces[h.fi]
   if (Math.abs(uvArea(f.uv)) < 1e-9) { s.notify('This face has no UVs: run Auto UV (Map tab) first'); return false }
@@ -188,24 +268,28 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 
 /** Pointer move during a stroke: stamp along the screen path every size/4 px so fast strokes have no gaps. */
 export function paintAt(x: number, y: number) {
-  const a = cur
+  const a = cur ?? vcur
   if (!a) return
   const step = Math.max(1, S().paint.size / 4)
   const [lx, ly] = a.last, d = Math.hypot(x - lx, y - ly)
   if (d < step) return
   const n = Math.floor(d / step)
-  for (let i = 1; i <= n; i++) stampScreen(a, lx + ((x - lx) * i * step) / d, ly + ((y - ly) * i * step) / d)
+  for (let i = 1; i <= n; i++) {
+    const px = lx + ((x - lx) * i * step) / d, py = ly + ((y - ly) * i * step) / d
+    if (cur) stampScreen(cur, px, py); else if (vcur) vstamp(vcur, px, py)
+  }
   const k = (n * step) / d
   a.last = [lx + (x - lx) * k, ly + (y - ly) * k]
 }
 
 export function paintStrokeEnd() {
-  const a = cur
-  cur = null
+  const a = cur, v = vcur
+  cur = null; vcur = null
   if (a) finish(a, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
+  if (v) { if (v.changed) S().commit(); else S().cancelEdit() }
 }
 
-export const painting = () => !!cur
+export const painting = () => !!(cur || vcur)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {

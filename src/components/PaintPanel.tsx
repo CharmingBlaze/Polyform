@@ -5,7 +5,7 @@ const MODES: { mode: PaintMode; label: string; title: string }[] = [
   { mode: 'brush', label: 'Brush', title: 'Paint with the brush colour' },
   { mode: 'erase', label: 'Erase', title: 'Erase to transparent' },
   { mode: 'pick', label: 'Pick', title: 'Eyedropper: click the model to pick a colour (Ctrl+click while painting)' },
-  { mode: 'fill', label: 'Fill', title: 'Fill the clicked face, or all selected faces when it is selected' },
+  { mode: 'fill', label: 'Fill', title: 'Fill the clicked face, or all selected faces when it is selected (with Vertex: a flat-coloured face)' },
 ]
 
 /** Paint tab: brush mode, colour + swatches, size / strength / hardness, mirror, size of new images. */
@@ -23,6 +23,10 @@ export function PaintPanel() {
   return (
     <div className="paint-panel" data-testid="paint-panel">
       <CmdBtn cmd="tool.paint" label="Paint tool" active={tool === 'paint'} testid="brush" />
+      <div className="seg small paint-modes" title="Paint into the face's image, or into vertex colours (exported as glTF COLOR_0)">
+        <button className={p.target === 'image' ? 'on' : ''} data-testid="paint-target-image" onClick={() => setPaint({ target: 'image' })}>Image</button>
+        <button className={p.target === 'vertex' ? 'on' : ''} data-testid="paint-target-vertex" onClick={() => setPaint({ target: 'vertex' })}>Vertex</button>
+      </div>
       <div className="seg small paint-modes">
         {MODES.map(m => <button key={m.mode} className={p.mode === m.mode ? 'on' : ''} title={m.title} data-testid={`paint-${m.mode}`} onClick={() => setPaint({ mode: m.mode })}>{m.label}</button>)}
       </div>
@@ -43,7 +47,7 @@ export function PaintPanel() {
           {[64, 128, 256, 512, 1024, 2048].map(n => <option key={n} value={n}>{n}×{n}</option>)}
         </select>
       </label>
-      <p className="muted">Paints into the face's image (one is created on first paint). [ ] resize the brush · Ctrl+click picks · each stroke is one undo step.</p>
+      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint)." : 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.'} [ ] resize the brush · Ctrl+click picks · each stroke is one undo step.</p>
     </div>
   )
 }

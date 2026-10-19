@@ -27,3 +27,31 @@ describe('baseColor', () => {
     expect(baseColor({ color: '#ff0000' })).toBe('#ff0000')
   })
 })
+
+describe('vertex colours', () => {
+  it('validate per corner, normalize away when the corner count changes, and colour corners', async () => {
+    const { normalizeCorners, cornerColor, vcMaterials } = await import('../src/model')
+    const m = emptyModel(); addPrimitive(m, 'box')
+    m.faces[0].vc = ['#ff0000', '#00ff00', '#0000ff', '#ffffff']
+    expect(() => validateModel(m)).not.toThrow()
+    expect(vcMaterials(m)).toEqual(new Set([0]))
+    expect(cornerColor(m, m.faces[0], 1)).toBe('#00ff00')
+    expect(cornerColor(m, m.faces[1], 0)).toBe(m.materials[0].color)
+    m.faces[1].vc = ['#ff0000']
+    expect(() => validateModel(m)).toThrow(/vertex colours/)
+    m.faces[0].v = m.faces[0].v.slice(0, 3); m.faces[0].uv = m.faces[0].uv.slice(0, 3); m.faces[0].pin = [0, 3]
+    normalizeCorners(m)
+    expect(m.faces[0].vc).toBeUndefined(); expect(m.faces[1].vc).toBeUndefined(); expect(m.faces[0].pin).toEqual([0])
+  })
+  it('undo history keeps vertex colours (diff snapshots compare and copy them)', async () => {
+    const { History } = await import('../src/history')
+    const m = emptyModel(); addPrimitive(m, 'box')
+    const h = new History(); h.reset(m)
+    h.begin(m, 'paint'); m.faces[2].vc = Array(4).fill('#123456'); h.commit(m)
+    m.faces[2].vc[0] = '#ffffff' // in-place change of the live model must not leak into the snapshot
+    const back = h.undo(m).model!
+    expect(back.faces[2].vc).toBeUndefined()
+    const fwd = h.redo().model!
+    expect(fwd.faces[2].vc).toEqual(Array(4).fill('#123456'))
+  })
+})

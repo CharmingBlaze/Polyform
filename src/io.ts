@@ -3,7 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, baseColor, cornerNormals, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
+import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
 import { useStore } from './store'
@@ -32,11 +32,12 @@ export function buildExportScene(m: Model) {
   const root = new THREE.Scene()
   root.name = 'Model'
   const name = uniqueNamer()
-  const materials = m.materials.map(mt => {
+  const vcm = vcMaterials(m)
+  const materials = m.materials.map((mt, mi) => {
     // per-material sampler: clone shares the image, so the exporter still embeds it once
     const src = textures.three(mt.texture)
     const tex = src ? applyFilter(src.clone(), mt.filter) : null
-    const mat = new THREE.MeshStandardMaterial({ color: tex ? '#ffffff' : mt.color, roughness: mt.roughness, metalness: mt.metalness, map: tex })
+    const mat = new THREE.MeshStandardMaterial({ color: baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi)), vertexColors: vcm.has(mi), roughness: mt.roughness, metalness: mt.metalness, map: tex })
     mat.name = mt.name
     return mat
   })
@@ -66,7 +67,8 @@ export function buildExportScene(m: Model) {
     const P: Vec3[] = isSkinned ? world : m.verts.map(v => [v[0] - g.xf.pivot[0], v[1] - g.xf.pivot[1], v[2] - g.xf.pivot[2]] as Vec3)
     const N = cornerNormals(m, P, faces.map(x => x.i))
     faces.sort((a, b) => faceMat(m, a.f) - faceMat(m, b.f))
-    const pos: number[] = [], nrm: number[] = [], uv: number[] = [], si: number[] = [], sw: number[] = []
+    const pos: number[] = [], nrm: number[] = [], uv: number[] = [], si: number[] = [], sw: number[] = [], col: number[] = []
+    const tmp = new THREE.Color()
     const geo = new THREE.BufferGeometry()
     let start = 0, cur = -1, count = 0
     for (const { f, i } of faces) {
@@ -75,6 +77,7 @@ export function buildExportScene(m: Model) {
       for (const t of triangulate(P, f)) for (const c of t) {
         const v = f.v[c]
         pos.push(...P[v]); nrm.push(N[i][c].x, N[i][c].y, N[i][c].z); uv.push(f.uv[c][0], f.uv[c][1])
+        if (vcm.size) { if (vcm.has(mt)) tmp.set(cornerColor(m, f, c)); else tmp.setRGB(1, 1, 1); col.push(tmp.r, tmp.g, tmp.b) }
         si.push(m.vbone[v] >= 0 ? m.vbone[v] + 1 : 0, 0, 0, 0); sw.push(1, 0, 0, 0) // one joint per point, weight 1 (unbound -> Root)
         count++
       }
@@ -83,6 +86,7 @@ export function buildExportScene(m: Model) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3))
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    if (vcm.size) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)) // COLOR_0 (linear)
     let mesh: THREE.Mesh
     if (isSkinned) {
       geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4))

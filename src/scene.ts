@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
-import { cornerNormals, edgeEnds, faceMat, triangulate, type Face, type Vec3 } from './model'
+import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, textures } from './textures'
 import { seamSet } from './uvops'
 
@@ -234,17 +234,19 @@ class SceneManager {
   private syncMaterials() {
     const st = useStore.getState()
     const mats = st.model.materials
-    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version
+    const vcm = vcMaterials(st.model)
+    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + [...vcm].join()
     if (key === this.matKey) return
     this.matKey = key
     const dispose = (m: THREE.Mesh) => (m.material as THREE.Material[]).forEach(x => x.dispose())
     Object.values(this.meshes).forEach(dispose)
-    const make = (flat: boolean, tex: boolean) => mats.map(mt => {
+    const make = (flat: boolean, tex: boolean) => mats.map((mt, mi) => {
       const own = tex ? textures.three(mt.texture) : null
       if (own) applyFilter(own, mt.filter)
-      const map = tex ? own ?? (st.showTexture ? this.checker : null) : null
+      // the UV checker previews unmapped materials, but would hide vertex colours
+      const map = tex ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
       return new THREE.MeshStandardMaterial({
-        color: own ? '#ffffff' : mt.color, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
+        color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       })
     })
@@ -283,7 +285,8 @@ class SceneManager {
     m.verts.forEach((_, i) => { if (!used[i]) this.visibleVerts.add(i) })
 
     const normals = cornerNormals(m, P, this.visibleFaces)
-    const pos: number[] = [], uv: number[] = [], nrm: number[] = [], sel: number[] = []
+    const pos: number[] = [], uv: number[] = [], nrm: number[] = [], sel: number[] = [], vcol: number[] = []
+    const vcm = vcMaterials(m), tmp = new THREE.Color()
     const edges = new Set<number>(), wire: number[] = [], selEdge: number[] = []
     this.edges = []
     const faceSel = st.mode === 'model' && (st.selectMode === 'object' || st.subModes.includes('face'))
@@ -299,7 +302,7 @@ class SceneManager {
       const fn = normals[fi]
       for (const t of this.tris(P, f)) {
         this.triFace.push(fi); triCount++
-        for (const c of t) { pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); nrm.push(fn[c].x, fn[c].y, fn[c].z); if (on) sel.push(...P[f.v[c]]) }
+        for (const c of t) { pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); nrm.push(fn[c].x, fn[c].y, fn[c].z); if (on) sel.push(...P[f.v[c]]); if (vcm.has(fm)) { tmp.set(cornerColor(m, f, c)); vcol.push(tmp.r, tmp.g, tmp.b) } else vcol.push(1, 1, 1) }
       }
       const n = f.v.length
       for (let i = 0; i < n; i++) {
@@ -322,6 +325,7 @@ class SceneManager {
     setAttr(this.meshGeo, 'position', pos, 3)
     setAttr(this.meshGeo, 'normal', nrm, 3)
     setAttr(this.meshGeo, 'uv', uv, 2)
+    setAttr(this.meshGeo, 'color', vcol, 3)
     this.meshGeo.computeBoundingSphere()
     this.meshGeo.computeBoundingBox()
     setAttr(this.selGeo, 'position', sel, 3)

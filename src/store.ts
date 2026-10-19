@@ -22,7 +22,9 @@ export type Shading = 'wire' | 'solid' | 'smooth' | 'textured' | 'texwire'
 export type Layout = '1' | '2h' | '2v' | '3' | '4'
 export interface Pane { type: ViewType; shade: Shading; grid: boolean }
 export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill'
-export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[] }
+/** Paint into the face's image, or into per-corner vertex colours (glTF COLOR_0). */
+export type PaintTarget = 'image' | 'vertex'
+export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget }
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
@@ -283,7 +285,7 @@ export const useStore = create<State>((set, get) => ({
   showTexture: true,
   showWire: true,
   activeMat: 0,
-  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'] },
+  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image' },
   numericOpen: false,
   lastOp: null,
   extruding: false,
@@ -296,7 +298,7 @@ export const useStore = create<State>((set, get) => ({
   toast: null,
 
   set: p => set(p as State),
-  touch: () => set(s => ({ version: s.version + 1 })),
+  touch: () => { M.normalizeCorners(get().model); set(s => ({ version: s.version + 1 })) },
   checkpoint: (label = 'Edit') => {
     history.begin(get().model, label)
     set(s => ({ histRev: s.histRev + 1, lastOp: null }))

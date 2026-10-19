@@ -14,14 +14,42 @@ export interface Face {
   pin?: number[]
   /** UV seams: corner i marks the edge from corner i to corner i+1 (an edge is a seam if either face marks it). */
   seam?: number[]
+  /** Vertex colours, one '#rrggbb' per corner (glTF COLOR_0). Per corner, so a face can be flat-coloured. */
+  vc?: string[]
   /** Per-face material slot; overrides the group's material (used by "Assign image to selection"). */
   mat?: number
 }
 
-/** Material index a face renders with. */
-/** Base colour that multiplies the image: white when the material has one, so the image shows untinted. */
-export const baseColor = (mt: { color: string; texture?: string | null }) => (mt.texture ? '#ffffff' : mt.color)
+/**
+ * Base colour that multiplies the image and vertex colours: white when the material has an image or vertex-painted
+ * faces, so neither is tinted. (Its unpainted faces then take the material colour as their vertex colour.)
+ */
+export const baseColor = (mt: { color: string; texture?: string | null }, vertexColors = false) => (mt.texture || vertexColors ? '#ffffff' : mt.color)
 
+export const HEX = /^#[0-9a-f]{6}$/i
+/** Materials that have at least one vertex-painted face. */
+export function vcMaterials(m: Model): Set<number> {
+  const out = new Set<number>()
+  for (const f of m.faces) if (f.vc) out.add(faceMat(m, f))
+  return out
+}
+/** Colour of a face corner: its vertex colour, else its material's colour. */
+export const cornerColor = (m: Model, f: Face, c: number) => f.vc?.[c] ?? m.materials[faceMat(m, f)]?.color ?? '#ffffff'
+
+/**
+ * Drop per-corner data that no longer fits its face (ops that rebuild corners copy faces with `...f`):
+ * vertex colours of the wrong length, pins and seams pointing past the last corner.
+ */
+export function normalizeCorners(m: Model) {
+  for (const f of m.faces) {
+    const n = f.v.length
+    if (f.vc && (f.vc.length !== n || !f.vc.every(c => typeof c === 'string' && HEX.test(c)))) delete f.vc
+    if (f.pin && f.pin.some(c => c >= n)) { f.pin = f.pin.filter(c => c < n); if (!f.pin.length) delete f.pin }
+    if (f.seam && f.seam.some(c => c >= n)) { f.seam = f.seam.filter(c => c < n); if (!f.seam.length) delete f.seam }
+  }
+}
+
+/** Material index a face renders with. */
 export const faceMat = (m: Model, f: Face) => (f.mat !== undefined ? f.mat : m.groups[f.g]?.mat ?? 0)
 
 /** Remove material i; faces using it fall back to material 0 (or their group's), later indices shift down. */
@@ -168,7 +196,6 @@ export function cloneModel(m: Model): Model {
 const weldKey = (n: number) => Math.round(n * 1e4) + 0
 
 const TEX_ID = /^[\w-]{1,64}$/
-const HEX = /^#[0-9a-fA-F]{6}$/
 
 /** Throws if the model is structurally invalid (bad indices, non-finite numbers, loops, absurd sizes). */
 export function validateModel(m: Model) {
@@ -213,6 +240,7 @@ export function validateModel(m: Model) {
     })
     if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
     if (f.seam !== undefined && !(Array.isArray(f.seam) && f.seam.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid seams`)
+    if (f.vc !== undefined && !(Array.isArray(f.vc) && f.vc.length === f.v.length && f.vc.every(c => typeof c === 'string' && HEX.test(c)))) throw new Error(`Face ${i} has invalid vertex colours`)
   })
   m.bones.forEach((b, i) => {
     if (!b || typeof b.name !== 'string') throw new Error(`Joint ${i} is invalid`)
