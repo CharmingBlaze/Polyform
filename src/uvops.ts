@@ -398,3 +398,94 @@ export function heatColor(t: number): string {
   const h = (1 - Math.max(0, Math.min(1, t))) * 240
   return `hsla(${h.toFixed(0)}, 85%, 50%, 0.55)`
 }
+
+/** Parse #rgb / #rrggbb / css-ish hex into 0–255 RGB. */
+export function parseHexColor(c: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c.trim())
+  if (!m) return null
+  let h = m[1]
+  if (h.length === 3) h = h.split('').map(x => x + x).join('')
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]
+}
+
+/**
+ * Infer a regular palette grid from a texture: count solid-colour runs along the middle row / column.
+ * Falls back to 8×8 when the image is empty or has no clear runs.
+ */
+export function detectPaletteGrid(data: Uint8ClampedArray, w: number, h: number): { cols: number; rows: number } {
+  if (w < 2 || h < 2) return { cols: 1, rows: 1 }
+  const at = (x: number, y: number) => {
+    const i = (y * w + x) * 4
+    return (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]
+  }
+  const runs = (len: number, sample: (i: number) => number) => {
+    let n = 1, prev = sample(0)
+    for (let i = 1; i < len; i++) {
+      const c = sample(i)
+      if (c !== prev) { n++; prev = c }
+    }
+    return n
+  }
+  const midY = Math.floor(h / 2), midX = Math.floor(w / 2)
+  let cols = runs(w, x => at(x, midY))
+  let rows = runs(h, y => at(midX, y))
+  // reject noise: prefer divisors of the dimension when run count is huge
+  if (cols > w / 2) cols = Math.max(1, Math.round(Math.sqrt(w)))
+  if (rows > h / 2) rows = Math.max(1, Math.round(Math.sqrt(h)))
+  return { cols: Math.max(1, cols), rows: Math.max(1, rows) }
+}
+
+/** Average RGB of a palette cell (UV origin bottom-left, matching three.js flipY sampling). */
+export function paletteCellColor(data: Uint8ClampedArray, w: number, h: number, cols: number, rows: number, col: number, row: number): [number, number, number] {
+  const x0 = Math.floor((col / cols) * w), x1 = Math.floor(((col + 1) / cols) * w)
+  // row 0 = top of image in artist space = high V
+  const y0 = Math.floor((row / rows) * h), y1 = Math.floor(((row + 1) / rows) * h)
+  let r = 0, g = 0, b = 0, n = 0
+  const cx = Math.floor((x0 + x1) / 2), cy = Math.floor((y0 + y1) / 2)
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x = Math.max(0, Math.min(w - 1, cx + dx)), y = Math.max(0, Math.min(h - 1, cy + dy))
+    const i = (y * w + x) * 4
+    r += data[i]; g += data[i + 1]; b += data[i + 2]; n++
+  }
+  return [r / n, g / n, b / n]
+}
+
+/** Nearest palette cell to an RGB colour (Euclidean in sRGB). */
+export function nearestPaletteCell(data: Uint8ClampedArray, w: number, h: number, cols: number, rows: number, rgb: [number, number, number]): { col: number; row: number } {
+  let best = { col: 0, row: 0 }, bd = Infinity
+  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+    const [r, g, b] = paletteCellColor(data, w, h, cols, rows, col, row)
+    const d = (r - rgb[0]) ** 2 + (g - rgb[1]) ** 2 + (b - rgb[2]) ** 2
+    if (d < bd) { bd = d; best = { col, row } }
+  }
+  return best
+}
+
+/**
+ * Snap each selected face's UVs to the centre of one palette cell so the face samples that solid swatch
+ * (classic low-poly game-art workflow). `row` 0 is the top row of the image.
+ */
+export function snapFacesToPaletteCell(m: Model, faces: number[], cols: number, rows: number, col: number, row: number) {
+  const c = Math.max(0, Math.min(cols - 1, col)), r = Math.max(0, Math.min(rows - 1, row))
+  const u = (c + 0.5) / cols
+  const v = 1 - (r + 0.5) / rows
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f) continue
+    f.uv = f.v.map(() => [u, v] as Vec2)
+  }
+}
+
+/** Detect grid on `data`, find the cell nearest to `rgb`, snap faces there. Returns the cell used. */
+export function snapFacesToPaletteColor(
+  m: Model, faces: number[],
+  data: Uint8ClampedArray, w: number, h: number,
+  rgb: [number, number, number],
+  grid?: { cols: number; rows: number },
+): { cols: number; rows: number; col: number; row: number } {
+  const g = grid ?? detectPaletteGrid(data, w, h)
+  const cell = nearestPaletteCell(data, w, h, g.cols, g.rows, rgb)
+  snapFacesToPaletteCell(m, faces, g.cols, g.rows, cell.col, cell.row)
+  return { ...g, ...cell }
+}
+

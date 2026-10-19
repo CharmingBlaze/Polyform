@@ -38,6 +38,12 @@ export function PaintPanel() {
       <div className="swatches">
         {p.swatches.map((c, i) => <button key={i} className={`swatch ${c === p.color ? 'on' : ''}`} style={{ background: c }} title={c} data-testid={`swatch-${i}`} onClick={() => setPaint({ color: c })} />)}
       </div>
+      <div className="label">Palette grid</div>
+      <div className="btn-row">
+        <label className="mini">Cols <input type="number" min={0} max={64} data-testid="palette-cols" value={p.paletteCols} title="0 = auto-detect from the texture" onChange={e => setPaint({ paletteCols: Math.max(0, Math.min(64, parseInt(e.target.value) || 0)) })} /></label>
+        <label className="mini">Rows <input type="number" min={0} max={64} data-testid="palette-rows" value={p.paletteRows} title="0 = auto-detect from the texture" onChange={e => setPaint({ paletteRows: Math.max(0, Math.min(64, parseInt(e.target.value) || 0)) })} /></label>
+        <CmdBtn cmd="uv.paletteSnap" label="Snap faces" testid="palette-snap-faces" />
+      </div>
       {range('size', 'Size', 1, 200, 1, v => `${v}px`)}
       {range('opacity', 'Strength', 0.01, 1, 0.01, v => `${Math.round(v * 100)}%`)}
       {range('hardness', 'Hardness', 0, 1, 0.01, v => `${Math.round(v * 100)}%`)}

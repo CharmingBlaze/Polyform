@@ -14,6 +14,7 @@ import { topology } from './topology'
 import * as X from './extrude'
 import { applyAtlas, atlasInput } from './unwrap'
 import * as UV from './uvops'
+import { textures as tex } from './textures'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
 /** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
@@ -32,7 +33,7 @@ export interface Pane { type: ViewType; shade: Shading; grid: boolean }
 export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill'
 /** Paint into the face's image, vertex colours (glTF COLOR_0), or bone weights (up to 4). */
 export type PaintTarget = 'image' | 'vertex' | 'weight'
-export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget }
+export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget; /** 0 = auto-detect from the texture */ paletteCols: number; paletteRows: number }
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
@@ -223,6 +224,8 @@ interface State {
   pinUVs: (on: boolean) => void
   /** stitch the selected faces (or the faces on both sides of the selected edges) onto the first one's island */
   stitchUVs: () => void
+  /** Snap selected faces' UVs to the paint-colour swatch on the active material's palette texture. */
+  snapToPalette: () => void
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
   setPaint: (p: Partial<PaintSettings>) => void
@@ -360,7 +363,7 @@ export const useStore = create<State>((set, get) => ({
   showTexture: true,
   showWire: true,
   activeMat: 0,
-  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image' },
+  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image', paletteCols: 0, paletteRows: 0 },
   numericOpen: false,
   lastOp: null,
   extruding: false,
@@ -968,6 +971,25 @@ export const useStore = create<State>((set, get) => ({
     s.edit(mm => { UV.stitch(mm, faces, s.uvFaces()) }, 'Stitch')
     s.notify(n ? `Stitched (${n} UV corners moved)` : 'Stitched')
   },
+  snapToPalette: () => {
+    const s = get()
+    const faces = s.activeFaces()
+    if (!faces.length) return s.notify('Select faces to snap to a palette swatch')
+    const mi = M.faceMat(s.model, s.model.faces[faces[0]])
+    const texId = s.model.materials[mi]?.texture
+    if (!texId || !tex.has(texId)) return s.notify('Active material needs a palette image')
+    const canvas = tex.canvas(texId)!
+    const w = canvas.width, h = canvas.height
+    const data = canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, h).data
+    const rgb = UV.parseHexColor(s.paint.color)
+    if (!rgb) return s.notify('Pick a paint colour (swatch) first')
+    const cols = s.paint.paletteCols || 0, rows = s.paint.paletteRows || 0
+    const grid = cols > 0 && rows > 0 ? { cols, rows } : undefined
+    let cell = { cols: 0, rows: 0, col: 0, row: 0 }
+    s.edit(m => { cell = UV.snapFacesToPaletteColor(m, faces, data, w, h, rgb, grid) }, 'Palette snap')
+    s.notify(`Snapped ${faces.length} face${faces.length === 1 ? '' : 's'} to swatch ${cell.col + 1},${cell.row + 1} (${cell.cols}×${cell.rows})`)
+  },
+
   autoUV: async () => {
     const s = get()
     let faces = s.activeFaces()

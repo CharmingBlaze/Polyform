@@ -142,6 +142,7 @@ export const commands: Command[] = [
   { id: 'uv.unpin', label: 'Unpin selected UVs', group: 'Map', run: () => S().pinUVs(false) },
   { id: 'uv.stitch', label: 'Stitch UVs of the selected faces / edges', group: 'Map', run: () => S().stitchUVs() },
   { id: 'uv.auto', label: 'Auto UV (unwrap selection or everything)', group: 'Map', run: () => { void S().autoUV() } },
+  { id: 'uv.paletteSnap', label: 'Snap faces to palette swatch (paint colour)', group: 'Map', run: () => S().snapToPalette() },
   { id: 'joint.unbind', label: 'Unbind selected points (or the selected joints)', group: 'Setup', keys: 'Alt+P', run: () => S().unbindSelection() },
   { id: 'joint.selectBound', label: 'Select points bound to the selected joints', group: 'Setup', run: () => S().selectBoundPoints() },
   { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', run: () => S().autoBindSelection() },
