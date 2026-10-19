@@ -537,8 +537,16 @@ export const useStore = create<State>((set, get) => ({
     window.dispatchEvent(new CustomEvent('modal-transform', { detail: 'joint' }))
     if (!isModalActive()) s.commit()
   },
-  knife: () => get().notify('Knife arrives with the Extrude / Loop cut / Knife step'),
-  loopCut: () => get().notify('Loop cut arrives with the Extrude / Loop cut / Knife step'),
+  knife: () => {
+    const s = get()
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to use the knife')
+    window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'knife' }))
+  },
+  loopCut: () => {
+    const s = get()
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to loop cut')
+    window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'loopcut' }))
+  },
   duplicate: () => get().runOp('mul.duplicate'),
   weld: () => get().runOp('con.weld'),
   flip: () => get().runOp('con.flip'),

@@ -11,6 +11,7 @@ import { applyXf, collectTargets, identityXf, needsKeyFirst, type Targets, type 
 import { interaction } from '../interaction'
 import type { ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
+import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -62,7 +63,13 @@ let gizmoDirty = true
 let gizmoState: { center: THREE.Vector3; frame: THREE.Quaternion } | null = null
 useStore.subscribe(() => { gizmoDirty = true; sceneManager.invalidate() })
 /** the drag that owns the current transform (only one at a time across panes) */
-let activeXf: { pane: number; cancel: () => void; confirm: () => void; key: (e: KeyboardEvent) => void; move: (e: PointerEvent) => void } | null = null
+let activeXf: {
+  pane: number; cancel: () => void; confirm: () => void; key: (e: KeyboardEvent) => void; move: (e: PointerEvent) => void
+  /** modal tools (loop cut, knife) take presses, hover and the wheel themselves */
+  down?: (button: number, x: number, y: number, ctrl: boolean) => void
+  hover?: (x: number, y: number, ctrl: boolean) => void
+  wheel?: (dy: number) => void
+} | null = null
 
 export interface ViewCtx {
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void; el: HTMLDivElement
@@ -203,9 +210,9 @@ export function Viewport({ pane }: { pane: number }) {
     return r.intersectObject(sceneManager.pickMesh, false).length > 0
   }
   /** Nearest visible edge within 8 px. */
-  const pickEdge = (x: number, y: number): number => {
+  const pickEdge = (x: number, y: number, radius = 8): number => {
     const P = sceneManager.posed
-    let best = -1, bd = 64
+    let best = -1, bd = radius * radius
     for (const [a, b] of sceneManager.edges) {
       const pa = project(P[a]), pb = project(P[b])
       if (pa.z < -1 || pa.z > 1 || pb.z < -1 || pb.z > 1) continue
@@ -434,6 +441,98 @@ export function Viewport({ pane }: { pane: number }) {
     if (d.src === 'modal') { useStore.getState().set({ modalInfo: infoOf(d) }); updateXf(d, d.x0, d.y0) }
   }
 
+  /** Screen-space parameter of (x, y) along the projected segment p -> q. */
+  const segParam = (p: Vec3, q: Vec3, x: number, y: number) => {
+    const a = project(p), b = project(q)
+    const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy
+    return L > 1e-6 ? ((x - a.x) * dx + (y - a.y) * dy) / L : 0
+  }
+
+  /** Ctrl+R: hover previews the ring, wheel/digits set the cut count, click cuts, then slide; right-click centers. */
+  function startLoopCut() {
+    let cuts = 1, ring: Ring | null = null, hoverEdge = -1, typed = '', typedAt = 0
+    let phase: 'hover' | 'slide' = 'hover', rec: CutRec | null = null, ringIdx = 0, u0 = 0, slide = 0
+    const info = () => useStore.getState().set({
+      modalInfo: phase === 'hover'
+        ? `Loop cut · ${cuts} cut${cuts > 1 ? 's' : ''} · wheel or type a number · click to cut · Esc/right-click exit`
+        : `Edge slide ${slide.toFixed(2)} · click/Enter confirm · right-click/Esc center`,
+    })
+    const preview = () => sceneManager.setToolOverlay(phase === 'hover' && ring ? previewLines(sceneManager.posed, ring, cuts) : null)
+    const end = () => {
+      sceneManager.setToolOverlay(null)
+      interaction.modal = false
+      activeXf = null
+      useStore.getState().set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+    }
+    const hoverAt = (x: number, y: number) => {
+      const e = pickEdge(x, y, 30)
+      if (e !== hoverEdge) { hoverEdge = e; ring = e >= 0 ? orientedRing(useStore.getState().model, e) : null }
+      preview()
+    }
+    const doCut = (x: number, y: number) => {
+      if (!ring) return
+      const st = useStore.getState()
+      st.checkpoint('Loop cut')
+      rec = loopCut(st.model, ring, cuts)
+      st.touch()
+      const loopEdges = rec.loops.flat()
+      if (st.selectMode !== 'object') {
+        if (st.subModes.includes('edge')) st.setSelection({ edges: loopEdges })
+        else st.setSelection({ verts: rec.verts.map(v => v.v) })
+      }
+      ringIdx = Math.max(0, ring.A.findIndex((a, i) => (a < ring!.B[i] ? a * 2 ** 26 + ring!.B[i] : ring!.B[i] * 2 ** 26 + a) === hoverEdge))
+      const P = sceneManager.posed
+      u0 = segParam(P[ring.A[ringIdx]], P[ring.B[ringIdx]], x, y)
+      phase = 'slide'; slide = 0
+      preview(); info()
+    }
+    const finish = (center: boolean) => {
+      const st = useStore.getState()
+      if (rec && center) { slideCut(st.model, rec, 0); st.touch() }
+      st.commit()
+      end()
+    }
+    activeXf = {
+      pane,
+      cancel: () => { if (phase === 'slide') finish(true); else end() },
+      confirm: () => { if (phase === 'slide') finish(false) },
+      move: () => {},
+      hover: (x, y) => {
+        if (phase === 'hover') return hoverAt(x, y)
+        if (!rec || !ring) return
+        const P = sceneManager.posed
+        const u = segParam(P[ring.A[ringIdx]], P[ring.B[ringIdx]], x, y)
+        slide = THREE.MathUtils.clamp((u - u0) * (cuts + 1), -0.98, 0.98)
+        slideCut(useStore.getState().model, rec, slide)
+        useStore.getState().touch()
+        info()
+      },
+      down: (button, x, y) => {
+        if (phase === 'hover') { if (button === 0) { hoverAt(x, y); doCut(x, y) } else if (button === 2) end() }
+        else if (button === 0) finish(false)
+        else if (button === 2) finish(true)
+      },
+      wheel: dy => { if (phase === 'hover') { cuts = THREE.MathUtils.clamp(cuts + (dy < 0 ? 1 : -1), 1, 64); preview(); info() } },
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return phase === 'slide' ? finish(true) : end()
+        if (k === 'Enter') { if (phase === 'slide') finish(false); return }
+        if (phase === 'hover' && /^[0-9]$/.test(k)) {
+          if (performance.now() - typedAt > 1200) typed = ''
+          typed = (typed + k).slice(-2); typedAt = performance.now()
+          cuts = THREE.MathUtils.clamp(parseInt(typed, 10) || 1, 1, 64)
+          preview(); info()
+        }
+      },
+    }
+    interaction.modal = true
+    const at = interaction.mouse[pane]
+    if (at) hoverAt(at.x, at.y)
+    info()
+  }
+
   // window listeners for the active transform (modal transforms keep working outside the pane)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -475,7 +574,15 @@ export function Viewport({ pane }: { pane: number }) {
     window.addEventListener('keyup', onKeyUp, true)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('modal-transform', onModal)
+    const onTool = (e: Event) => {
+      const kind = (e as CustomEvent<string>).detail
+      const target = useStore.getState().maximized ?? interaction.hoverPane
+      if (target !== pane || !ctx.current || hidden || activeXf) return
+      if (kind === 'loopcut') startLoopCut()
+    }
+    window.addEventListener('modal-tool', onTool)
     return () => {
+      window.removeEventListener('modal-tool', onTool)
       window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('pointermove', onMove); window.removeEventListener('modal-transform', onModal)
     }
@@ -486,7 +593,13 @@ export function Viewport({ pane }: { pane: number }) {
     const { x, y } = local(e)
     const st = useStore.getState()
     // a running modal transform: left confirms, right cancels
-    if (activeXf) {
+    if (activeXf?.down && e.button !== 1 && !(e.altKey && e.button === 0)) {
+      // modal tool: its own clicks (middle / Alt+drag still navigate)
+      e.preventDefault()
+      if (activeXf.pane === pane) activeXf.down(e.button, x, y, e.ctrlKey || e.metaKey)
+      return
+    }
+    if (activeXf && !activeXf.down) {
       e.preventDefault()
       if (e.button === 2) activeXf.cancel(); else if (e.button === 0) activeXf.confirm()
       return
@@ -572,6 +685,7 @@ export function Viewport({ pane }: { pane: number }) {
     interaction.hoverPane = pane
     interaction.mouse[pane] = { x, y }
     const d = drag.current
+    if (!d && activeXf?.hover) { if (activeXf.pane === pane) activeXf.hover(x, y, e.ctrlKey || e.metaKey); return }
     if (!d) {
       // gizmo hover highlight
       const h = gizmo.current.root.visible ? gizmo.current.hit(ray(x, y)) : null
@@ -697,7 +811,7 @@ export function Viewport({ pane }: { pane: number }) {
     return best
   }
 
-  const onWheel = (e: React.WheelEvent) => zoom(Math.exp(e.deltaY * 0.0012))
+  const onWheel = (e: React.WheelEvent) => { if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return } zoom(Math.exp(e.deltaY * 0.0012)) }
 
   const frameSelection = (all = false) => {
     const c = ctx.current!

@@ -144,6 +144,12 @@ class SceneManager {
       l.layers.enableAll(); l.renderOrder = 1; s.add(l); return l
     })
 
+    // tool overlay (loop cut preview, knife path): on top in every pane
+    const toolL = new THREE.LineSegments(this.toolLineGeo, new THREE.LineBasicMaterial({ color: '#ffe04a', depthTest: false, transparent: true }))
+    toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
+    const toolP = new THREE.Points(this.toolPointGeo, new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
+    toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
+
     useStore.subscribe((st, prev) => {
       if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
@@ -161,6 +167,14 @@ class SceneManager {
   pointObjs: THREE.Object3D[] = []
 
   invalidate() { this.dirty = true }
+  readonly toolLineGeo = new THREE.BufferGeometry()
+  readonly toolPointGeo = new THREE.BufferGeometry()
+  /** Lines (xyz pairs) and points drawn on top of everything, for modal tools; null clears. */
+  setToolOverlay(lines: number[] | null, points: number[] | null = null) {
+    this.toolLineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lines ?? [], 3))
+    this.toolPointGeo.setAttribute('position', new THREE.Float32BufferAttribute(points ?? [], 3))
+    this.invalidate()
+  }
 
   renderer: THREE.WebGLRenderer | null = null
   contextLost = false
