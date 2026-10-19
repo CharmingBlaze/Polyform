@@ -2,10 +2,11 @@
  * Mesh adjacency for the polygon model (spec C). Built once per topology change and cached per faces array +
  * revision; geometry-only edits (moving points) don't invalidate it. Edge keys are numeric: a*N+b with a<b.
  */
-import type { Model } from './model'
+import { EDGE_N, type Model } from './model'
 
 export class Topology {
-  readonly N: number
+  /** Fixed bound (vertex count can grow mid-operation, so N must not depend on it). */
+  readonly N = EDGE_N
   /** edge key -> faces using the edge */
   private ef = new Map<number, number[]>()
   /** vertex -> faces */
@@ -15,7 +16,6 @@ export class Topology {
   readonly edges: number[] = []
 
   constructor(readonly m: Model) {
-    this.N = Math.max(1, m.verts.length)
     this.vf = Array.from({ length: m.verts.length }, () => [])
     this.ve = Array.from({ length: m.verts.length }, () => [])
     m.faces.forEach((f, fi) => {
@@ -75,7 +75,7 @@ export class Topology {
         const fs = new Set(this.edgeFaces(cur))
         const next = es.find(x => x !== cur && !this.edgeFaces(x).some(f => fs.has(f)))
         if (next === undefined || seen.has(next)) break
-        seen.add(next); dir ? out.push(next) : out.unshift(next)
+        seen.add(next); if (dir) out.push(next); else out.unshift(next)
         const [a, b] = this.ends(next); v = a === v ? b : a; cur = next
       }
     }
@@ -92,9 +92,9 @@ export class Topology {
       while (f !== undefined && !seenF.has(f)) {
         const opp = this.oppositeEdgeInQuad(f, cur)
         if (opp === null) break
-        seenF.add(f); front ? faces.push(f) : faces.unshift(f)
+        seenF.add(f); if (front) faces.push(f); else faces.unshift(f)
         if (opp === e) { closed = true; break }
-        front ? edges.push(opp) : edges.unshift(opp)
+        if (front) edges.push(opp); else edges.unshift(opp)
         const nf = this.otherFace(opp, f)
         cur = opp; f = nf ?? undefined
       }

@@ -1,7 +1,8 @@
+import { textures } from '../textures'
+import { importImage } from '../io'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../store'
-import { sceneManager } from '../scene'
 import { cornerFace, cornerId, cornerIdx, faceCorners, faceNormal, type Vec2 } from '../model'
 
 type UVTool = 'select' | 'move' | 'rotate' | 'scale'
@@ -17,9 +18,12 @@ export function UVEditor() {
   const selFaces = useStore(s => s.selFaces)
   const selUV = useStore(s => s.selUV)
   const selectMode = useStore(s => s.selectMode)
-  const textureUrl = useStore(s => s.textureUrl)
+  const texRev = useStore(s => s.texRev)
+  const activeMat = useStore(s => s.activeMat)
+  const texId = useStore(s => s.model.materials[Math.min(s.activeMat, s.model.materials.length - 1)]?.texture ?? null)
+  const texImg = texId ? textures.canvas(texId) : null
   const [, force] = useState(0)
-  const drag = useRef<any>(null)
+  const drag = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
 
   useEffect(() => {
     const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setSize({ w: r.width, h: r.height }) })
@@ -49,9 +53,9 @@ export function UVEditor() {
     g.imageSmoothingEnabled = false
     // tile ghosts
     g.globalAlpha = 0.15
-    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) if (tx || ty) try { g.drawImage(sceneManager.textureImage as CanvasImageSource, originX + tx * side, originY + ty * side, side, side) } catch { /* not loaded */ }
+    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) if (tx || ty) try { g.drawImage(texImg as CanvasImageSource, originX + tx * side, originY + ty * side, side, side) } catch { /* not loaded */ }
     g.globalAlpha = 1
-    try { g.drawImage(sceneManager.textureImage as CanvasImageSource, originX, originY, side, side) } catch { /* */ }
+    try { g.drawImage(texImg as CanvasImageSource, originX, originY, side, side) } catch { /* */ }
     g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1; g.strokeRect(originX + 0.5, originY + 0.5, side, side)
     const m = useStore.getState().model
     const faces = shownFaces()
@@ -77,7 +81,7 @@ export function UVEditor() {
       g.strokeStyle = '#8ab4ff'; g.setLineDash([4, 3]); g.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); g.setLineDash([])
     }
   })
-  void version; void selFaces; void selectMode; void textureUrl
+  void version; void selFaces; void selectMode; void texRev; void activeMat; void texId
 
   const loc = (e: React.PointerEvent | React.WheelEvent) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 
@@ -174,7 +178,6 @@ export function UVEditor() {
     ids.forEach(id => { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)]; minU = Math.min(minU, u[0]); maxU = Math.max(maxU, u[0]); minV = Math.min(minV, u[1]); maxV = Math.max(maxV, u[1]) })
     const c: Vec2 = [(minU + maxU) / 2, (minV + maxV) / 2]
     st.edit(mm => ids.forEach(id => { const f = mm.faces[cornerFace(id)]; f.uv[cornerIdx(id)] = fn(f.uv[cornerIdx(id)], c) }))
-    ;(transformSel as any).bounds = { minU, minV, maxU, maxV }
   }
   const fit = () => {
     const st = useStore.getState()
@@ -188,9 +191,7 @@ export function UVEditor() {
   }
 
   const loadTexture = (file: File) => {
-    const r = new FileReader()
-    r.onload = () => { const url = r.result as string; useStore.setState({ textureUrl: url }) }
-    r.readAsDataURL(file)
+    importImage(file).then(id => useStore.getState().setMaterialTexture(useStore.getState().activeMat, id)).catch(err => useStore.getState().notify(String(err.message || err)))
   }
 
   return (
@@ -223,8 +224,8 @@ export function UVEditor() {
         </div>
         <div className="label">Texture</div>
         <div className="btn-row">
-          <label className="btn">Load image…<input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
-          <button onClick={() => { useStore.setState({ textureUrl: null }) }}>Checker</button>
+          <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
+          <button onClick={() => useStore.getState().setMaterialTexture(useStore.getState().activeMat, null)}>Checker</button>
         </div>
       </div>
     </div>

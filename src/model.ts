@@ -8,7 +8,16 @@ export interface Face {
   v: number[]
   uv: Vec2[]
   g: number
+  /** Hidden in the editor (still exported). */
+  hidden?: boolean
+  /** Corner indices whose UVs are pinned (UV ops leave them alone). */
+  pin?: number[]
+  /** Per-face material slot; overrides the group's material (used by "Assign image to selection"). */
+  mat?: number
 }
+
+/** Material index a face renders with. */
+export const faceMat = (m: Model, f: Face) => (f.mat !== undefined ? f.mat : m.groups[f.g]?.mat ?? 0)
 
 /** Largest polygon a face may have; also the stride of UV corner ids. */
 export const MAX_CORNERS = 1024
@@ -16,25 +25,115 @@ export const cornerId = (face: number, corner: number) => face * MAX_CORNERS + c
 export const cornerFace = (id: number) => Math.floor(id / MAX_CORNERS)
 export const cornerIdx = (id: number) => id % MAX_CORNERS
 export const faceCorners = (m: Model, face: number) => m.faces[face].v.map((_, i) => cornerId(face, i))
-export interface Group { name: string; visible: boolean }
+
+/** Object transform: world = T(pos) · T(pivot) · R(rot) · S(scale) · T(-pivot) · local. */
+export interface Xform { pivot: Vec3; pos: Vec3; rot: Vec3; scale: Vec3 }
+export const identityXform = (pivot: Vec3 = [0, 0, 0]): Xform => ({ pivot: [...pivot] as Vec3, pos: [0, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1] })
+
+/** A group is an object: its own material, smoothing and transform. */
+export interface Group {
+  name: string
+  visible: boolean
+  /** Material index. */
+  mat: number
+  /** Smoothing angle in degrees; 0 = flat (faceted). */
+  smooth: number
+  xf: Xform
+}
+export interface Material {
+  name: string
+  /** Base color, sRGB hex (#rrggbb). */
+  color: string
+  roughness: number
+  metalness: number
+  /** Texture id (pixels live outside the model so undo snapshots stay small), or null. */
+  texture: string | null
+}
 export interface Bone { name: string; parent: number; pos: Vec3 }
 export interface Key { rot: Vec3; pos: Vec3 }
+/** Object key: absolute transform of an (unskinned) object at a frame. */
+export interface OKey { pos: Vec3; rot: Vec3; scale: Vec3 }
+export type Interp = 'linear' | 'step'
+export interface Clip {
+  name: string
+  frames: number
+  fps: number
+  loop: boolean
+  interp: Interp
+  /** keys[bone][frame] */
+  keys: Record<number, Record<number, Key>>
+  /** okeys[group][frame] — object animation for groups not bound to joints */
+  okeys: Record<number, Record<number, OKey>>
+}
+
+export const PROJECT_VERSION = 2
 
 export interface Model {
+  version: number
   verts: Vec3[]
   vbone: number[]
   faces: Face[]
   groups: Group[]
+  materials: Material[]
   bones: Bone[]
-  frames: number
-  fps: number
-  /** keys[bone][frame] */
-  keys: Record<number, Record<number, Key>>
-  texture?: string
+  clips: Clip[]
 }
 
+export const newMaterial = (name = 'Material', color = '#ffffff'): Material => ({ name, color, roughness: 0.8, metalness: 0, texture: null })
+export const newClip = (name = 'Animation'): Clip => ({ name, frames: 30, fps: 24, loop: true, interp: 'linear', keys: {}, okeys: {} })
+export const newGroup = (name: string, mat = 0): Group => ({ name, visible: true, mat, smooth: 0, xf: identityXform() })
+
 export function emptyModel(): Model {
-  return { verts: [], vbone: [], faces: [], groups: [], bones: [], frames: 30, fps: 24, keys: {} }
+  return { version: PROJECT_VERSION, verts: [], vbone: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()] }
+}
+
+type Raw = Record<string, unknown> & { textures?: Record<string, string> }
+
+/**
+ * Format migrations (spec B): MIGRATIONS[n] turns a version-n file into version n+1. Loading runs every step from
+ * the file's version up to PROJECT_VERSION in order; validateModel runs afterwards. Files without a version are v1.
+ */
+export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
+  /** v1 (triangles, one texture data URL, one timeline) -> v2 (materials, clips, group smoothing, face flags) */
+  1: r => {
+    const textures = { ...(r.textures ?? {}) }
+    const legacyTex = typeof r.texture === 'string' && r.texture.startsWith('data:image/') ? r.texture : null
+    if (legacyTex) textures.tex1 = legacyTex
+    const groups = (Array.isArray(r.groups) ? r.groups : []).map(g => ({ ...newGroup(String((g as Group)?.name ?? 'Group')), visible: (g as Group)?.visible !== false }))
+    // missing fields get defaults; present-but-bad values (null, 0, 1e9) are kept so validateModel rejects them
+    const clip = { ...newClip(), okeys: {}, frames: 'frames' in r ? r.frames : 30, fps: 'fps' in r ? r.fps : 24, keys: 'keys' in r ? r.keys : {} }
+    const out: Raw = { ...r, version: 2, groups, materials: [{ ...newMaterial(), texture: legacyTex ? 'tex1' : null }], clips: [clip], textures }
+    delete out.frames; delete out.fps; delete out.keys; delete out.texture
+    return out
+  },
+}
+
+/**
+ * Bring any saved project up to the current format. Returns the model plus the textures embedded in the file
+ * (id -> data URL). Refuses newer formats. Does not validate (call validateModel next).
+ */
+export function migrateProject(raw: unknown): { model: Model; textures: Record<string, string> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Not a Polyform project')
+  let r = { ...(raw as Raw) }
+  if (r.format !== undefined && r.format !== 'polyform') throw new Error('Not a Polyform project')
+  if (!Array.isArray(r.verts) || !Array.isArray(r.faces)) throw new Error('Not a Polyform project')
+  let version = (r.version === undefined ? 1 : r.version) as number
+  if (!Number.isInteger(version) || (version as number) < 1) throw new Error('Unknown project format version')
+  if ((version as number) > PROJECT_VERSION) throw new Error(`This project was saved by a newer Polyform (format ${version}); this version reads up to format ${PROJECT_VERSION}`)
+  while ((version as number) < PROJECT_VERSION) { r = MIGRATIONS[version as number](r); version = r.version as number }
+  const textures: Record<string, string> = {}
+  if (r.textures && typeof r.textures === 'object') {
+    for (const [id, url] of Object.entries(r.textures)) if (typeof url === 'string' && url.startsWith('data:image/')) textures[id] = url
+  }
+  if (!Array.isArray(r.vbone) || !(r.vbone as unknown[]).length) r.vbone = (r.verts as unknown[]).map(() => -1)
+  if (!Array.isArray(r.bones)) r.bones = []
+  const { verts, vbone, faces, groups, materials, bones, clips } = r as unknown as Model
+  return { model: { version: PROJECT_VERSION, verts, vbone, faces, groups, materials, bones, clips }, textures }
+}
+
+/** The JSON written to a .polyform.json file. */
+export function projectFile(m: Model, textures: Record<string, string>) {
+  return { format: 'polyform', ...m, version: PROJECT_VERSION, textures }
 }
 
 export function cloneModel(m: Model): Model {
@@ -44,39 +143,103 @@ export function cloneModel(m: Model): Model {
 /** Quantize for welding; `+ 0` folds -0 into 0 so twins on the zero plane merge. */
 const weldKey = (n: number) => Math.round(n * 1e4) + 0
 
-/** Throws if any face, vertex-bone or bone-parent index is out of range. */
+const TEX_ID = /^[\w-]{1,64}$/
+const HEX = /^#[0-9a-fA-F]{6}$/
+
+/** Throws if the model is structurally invalid (bad indices, non-finite numbers, loops, absurd sizes). */
 export function validateModel(m: Model) {
-  const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length
+  if (!m || typeof m !== 'object') throw new Error('Not a Polyform project')
+  for (const k of ['verts', 'vbone', 'faces', 'groups', 'materials', 'bones', 'clips'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
+  const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length, nm = m.materials.length
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
-  m.verts.forEach((v, i) => { if (!Array.isArray(v) || v.length !== 3 || v.some(x => !Number.isFinite(x))) throw new Error(`Vertex ${i} is invalid`) })
+  const num = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi
+  const vec = (v: unknown, n: number) => Array.isArray(v) && v.length === n && v.every(x => typeof x === 'number' && Number.isFinite(x))
+  m.verts.forEach((v, i) => { if (!vec(v, 3)) throw new Error(`Vertex ${i} is invalid`) })
   if (m.vbone.length !== nv) throw new Error('Vertex/bone table length mismatch')
   m.vbone.forEach((b, i) => { if (!int(b, -1, nb)) throw new Error(`Vertex ${i} references missing joint ${b}`) })
+  if (!nm) throw new Error('Project needs at least one material')
+  m.materials.forEach((mt, i) => {
+    if (!mt || typeof mt.name !== 'string' || !HEX.test(String(mt.color))) throw new Error(`Material ${i} is invalid`)
+    if (!num(mt.roughness, 0, 1) || !num(mt.metalness, 0, 1)) throw new Error(`Material ${i} has invalid roughness/metalness`)
+    if (mt.texture !== null && !(typeof mt.texture === 'string' && TEX_ID.test(mt.texture))) throw new Error(`Material ${i} has an invalid texture id`)
+  })
+  m.groups.forEach((g, i) => {
+    if (!g || typeof g.name !== 'string' || typeof g.visible !== 'boolean') throw new Error(`Group ${i} is invalid`)
+    if (!int(g.mat, 0, nm)) throw new Error(`Group ${i} references a missing material`)
+    if (!num(g.smooth, 0, 180)) throw new Error(`Group ${i} has an invalid smoothing angle`)
+    const x = g.xf
+    if (!x || !vec(x.pivot, 3) || !vec(x.pos, 3) || !vec(x.rot, 3) || !vec(x.scale, 3)) throw new Error(`Group ${i} has an invalid transform`)
+  })
   m.faces.forEach((f, i) => {
-    if (!Array.isArray(f.v) || f.v.length < 3 || f.v.length > MAX_CORNERS || !f.v.every(v => int(v, 0, nv))) throw new Error(`Face ${i} references a missing vertex`)
+    if (!f || !Array.isArray(f.v) || f.v.length < 3 || f.v.length > MAX_CORNERS || !f.v.every(v => int(v, 0, nv))) throw new Error(`Face ${i} references a missing vertex`)
     if (new Set(f.v).size !== f.v.length) throw new Error(`Face ${i} repeats a vertex`)
     if (!int(f.g, 0, ng)) throw new Error(`Face ${i} references a missing group`)
-    if (!Array.isArray(f.uv) || f.uv.length !== f.v.length || !f.uv.every(u => Array.isArray(u) && u.length === 2 && u.every(Number.isFinite))) throw new Error(`Face ${i} has invalid UVs`)
+    if (!Array.isArray(f.uv) || f.uv.length !== f.v.length || !f.uv.every(u => vec(u, 2))) throw new Error(`Face ${i} has invalid UVs`)
+    if (f.hidden !== undefined && typeof f.hidden !== 'boolean') throw new Error(`Face ${i} has an invalid hidden flag`)
+    if (f.mat !== undefined && !int(f.mat, 0, nm)) throw new Error(`Face ${i} references a missing material`)
+    if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
   })
   m.bones.forEach((b, i) => {
+    if (!b || typeof b.name !== 'string') throw new Error(`Joint ${i} is invalid`)
     if (!int(b.parent, -1, i)) throw new Error(`Joint ${i} must have a parent listed before it (or none)`)
-    if (!Array.isArray(b.pos) || b.pos.length !== 3 || !b.pos.every(Number.isFinite)) throw new Error(`Joint ${i} has an invalid position`)
+    if (!vec(b.pos, 3)) throw new Error(`Joint ${i} has an invalid position`)
   })
-  // reject parent loops such as 0 -> 1 -> 0
+  // parent < index already rules out loops; keep an explicit check for clarity
   m.bones.forEach((_, i) => {
     let p = m.bones[i].parent, steps = 0
     while (p >= 0) { if (p === i || ++steps > nb) throw new Error(`Joint ${i} is part of a parent loop`); p = m.bones[p].parent }
   })
-  if (!int(m.frames, 2, 10001)) throw new Error('Frame count must be between 2 and 10000')
-  if (!int(m.fps, 1, 241)) throw new Error('FPS must be between 1 and 240')
-  if (typeof m.keys !== 'object' || m.keys === null) throw new Error('Keyframes are invalid')
-  const vec3 = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite)
-  Object.entries(m.keys).forEach(([b, frames]) => {
-    if (!int(Number(b), 0, nb)) throw new Error(`Keyframes reference missing joint ${b}`)
-    Object.entries(frames || {}).forEach(([f, k]) => {
-      if (!int(Number(f), 0, m.frames)) throw new Error(`Joint ${b} has a key at invalid frame ${f}`)
-      if (!k || !vec3(k.rot) || !vec3(k.pos)) throw new Error(`Joint ${b} frame ${f} has an invalid key`)
+  if (!m.clips.length || m.clips.length > 256) throw new Error('Project needs 1 to 256 animation clips')
+  m.clips.forEach((c, ci) => {
+    if (!c || typeof c.name !== 'string') throw new Error(`Clip ${ci} is invalid`)
+    if (!int(c.frames, 2, 10001)) throw new Error(`Clip "${c.name}": frame count must be between 2 and 10000`)
+    if (!int(c.fps, 1, 241)) throw new Error(`Clip "${c.name}": FPS must be between 1 and 240`)
+    if (typeof c.loop !== 'boolean' || (c.interp !== 'linear' && c.interp !== 'step')) throw new Error(`Clip "${c.name}" has invalid playback settings`)
+    if (typeof c.keys !== 'object' || c.keys === null || Array.isArray(c.keys)) throw new Error(`Clip "${c.name}": keyframes are invalid`)
+    Object.entries(c.keys).forEach(([b, frames]) => {
+      if (!int(Number(b), 0, nb)) throw new Error(`Clip "${c.name}": keyframes reference missing joint ${b}`)
+      if (typeof frames !== 'object' || frames === null) throw new Error(`Clip "${c.name}": joint ${b} keys are invalid`)
+      Object.entries(frames).forEach(([f, k]) => {
+        if (!int(Number(f), 0, c.frames)) throw new Error(`Clip "${c.name}": joint ${b} has a key at invalid frame ${f}`)
+        if (!k || !vec(k.rot, 3) || !vec(k.pos, 3)) throw new Error(`Clip "${c.name}": joint ${b} frame ${f} has an invalid key`)
+      })
+    })
+    if (typeof c.okeys !== 'object' || c.okeys === null || Array.isArray(c.okeys)) throw new Error(`Clip "${c.name}": object keys are invalid`)
+    Object.entries(c.okeys).forEach(([g, frames]) => {
+      if (!int(Number(g), 0, ng)) throw new Error(`Clip "${c.name}": object keys reference missing group ${g}`)
+      if (typeof frames !== 'object' || frames === null) throw new Error(`Clip "${c.name}": group ${g} keys are invalid`)
+      Object.entries(frames).forEach(([f, k]) => {
+        if (!int(Number(f), 0, c.frames)) throw new Error(`Clip "${c.name}": group ${g} has a key at invalid frame ${f}`)
+        if (!k || !vec(k.pos, 3) || !vec(k.rot, 3) || !vec(k.scale, 3)) throw new Error(`Clip "${c.name}": group ${g} frame ${f} has an invalid key`)
+      })
     })
   })
+}
+
+/**
+ * Per-corner normals honoring each group's smoothing angle: a corner averages (area-weighted) the normals of
+ * faces in the same group around that vertex that are within the angle of its own face; 0° gives flat normals.
+ */
+export function cornerNormals(m: Model, P: Vec3[] = m.verts, only?: number[]): THREE.Vector3[][] {
+  const fn = m.faces.map(f => newell(P, f.v))
+  const unit = fn.map(n => n.clone().normalize())
+  const around = new Map<number, number[]>()
+  const list = only ?? m.faces.map((_, i) => i)
+  const needs = list.some(fi => (m.groups[m.faces[fi].g]?.smooth ?? 0) > 0)
+  if (needs) m.faces.forEach((f, fi) => { if ((m.groups[f.g]?.smooth ?? 0) > 0) f.v.forEach(v => { const a = around.get(v); if (a) a.push(fi); else around.set(v, [fi]) }) })
+  const out: THREE.Vector3[][] = []
+  for (const fi of list) {
+    const f = m.faces[fi]
+    const ang = m.groups[f.g]?.smooth ?? 0
+    if (ang <= 0) { out[fi] = f.v.map(() => unit[fi]); continue }
+    const cos = Math.cos(THREE.MathUtils.degToRad(Math.min(180, ang))) - 1e-6
+    out[fi] = f.v.map(v => {
+      const n = new THREE.Vector3()
+      for (const o of around.get(v) ?? []) if (m.faces[o].g === f.g && unit[o].dot(unit[fi]) >= cos) n.add(fn[o])
+      return n.lengthSq() > 0 ? n.normalize() : unit[fi]
+    })
+  }
+  return out
 }
 
 /** A polygon to add: positions and matching per-corner UVs. */
@@ -187,7 +350,7 @@ export function prismPolys(profile: Vec2[], width: number): Poly[] {
 }
 
 export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus' | 'capsule' | 'tube' | 'pyramid' | 'disc' | 'wedge' | 'stairs'
-export interface ParamDef { key: string; label: string; def: number; min: number; max: number; step: number; int?: boolean }
+export interface ParamDef { key: string; label: string; def: number; min: number; max: number; step: number; int?: boolean; kind?: 'num' | 'bool' | 'axis' | 'enum'; options?: string[] }
 export type Params = Record<string, number>
 
 const P = (key: string, label: string, def: number, min: number, max: number, step: number, int = false): ParamDef => ({ key, label, def, min, max, step, int })
@@ -267,12 +430,13 @@ export function makePolys(kind: PrimitiveKind, params: Params = {}): Poly[] | TH
 }
 
 /** Append a primitive to the model as a new group, welding coincident vertices. Returns new vertex & face indices. */
-export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0], params: Params = {}) {
+export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0], params: Params = {}, mat = 0) {
   const label = PRIMITIVES[kind].label
   const n = m.groups.filter(gr => gr.name.startsWith(label + ' ')).length + 1
   const src = makePolys(kind, params)
   const r = Array.isArray(src) ? addPolys(m, src, `${label} ${n}`, at) : addGeometry(m, src, `${label} ${n}`, at)
   if (!Array.isArray(src)) src.dispose()
+  if (mat > 0 && mat < m.materials.length) m.groups[m.groups.length - 1].mat = mat
   return r
 }
 
@@ -288,7 +452,7 @@ export function addPolys(m: Model, polys: Poly[], name: string, at: Vec3 = [0, 0
     return vi
   }
   const g = m.groups.length
-  m.groups.push({ name, visible: true })
+  m.groups.push(newGroup(name))
   const newFaces: number[] = []
   for (const poly of polys) {
     const v: number[] = [], uv: Vec2[] = []
@@ -322,7 +486,7 @@ export function addGeometry(m: Model, geo: THREE.BufferGeometry, name: string, a
     remap.push(vi)
   }
   const g = m.groups.length
-  m.groups.push({ name, visible: true })
+  m.groups.push(newGroup(name))
   const newFaces: number[] = []
   for (let t = 0; t + 2 < count; t += 3) {
     const ii = [0, 1, 2].map(j => (idx ? idx.getX(t + j) : t + j))
@@ -335,9 +499,13 @@ export function addGeometry(m: Model, geo: THREE.BufferGeometry, name: string, a
   return { verts: newVerts, faces: newFaces }
 }
 
-/** Remove vertices not referenced by any face (keeps joint-only data intact). */
-export function removeOrphans(m: Model) {
-  const used = new Array(m.verts.length).fill(false)
+/**
+ * Remove vertices no face uses. With `candidates`, only those are considered, so loose points the user
+ * created on purpose (e.g. a lathe profile) survive unrelated edits.
+ */
+export function removeOrphans(m: Model, candidates?: Iterable<number>) {
+  const used = new Array(m.verts.length).fill(candidates ? true : false)
+  if (candidates) for (const i of candidates) used[i] = false
   for (const f of m.faces) f.v.forEach(i => (used[i] = true))
   const map: number[] = []
   const verts: Vec3[] = [], vbone: number[] = []
@@ -356,6 +524,11 @@ export function removeEmptyGroups(m: Model) {
   m.groups.forEach((g, i) => { if (used[i]) { map[i] = groups.length; groups.push(g) } })
   m.groups = groups
   m.faces.forEach(f => (f.g = map[f.g]))
+  for (const c of m.clips ?? []) {
+    const ok: Clip['okeys'] = {}
+    Object.entries(c.okeys ?? {}).forEach(([g, k]) => { const ni = map[Number(g)]; if (ni !== undefined) ok[ni] = k })
+    c.okeys = ok
+  }
 }
 
 /** Newell normal (unnormalized: length = 2 × area) of a polygon given positions. */
@@ -410,13 +583,16 @@ export function triangulate(P: Vec3[], f: Face): [number, number, number][] {
   })
 }
 
-const edgeKey = (a: number, b: number) => (a < b ? `${a}_${b}` : `${b}_${a}`)
+/** Numeric undirected edge key: min * 2^26 + max (spec C). */
+export const EDGE_N = 2 ** 26
+const edgeKey = (a: number, b: number) => (a < b ? a * EDGE_N + b : b * EDGE_N + a)
+export const edgeEnds = (k: number): [number, number] => [Math.floor(k / EDGE_N), k % EDGE_N]
 export { edgeKey }
 
 /** Extrude faces along their averaged normal. Side walls are quads. Returns the indices of the cap faces. */
 export function extrudeFaces(m: Model, faces: number[], distance = 0.25): number[] {
   if (!faces.length) return []
-  const edgeCount = new Map<string, number>()
+  const edgeCount = new Map<number, number>()
   for (const fi of faces) {
     const v = m.faces[fi].v
     for (let i = 0; i < v.length; i++) { const k = edgeKey(v[i], v[(i + 1) % v.length]); edgeCount.set(k, (edgeCount.get(k) || 0) + 1) }
@@ -482,9 +658,14 @@ export function vertsOfFaces(m: Model, faces: Iterable<number>): Set<number> {
   return s
 }
 
-export function deleteFaces(m: Model, faces: Set<number>) {
+export function deleteFaces(m: Model, faces: Set<number>, alsoVerts: Iterable<number> = []) {
+  const cand = vertsOfFaces(m, faces)
+  for (const v of alsoVerts) cand.add(v)
   m.faces = m.faces.filter((_, i) => !faces.has(i))
-  removeOrphans(m)
+  // explicitly deleted points go even if a remaining face uses them: drop those faces too
+  const force = new Set(alsoVerts)
+  if (force.size) m.faces = m.faces.filter(f => !f.v.some(v => force.has(v)))
+  removeOrphans(m, cand)
   removeEmptyGroups(m)
 }
 
@@ -527,7 +708,7 @@ export function weldVerts(m: Model, verts: number[]) {
   const set = new Set(verts)
   for (const f of m.faces) f.v = f.v.map(v => (set.has(v) ? target : v))
   cleanFaces(m)
-  removeOrphans(m)
+  removeOrphans(m, verts.slice(1))
   removeEmptyGroups(m)
 }
 
@@ -541,7 +722,7 @@ export function flipFaces(m: Model, faces: number[]) {
 
 /** Triangles split into 4 by edge midpoints; quads and n-gons split into one quad per corner around their centre. */
 export function subdivideFaces(m: Model, faces: number[]): number[] {
-  const mid = new Map<string, number>()
+  const mid = new Map<number, number>()
   const getMid = (a: number, b: number) => {
     const k = edgeKey(a, b)
     let i = mid.get(k)
@@ -606,8 +787,17 @@ export function deleteBones(m: Model, bones: Set<number>) {
   }
   const newBones = m.bones.filter((_, i) => !bones.has(i)).map(b => ({ ...b, parent: resolveParent(b.parent) }))
   m.vbone = m.vbone.map(b => (b < 0 ? -1 : bones.has(b) ? resolveParent(m.bones[b].parent) : map[b]))
-  const keys: Model['keys'] = {}
-  Object.entries(m.keys).forEach(([b, k]) => { const i = Number(b); if (!bones.has(i)) keys[map[i]] = k })
+  for (const c of m.clips) {
+    const keys: Clip['keys'] = {}
+    Object.entries(c.keys).forEach(([b, k]) => { const i = Number(b); if (!bones.has(i)) keys[map[i]] = k })
+    c.keys = keys
+  }
   m.bones = newBones
-  m.keys = keys
+}
+
+/** Real triangle count after triangulating every visible-or-hidden polygon (what export produces). */
+export function triCount(m: Model, faces?: number[]): number {
+  let n = 0
+  for (const i of faces ?? m.faces.keys()) n += triangulate(m.verts, m.faces[i]).length
+  return n
 }

@@ -1,93 +1,169 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Circle, Cone, Cylinder, Square, Torus, Hexagon, MousePointer2, Move, RotateCw, Scaling, Bone, Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, ArrowUpFromLine, Copy, Merge, FlipHorizontal, Grid2x2, Trash2 } from 'lucide-react'
-import { useStore, type Tool } from '../store'
+import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle } from 'lucide-react'
+import { history, useStore, type EditMode, type Layout } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
+import { OPS, opById } from '../ops'
+import { PRIMITIVES, triCount, type ParamDef, type PrimitiveKind } from '../model'
 
-function Btn({ cmd, icon, active, label }: { cmd: string; icon: React.ReactNode; active?: boolean; label?: string }) {
+export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
+const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
+export type Tab = typeof TABS[number]
+
+function CmdBtn({ cmd, label, active, testid }: { cmd: string; label?: string; active?: boolean; testid?: string }) {
   const c = byId[cmd]
+  if (!c) return null
   return (
-    <button className={`icon-btn ${active ? 'on' : ''}`} onClick={c.run} data-tip={`${label ?? c.label}${c.keys ? `  ·  ${c.keys}` : ''}`}>
-      {icon}
+    <button className={`tool-btn ${active ? 'on' : ''}`} onClick={c.run} title={`${c.label}${c.keys ? `  ·  ${c.keys}` : ''}`} data-testid={testid ?? `cmd-${cmd}`}>
+      <span>{label ?? c.label}</span>{c.keys && <kbd>{c.keys}</kbd>}
     </button>
   )
 }
 
 export function Header({ onPalette }: { onPalette: () => void }) {
   const mode = useStore(s => s.mode)
-  const undo = useStore(s => s.undo.length)
-  const redo = useStore(s => s.redo.length)
+  useStore(s => s.histRev)
+  const layout = useStore(s => s.layout)
   const set = useStore(s => s.set)
-  const tool = useStore(s => s.tool)
   return (
     <header className="header">
       <div className="brand"><span className="logo">◆</span> Polyform</div>
       <div className="seg">
-        <button className={mode === 'model' ? 'on' : ''} onClick={() => set({ mode: 'model', playing: false, selectMode: useStore.getState().selectMode === 'joint' ? 'vertex' : useStore.getState().selectMode })}>Model</button>
-        <button className={mode === 'animate' ? 'on' : ''} onClick={() => set({ mode: 'animate', selectMode: 'joint', tool: tool === 'joint' || tool === 'scale' ? 'rotate' : tool })}>Animate</button>
+        <button className={mode === 'model' ? 'on' : ''} data-testid="ws-model" onClick={() => mode !== 'model' && byId['anim.mode'].run()}>Model</button>
+        <button className={mode === 'animate' ? 'on' : ''} data-testid="ws-animate" onClick={() => mode !== 'animate' && byId['anim.mode'].run()}>Animate</button>
       </div>
       <div className="hdr-group">
-        <button className="icon-btn" disabled={!undo} onClick={byId['edit.undo'].run} data-tip="Undo  ·  Ctrl+Z"><Undo2 size={16} /></button>
-        <button className="icon-btn" disabled={!redo} onClick={byId['edit.redo'].run} data-tip="Redo  ·  Ctrl+Shift+Z"><Redo2 size={16} /></button>
+        <button className="icon-btn" disabled={!history.canUndo()} onClick={byId['edit.undo'].run} title="Undo  ·  Ctrl+Z" data-testid="undo"><Undo2 size={16} /></button>
+        <button className="icon-btn" disabled={!history.canRedo()} onClick={byId['edit.redo'].run} title="Redo  ·  Ctrl+Shift+Z" data-testid="redo"><Redo2 size={16} /></button>
       </div>
+      <label className="layout-pick" title="Viewport layout">Layout
+        <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
+          <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
+        </select>
+      </label>
       <button className="palette-trigger" onClick={onPalette}><CmdIcon size={14} /> Search commands… <kbd>Ctrl K</kbd></button>
       <span className="grow" />
       <div className="hdr-group">
         <button className="ghost" onClick={byId['file.open'].run}><Upload size={15} /> Open</button>
         <button className="ghost" onClick={byId['file.save'].run}><Save size={15} /> Save</button>
-        <button className="primary" onClick={byId['file.glb'].run}><Download size={15} /> Export .glb</button>
+        <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run}><Download size={15} /> Export .glb</button>
       </div>
-      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,image/*" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
+      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
     </header>
   )
 }
 
+/** LightWave Modeler-style left panel: tool tabs with labeled text buttons. Tabs only change the panel, never the mode. */
 export function ToolRail() {
+  const [tab, setTab] = useState<Tab>('Create')
   const tool = useStore(s => s.tool)
-  const mode = useStore(s => s.mode)
-  const selectMode = useStore(s => s.selectMode)
   const axis = useStore(s => s.axis)
+  const snap = useStore(s => s.snap)
+  const autoKey = useStore(s => s.autoKey)
   const set = useStore(s => s.set)
-  const t = (id: Tool, icon: React.ReactNode) => <Btn cmd={`tool.${id}`} icon={icon} active={tool === id} />
+  const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
   return (
-    <aside className="rail">
-      <div className="rail-sec">
-        {t('select', <MousePointer2 size={18} />)}
-        {t('move', <Move size={18} />)}
-        {t('rotate', <RotateCw size={18} />)}
-        {t('scale', <Scaling size={18} />)}
-        {mode === 'model' && t('joint', <Bone size={18} />)}
+    <aside className="rail" data-testid="tool-rail">
+      <div className="tabs">
+        {TABS.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => setTab(t)}>{t}</button>)}
       </div>
-      <div className="rail-sec axis">
-        {(['x', 'y', 'z'] as const).map(a => (
-          <button key={a} className={`axis-btn ${a} ${axis[a] ? 'on' : ''}`} data-tip={`Lock ${a.toUpperCase()} axis`} onClick={() => set({ axis: { ...axis, [a]: !axis[a] } })}>{a.toUpperCase()}</button>
-        ))}
+      <div className="tool-list">
+        {tab === 'Create' && <>
+          <h4>Primitives</h4>
+          {(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => <CmdBtn key={k} cmd={`add.${k}`} label={PRIMITIVES[k].label} testid={`prim-${k}`} />)}
+          <h4>Points</h4>
+          <CmdBtn cmd="tool.point" label="Point" active={tool === 'point'} />
+          <CmdBtn cmd="op.con.face" label="Make polygon" />
+          <CmdBtn cmd="tool.joint" label="Joints" active={tool === 'joint'} />
+        </>}
+        {tab === 'Modify' && <>
+          <h4>Transform</h4>
+          <CmdBtn cmd="tool.select" label="Select" active={tool === 'select'} testid="tool-select" />
+          <CmdBtn cmd="tool.move" label="Move" active={tool === 'move'} testid="tool-move" />
+          <CmdBtn cmd="tool.rotate" label="Rotate" active={tool === 'rotate'} testid="tool-rotate" />
+          <CmdBtn cmd="tool.scale" label="Scale" active={tool === 'scale'} testid="tool-scale" />
+          <h4>Numeric</h4>
+          {ops('Modify')}
+          <h4>Constraints</h4>
+          <div className="axis-row">
+            {(['x', 'y', 'z'] as const).map(a => <button key={a} className={`axis-btn ${a} ${axis[a] ? 'on' : ''}`} title={`Allow ${a.toUpperCase()}`} onClick={() => set({ axis: { ...axis, [a]: !axis[a] } })}>{a.toUpperCase()}</button>)}
+            <button className={`axis-btn ${snap ? 'on' : ''}`} onClick={() => set({ snap: !snap })} title="Grid snap (Ctrl inverts while dragging)">Snap</button>
+          </div>
+        </>}
+        {tab === 'Multiply' && ops('Multiply')}
+        {tab === 'Construct' && <>{ops('Construct')}<CmdBtn cmd="edit.delete" label="Delete" /></>}
+        {tab === 'Map' && <>
+          <h4>Materials</h4>
+          <p className="muted">Assign images and UV tools live in the UV workspace (coming with the UV step).</p>
+        </>}
+        {tab === 'Paint' && <>
+          <CmdBtn cmd="tool.paint" label="Paint brush" active={tool === 'paint'} testid="brush" />
+          <p className="muted">3D painting arrives in the painting step.</p>
+        </>}
+        {tab === 'Setup' && <>
+          <CmdBtn cmd="tool.joint" label="Joint tool" active={tool === 'joint'} testid="joint-tool" />
+          <CmdBtn cmd="joint.bind" label="Bind to joint" testid="bind" />
+          <CmdBtn cmd="joint.autobind" label="Auto bind" testid="auto-bind" />
+          <CmdBtn cmd="joint.mirror" label="Mirror joints" />
+          <CmdBtn cmd="joint.children" label="Select children" />
+          <CmdBtn cmd="view.skeleton" label="Show skeleton" />
+        </>}
+        {tab === 'Animate' && <>
+          <CmdBtn cmd="anim.mode" label="Model / Animate" />
+          <CmdBtn cmd="anim.key" label="Insert key" testid="key" />
+          <CmdBtn cmd="anim.unkey" label="Delete key" />
+          <button className={`tool-btn rec ${autoKey ? 'on' : ''}`} data-testid="auto-key" onClick={() => set({ autoKey: !autoKey })}><Circle size={10} fill={autoKey ? 'currentColor' : 'none'} /> <span>Auto-key</span></button>
+          <CmdBtn cmd="anim.copy" label="Copy keys" />
+          <CmdBtn cmd="anim.paste" label="Paste keys" />
+          <CmdBtn cmd="view.onion" label="Onion skin" />
+        </>}
+        {tab === 'Export' && <>
+          <CmdBtn cmd="file.glb" label="Export .glb" testid="export-glb-tab" />
+          <CmdBtn cmd="file.obj" label="Export .obj" />
+          <CmdBtn cmd="file.save" label="Save project" />
+          <CmdBtn cmd="file.open" label="Open / import" />
+          <p className="muted">glTF 2.0 binary: one primitive per material, skins, all clips, images embedded.</p>
+        </>}
       </div>
-      {mode === 'model' && <>
-        <div className="rail-sec sel-mode">
-          {(['vertex', 'face', 'joint'] as const).map((sm, i) => (
-            <button key={sm} className={`txt-btn ${selectMode === sm ? 'on' : ''}`} onClick={() => set({ selectMode: sm })} data-tip={`Select ${sm}s  ·  ${i + 1}`}>{sm === 'vertex' ? 'Vtx' : sm === 'face' ? 'Face' : 'Jnt'}</button>
-          ))}
-        </div>
-        <div className="rail-sec">
-          <Btn cmd="add.box" icon={<Box size={18} />} />
-          <Btn cmd="add.sphere" icon={<Circle size={18} />} />
-          <Btn cmd="add.geosphere" icon={<Hexagon size={18} />} />
-          <Btn cmd="add.cylinder" icon={<Cylinder size={18} />} />
-          <Btn cmd="add.cone" icon={<Cone size={18} />} />
-          <Btn cmd="add.plane" icon={<Square size={18} />} />
-          <Btn cmd="add.torus" icon={<Torus size={18} />} />
-        </div>
-        <div className="rail-sec">
-          <Btn cmd="edit.extrude" icon={<ArrowUpFromLine size={18} />} />
-          <Btn cmd="edit.duplicate" icon={<Copy size={18} />} />
-          <Btn cmd="edit.subdivide" icon={<Grid2x2 size={18} />} />
-          <Btn cmd="edit.weld" icon={<Merge size={18} />} />
-          <Btn cmd="edit.flip" icon={<FlipHorizontal size={18} />} />
-          <Btn cmd="edit.delete" icon={<Trash2 size={18} />} />
-        </div>
-      </>}
     </aside>
+  )
+}
+
+/** LightWave's "n" Numeric window: edit the last operation's parameters live. */
+export function NumericPanel() {
+  const open = useStore(s => s.numericOpen)
+  const lo = useStore(s => s.lastOp)
+  const version = useStore(s => s.version)
+  const set = useStore(s => s.set)
+  if (!open) return null
+  const op = lo ? opById[lo.id] : undefined
+  const live = !!lo && lo.rev === version
+  return (
+    <div className="numeric" data-testid="numeric">
+      <div className="numeric-head"><b>Numeric</b> <span className="muted">{op ? op.label : 'No active tool'}</span><span className="grow" /><button className="icon-btn" onClick={() => set({ numericOpen: false })}><X size={14} /></button></div>
+      {op && live ? <>
+        {op.params.map(p => <ParamField key={p.key} def={p} value={lo!.params[p.key]} onChange={v => useStore.getState().updateOp({ [p.key]: v })} />)}
+        {!op.params.length && <p className="muted">No parameters.</p>}
+        {lo!.note && <p className="muted">{lo!.note}</p>}
+      </> : <p className="muted">Run a tool (Create, Multiply, Construct…) to edit its values here.</p>}
+    </div>
+  )
+}
+
+function ParamField({ def, value, onChange }: { def: ParamDef; value: number; onChange: (v: number) => void }) {
+  const [txt, setTxt] = useState(String(value))
+  useEffect(() => setTxt(String(+value.toFixed(4))), [value])
+  if (def.kind === 'bool') return <label className="pf"><span>{def.label}</span><input type="checkbox" data-testid={`param-${def.key}`} checked={!!value} onChange={e => onChange(e.target.checked ? 1 : 0)} /></label>
+  if (def.kind === 'axis' || def.kind === 'enum') {
+    const opts = def.options ?? ['X', 'Y', 'Z']
+    return <label className="pf"><span>{def.label}</span><select data-testid={`param-${def.key}`} value={value} onChange={e => onChange(+e.target.value)}>{opts.map((o, i) => <option key={o} value={i}>{o}</option>)}</select></label>
+  }
+  const commit = () => { const v = parseFloat(txt); if (Number.isFinite(v)) onChange(v); else setTxt(String(value)) }
+  return (
+    <label className="pf"><span>{def.label}</span>
+      <input type="number" data-testid={`param-${def.key}`} value={txt} step={def.step} min={def.min} max={def.max}
+        onChange={e => { setTxt(e.target.value); const v = parseFloat(e.target.value); if (Number.isFinite(v)) onChange(v) }} onBlur={commit} onKeyDown={e => e.key === 'Enter' && commit()} />
+    </label>
   )
 }
 
@@ -135,32 +211,54 @@ function fuzzy(text: string, q: string) {
   return score
 }
 
+const MODE_LABEL: Record<EditMode, string> = { vertex: 'Points', edge: 'Edges', face: 'Polygons' }
+
+/** Bottom bar: LightWave-style Object / Points / Edges / Polygons switch, counts, hints. */
 export function StatusBar() {
   const m = useStore(s => s.model)
   useStore(s => s.version)
   const sv = useStore(s => s.selVerts.size)
+  const se = useStore(s => s.selEdges.size)
   const sf = useStore(s => s.selFaces.size)
   const sb = useStore(s => s.selBones.size)
   const tool = useStore(s => s.tool)
+  const selectMode = useStore(s => s.selectMode)
+  const subModes = useStore(s => s.subModes)
+  const numericOpen = useStore(s => s.numericOpen)
+  const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const hint: Record<string, string> = {
-    select: 'Drag to box-select · Shift add · Ctrl remove',
+    select: 'Drag to box-select · Shift add · Ctrl remove · Alt+click loop',
     move: 'Drag in any view to move · Ctrl snaps',
-    rotate: 'Drag to rotate around the view axis (or the one unlocked axis) · Ctrl snaps 15°',
-    scale: 'Drag to scale · lock axes to scale along one',
+    rotate: 'Drag to rotate around the view axis (or the one allowed axis) · Ctrl snaps 15°',
+    scale: 'Drag to scale · allow one axis to scale along it',
     joint: 'Click to place a joint · it parents to the selected joint',
+    point: 'Click to create a point on the grid plane · Shift adds to selection',
+    paint: 'Painting arrives in the painting step',
   }
+  const st = useStore.getState()
   return (
     <footer className="status">
-      <span>{m.verts.length} verts</span><span>{m.faces.length} tris</span><span>{m.groups.length} groups</span><span>{m.bones.length} joints</span>
-      <span className="sel">Selected: {sv} v · {sf} f · {sb} j</span>
+      <div className="seg small" data-testid="mode-switch">
+        <button className={selectMode === 'object' ? 'on' : ''} data-testid="mode-object" onClick={() => st.setSelectMode('object')} title="Object mode · Tab">Object</button>
+        {(['vertex', 'edge', 'face'] as const).map((sm, i) => (
+          <button key={sm} className={selectMode !== 'object' && selectMode !== 'joint' && subModes.includes(sm) ? 'on' : ''} data-testid={`mode-${sm}`}
+            onClick={e => st.setSelectMode(sm, e.shiftKey)} title={`${MODE_LABEL[sm]} · ${i + 1} (Shift+${i + 1} combines)`}>{MODE_LABEL[sm]}</button>
+        ))}
+        <button className={selectMode === 'joint' ? 'on' : ''} data-testid="mode-joint" onClick={() => st.setSelectMode('joint')} title="Joints · 4">Joints</button>
+      </div>
+      <button className="ghost small" data-testid="select-all" onClick={() => st.selectAll()} title="Select all · A">All</button>
+      <span data-testid="count-verts">{m.verts.length} verts</span>
+      <span data-testid="count-faces">{m.faces.length} faces · {tris} tris</span>
+      <span>{m.groups.length} groups</span><span>{m.bones.length} joints</span>
+      <span className="sel" data-testid="sel-count">Selected: {sv} v · {se} e · {sf} f · {sb} j</span>
       <span className="grow" />
       <span className="hint">{hint[tool]}</span>
-      <span className="hint">Right-drag orbit/pan · wheel zoom · double-click a view to maximize</span>
+      <button className={`ghost small ${numericOpen ? 'on' : ''}`} onClick={byId['edit.numeric'].run} title="Numeric panel · N">Numeric</button>
     </footer>
   )
 }
 
 export function Toast() {
   const t = useStore(s => s.toast)
-  return t ? <div className="toast">{t}</div> : null
+  return t ? <div className="toast" data-testid="toast">{t}</div> : null
 }

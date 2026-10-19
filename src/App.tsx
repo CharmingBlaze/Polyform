@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Viewport } from './components/Viewport'
-import { Header, ToolRail, Palette, StatusBar, Toast } from './components/Chrome'
+import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel } from './components/Chrome'
 import { Sidebar, Timeline } from './components/Panels'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
@@ -14,14 +14,15 @@ export default function App() {
   const [palette, setPalette] = useState(false)
   const [dragging, setDragging] = useState(false)
   const maximized = useStore(s => s.maximized)
-  useEffect(() => sceneManager.invalidate(), [maximized])
+  const layout = useStore(s => s.layout)
+  useEffect(() => sceneManager.invalidate(), [maximized, layout])
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
   useEffect(() => {
     if (booted) return
     booted = true
     restoreAutosave().then(ok => {
-      if (!ok) { const s = useStore.getState(); addPrimitive(s.model, 'box'); s.touch() }
+      if (!ok) { const s = useStore.getState(); const m = s.model; addPrimitive(m, 'box'); s.loadModel(m) }
       startAutosave()
     })
   }, [])
@@ -35,12 +36,10 @@ export default function App() {
       <div className="main">
         <ToolRail />
         <div className="center">
-          <div className={`views ${maximized ? 'max' : ''}`}>
+          <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
             <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
-            <Viewport view="top" />
-            <Viewport view="persp" />
-            <Viewport view="front" />
-            <Viewport view="side" />
+            {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
+            <NumericPanel />
           </div>
           <Timeline />
         </div>
@@ -49,7 +48,7 @@ export default function App() {
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />
       <Toast />
-      {dragging && <div className="dropzone"><div>Drop a .glb, .obj, project .json, or texture image</div></div>}
+      {dragging && <div className="dropzone"><div>Drop a .glb, .obj, project .json, or a PNG / JPEG / WebP image</div></div>}
     </div>
   )
 }

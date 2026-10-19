@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
 import { useStore } from '../store'
+import { triCount } from '../model'
 import { UVEditor } from './UVEditor'
-import { keyFrames, sampleBone } from '../anim'
+import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
   const [tab, setTab] = useState<'scene' | 'joints' | 'uv'>('scene')
@@ -34,7 +35,8 @@ function Groups() {
   return (
     <div className="list">
       {m.groups.map((g, i) => {
-        const count = m.faces.filter(f => f.g === i).length
+        const faces = m.faces.map((f, fi) => (f.g === i ? fi : -1)).filter(fi => fi >= 0)
+        const count = faces.length
         const sel = count > 0 && m.faces.every((f, fi) => f.g !== i || selFaces.has(fi))
         return (
           <div key={i} className={`row ${sel ? 'on' : ''}`} onClick={e => st.selectGroup(i, e.shiftKey)}>
@@ -44,7 +46,7 @@ function Groups() {
             {editing === i
               ? <input autoFocus defaultValue={g.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.groups[i].name = e.target.value || g.name)); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
               : <span className="name" onDoubleClick={e => { e.stopPropagation(); setEditing(i) }}>{g.name}</span>}
-            <span className="meta">{count} tris</span>
+            <span className="meta" data-testid={`group-count-${i}`}>{count} faces · {triCount(m, faces)} tris</span>
           </div>
         )
       })}
@@ -107,16 +109,19 @@ function Joints() {
 function KeyInspector({ bone, frame }: { bone: number; frame: number }) {
   const m = useStore(s => s.model)
   useStore(s => s.version)
-  const k = sampleBone(m, bone, frame).key
-  const isKey = !!m.keys[bone]?.[frame]
   const st = useStore.getState()
+  const clip = st.curClip()
+  const k = sampleBone(clip, bone, frame).key
+  const isKey = !!clip.keys[bone]?.[frame]
   const setVal = (field: 'rot' | 'pos', axis: number, val: number) => {
+    const ci = Math.min(useStore.getState().clip, m.clips.length - 1)
     st.edit(mm => {
-      const cur = sampleBone(mm, bone, frame).key
+      const c = mm.clips[ci]
+      const cur = sampleBone(c, bone, frame).key
       const nk = { rot: [...cur.rot], pos: [...cur.pos] } as typeof cur
       nk[field][axis] = field === 'rot' ? (val * Math.PI) / 180 : val
-      mm.keys[bone] = { ...(mm.keys[bone] || {}), [frame]: nk }
-    })
+      c.keys[bone] = { ...(c.keys[bone] || {}), [frame]: nk }
+    }, 'Edit key')
   }
   return (
     <div className="card">
@@ -157,23 +162,34 @@ export function Timeline() {
     const tick = (t: number) => {
       const s = useStore.getState()
       acc += (t - last) / 1000; last = t
-      const step = 1 / s.model.fps
-      if (acc >= step) { const n = Math.floor(acc / step); acc -= n * step; s.set({ frame: (s.frame + n) % Math.max(1, s.model.frames) }) }
+      const c = s.curClip()
+      const step = 1 / (c.fps * s.playSpeed)
+      if (acc >= step) {
+        const n = Math.floor(acc / step); acc -= n * step
+        const next = s.frame + n
+        if (next >= c.frames && !c.loop) s.set({ frame: c.frames - 1, playing: false })
+        else s.set({ frame: next % Math.max(1, c.frames) })
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [playing])
 
+  const clipIdx = useStore(s => s.clip)
+  const selFaces = useStore(s => s.selFaces)
+  const clip = m.clips[Math.min(clipIdx, m.clips.length - 1)]
   const bones = selBones.size ? [...selBones] : m.bones.map((_, i) => i)
   const keySet = new Set<number>()
-  bones.forEach(b => keyFrames(m, b).forEach(f => keySet.add(f)))
+  bones.forEach(b => keyFrames(clip, b).forEach(f => keySet.add(f)))
+  const objs = selFaces.size ? [...new Set([...selFaces].map(f => m.faces[f]?.g))] : Object.keys(clip.okeys).map(Number)
+  objs.forEach(g => objectKeyFrames(clip, g).forEach(f => keySet.add(f)))
   const keys = [...keySet].sort((a, b) => a - b)
-  const n = Math.max(1, m.frames)
+  const n = Math.max(2, clip.frames)
+  const [keyDrag, setKeyDrag] = useState<{ from: number; to: number } | null>(null)
+  const frameAt = (clientX: number) => { const r = track.current!.getBoundingClientRect(); return Math.max(0, Math.min(n - 1, Math.round(((clientX - r.left) / r.width) * (n - 1)))) }
   const scrub = (e: React.PointerEvent) => {
-    const r = track.current!.getBoundingClientRect()
-    const f = Math.round(((e.clientX - r.left) / r.width) * (n - 1))
-    set({ frame: Math.max(0, Math.min(n - 1, f)), mode: 'animate', selectMode: 'joint' })
+    set({ frame: frameAt(e.clientX), ...(mode !== 'animate' ? { mode: 'animate' as const } : {}) })
   }
   const jump = (dir: number) => {
     const target = dir < 0 ? [...keys].reverse().find(k => k < frame) : keys.find(k => k > frame)
@@ -183,19 +199,35 @@ export function Timeline() {
     <div className={`timeline ${mode === 'animate' ? 'active' : ''}`}>
       <div className="tl-controls">
         <button className="icon-btn" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
-        <button className="icon-btn play" onClick={() => { if (mode !== 'animate') set({ mode: 'animate', selectMode: 'joint' }); set({ playing: !playing }) }} data-tip="Play / pause  ·  Space">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
+        <select className="clip-pick" data-testid="clip-select" value={Math.min(clipIdx, m.clips.length - 1)} onChange={e => st.setClip(+e.target.value)} title="Animation clip">
+          {m.clips.map((c, i) => <option key={i} value={i}>{c.name}</option>)}
+        </select>
+        <button className="icon-btn" title="New clip" data-testid="clip-add" onClick={() => st.addClip()}>+</button>
+        <button className="icon-btn" title="Duplicate clip" onClick={() => st.addClip(true)}>⧉</button>
+        <button className="icon-btn" title="Rename clip" onClick={() => { const nm = prompt('Clip name', clip.name); if (nm) st.edit(mm => (mm.clips[clipIdx].name = nm), 'Rename clip') }}>✎</button>
+        <button className="icon-btn" title="Delete clip" disabled={m.clips.length < 2} onClick={() => st.deleteClip(clipIdx)}>−</button>
+        <button className="icon-btn play" onClick={() => { if (mode !== 'animate') set({ mode: 'animate' }); set({ playing: !playing }) }} data-tip="Play / pause  ·  Space" data-testid="play">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
         <button className="icon-btn" onClick={() => jump(1)} data-tip="Next key"><SkipForward size={15} /></button>
+        <button className="icon-btn" data-testid="frame-next-10" onClick={() => set({ frame: Math.min(n - 1, useStore.getState().frame + 10) })} data-tip="Forward 10 frames">+10</button>
         <div className="frame-box">{frame}<span>/{n - 1}</span></div>
-        <button className="icon-btn" onClick={() => st.setKey()} data-tip="Set key on selected joints  ·  K"><KeyRound size={15} /></button>
-        <button className="icon-btn" onClick={() => st.deleteKey()} data-tip="Delete key  ·  Shift+K"><Trash2 size={15} /></button>
-        <label className="mini">Frames <input type="number" min={2} max={2000} value={m.frames} onChange={e => st.edit(mm => (mm.frames = Math.max(2, parseInt(e.target.value) || 2)))} /></label>
-        <label className="mini">FPS <input type="number" min={1} max={120} value={m.fps} onChange={e => st.edit(mm => (mm.fps = Math.max(1, parseInt(e.target.value) || 24)))} /></label>
+        <button className="icon-btn" onClick={() => st.setKey()} data-tip="Insert key for selection  ·  I"><KeyRound size={15} /></button>
+        <button className="icon-btn" onClick={() => st.deleteKey()} data-tip="Delete key  ·  Alt+I"><Trash2 size={15} /></button>
+        <button className={`icon-btn rec ${useStore.getState().autoKey ? 'on' : ''}`} data-testid="autokey-tl" onClick={() => set({ autoKey: !useStore.getState().autoKey })} data-tip="Auto-key (record)">●</button>
+        <label className="mini">Frames <input type="number" min={2} max={10000} value={clip.frames} onChange={e => st.edit(mm => (mm.clips[clipIdx].frames = Math.max(2, Math.min(10000, parseInt(e.target.value) || 2))), 'Clip length')} /></label>
+        <label className="mini">FPS <input type="number" min={1} max={240} value={clip.fps} onChange={e => st.edit(mm => (mm.clips[clipIdx].fps = Math.max(1, Math.min(240, parseInt(e.target.value) || 24))), 'Clip fps')} /></label>
+        <label className="mini">Loop <input type="checkbox" checked={clip.loop} onChange={e => st.edit(mm => (mm.clips[clipIdx].loop = e.target.checked), 'Clip loop')} /></label>
+        <label className="mini">Interp <select value={clip.interp} onChange={e => st.edit(mm => (mm.clips[clipIdx].interp = e.target.value as 'linear' | 'step'), 'Interpolation')}><option value="linear">Linear</option><option value="step">Step</option></select></label>
       </div>
       <div className="tl-track" ref={track} onPointerDown={e => { (e.target as HTMLElement).setPointerCapture(e.pointerId); scrub(e) }} onPointerMove={e => e.buttons & 1 && scrub(e)}>
         {Array.from({ length: n }, (_, i) => i).filter(i => i % Math.max(1, Math.ceil(n / 60)) === 0).map(i => (
           <div key={i} className={`tick ${i % 5 === 0 ? 'major' : ''}`} style={{ left: `${(i / (n - 1)) * 100}%` }}>{i % 10 === 0 && <span>{i}</span>}</div>
         ))}
-        {keys.map(k => <div key={k} className="key" style={{ left: `${(k / (n - 1)) * 100}%` }} />)}
+        {keys.map(k => (
+          <div key={k} className={`key ${keyDrag?.from === k ? 'drag' : ''}`} data-testid={`key-${k}`} style={{ left: `${((keyDrag?.from === k ? keyDrag.to : k) / (n - 1)) * 100}%` }}
+            onPointerDown={e => { e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); setKeyDrag({ from: k, to: k }) }}
+            onPointerMove={e => { if (keyDrag?.from === k) setKeyDrag({ from: k, to: frameAt(e.clientX) }) }}
+            onPointerUp={() => { if (keyDrag && keyDrag.to !== keyDrag.from) st.moveKey(keyDrag.from, keyDrag.to); setKeyDrag(null) }} />
+        ))}
         <div className="playhead" style={{ left: `${(frame / (n - 1)) * 100}%` }} />
       </div>
     </div>

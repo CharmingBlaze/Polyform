@@ -119,7 +119,7 @@ describe('bones', () => {
     const m = M.emptyModel(); M.addPrimitive(m, 'box')
     m.bones = [{ name: 'root', parent: -1, pos: [0, 0, 0] }, { name: 'mid', parent: 0, pos: [0, 1, 0] }, { name: 'tip', parent: 1, pos: [0, 2, 0] }]
     m.vbone = m.verts.map((_, i) => i % 3)
-    m.keys = { 0: { 0: { rot: [0, 0, 0], pos: [0, 0, 0] } }, 2: { 5: { rot: [0, 1, 0], pos: [0, 0, 0] } } }
+    m.clips[0].keys = { 0: { 0: { rot: [0, 0, 0], pos: [0, 0, 0] } }, 2: { 5: { rot: [0, 1, 0], pos: [0, 0, 0] } } }
     return m
   }
   it('deleting a middle bone reparents child and reassigns verts and keys', () => {
@@ -127,7 +127,7 @@ describe('bones', () => {
     M.deleteBones(m, new Set([1]))
     expect(m.bones.map(b => [b.name, b.parent])).toEqual([['root', -1], ['tip', 0]])
     for (const b of m.vbone) expect(b).toBeLessThan(2)
-    expect(Object.keys(m.keys).map(Number).sort()).toEqual([0, 1])
+    expect(Object.keys(m.clips[0].keys).map(Number).sort()).toEqual([0, 1])
   })
   it('deleting root leaves children as roots', () => {
     const m = rig(); M.deleteBones(m, new Set([0]))
@@ -141,7 +141,7 @@ describe('animation', () => {
     const m = M.emptyModel()
     m.bones = [{ name: 'a', parent: -1, pos: [0, 0, 0] }, { name: 'b', parent: 0, pos: [0, 1, 0] }]
     m.verts = [[0, 2, 0]]; m.vbone = [1]
-    m.keys = { 0: { 0: { rot: [0, 0, 0], pos: [0, 0, 0] }, 10: { rot: [0, 0, Math.PI / 2], pos: [0, 0, 0] } } }
+    m.clips[0].keys = { 0: { 0: { rot: [0, 0, 0], pos: [0, 0, 0] }, 10: { rot: [0, 0, Math.PI / 2], pos: [0, 0, 0] } } }
     return m
   }
   it('no keys => identity', () => {
