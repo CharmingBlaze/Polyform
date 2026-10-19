@@ -1,5 +1,6 @@
-// Runs an e2e script against a dev server: reuses one on 127.0.0.1:5173 if it is up, otherwise starts Vite on a
-// spare port for the duration of the run. Usage: node tests/e2e/run.mjs export.mjs [more.mjs ...]
+// Runs e2e scripts against a private Vite dev server started on a spare port for the duration of the run, so a
+// long-running dev server with stale HMR state can never leak into the gate. Set E2E_URL to test a server you
+// already run instead (e.g. E2E_URL=http://127.0.0.1:5173/). Usage: node tests/e2e/run.mjs export.mjs [more.mjs ...]
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -10,8 +11,9 @@ const scripts = process.argv.slice(2)
 if (!scripts.length) { console.error('usage: node tests/e2e/run.mjs <script.mjs> ...'); process.exit(2) }
 
 const up = async u => { try { return (await fetch(u)).ok } catch { return false } }
-let url = 'http://127.0.0.1:5173/', server = null
-if (!(await up(url))) {
+let url = process.env.E2E_URL || '', server = null
+if (url && !(await up(url))) { console.error(`E2E_URL ${url} is not reachable`); process.exit(1) }
+if (!url) {
   const port = 5190 + Math.floor(Math.random() * 50)
   url = `http://127.0.0.1:${port}/`
   server = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { cwd: root, stdio: 'ignore' })
