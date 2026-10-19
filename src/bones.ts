@@ -1,6 +1,7 @@
 /** Joint operations. All keep the invariant parent < index (re-sorting and remapping when needed). */
 import * as THREE from 'three'
 import type { Clip, Model, Vec3 } from './model'
+import { skinnedGroups } from './anim'
 
 export function descendants(m: Model, b: number): number[] {
   const out: number[] = []
@@ -92,4 +93,19 @@ export function autoBind(m: Model, verts: number[]): number {
     m.vbone[v] = best
   }
   return verts.length
+}
+
+/**
+ * glTF ignores node transforms on skinned meshes, so an object bound to joints cannot keep object keys.
+ * Remove them from every clip and report what was removed (object name and key count) so the UI can say so.
+ */
+export function clearObjectKeysOfSkinned(m: Model): { group: number; name: string; keys: number }[] {
+  const skinned = skinnedGroups(m)
+  const out: { group: number; name: string; keys: number }[] = []
+  skinned.forEach(g => {
+    let n = 0
+    for (const c of m.clips) if (c.okeys[g]) { n += Object.keys(c.okeys[g]).length; delete c.okeys[g] }
+    if (n) out.push({ group: g, name: m.groups[g].name, keys: n })
+  })
+  return out
 }

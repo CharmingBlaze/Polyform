@@ -69,7 +69,7 @@ export const commands: Command[] = [
   { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
   { id: 'file.open', label: 'Open / import…', group: 'File', keys: 'Ctrl+O', run: openFile },
   { id: 'file.save', label: 'Save project (.json)', group: 'File', keys: 'Ctrl+S', run: () => saveProject(S().model) },
-  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => exportGLB(S().model).then(() => S().notify('Exported model.glb')) },
+  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => exportGLB(S().model).then(w => S().notify(w.length ? `Exported model.glb with ${w.length} warning(s): ${w[0]}` : 'Exported model.glb')) },
   { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => exportOBJ(S().model) },
 ]
 

@@ -23,6 +23,8 @@ export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; n
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
 
 export const history = new History()
+const clearedNote = (c: { name: string; keys: number }[]) =>
+  c.length ? ` · removed ${c.reduce((a, x) => a + x.keys, 0)} object key(s) from ${c.map(x => x.name).join(', ')}: bound objects animate through their joints (undo to keep them)` : ''
 export const getHistory = () => history
 
 interface State {
@@ -481,16 +483,18 @@ export const useStore = create<State>((set, get) => ({
     const verts = s.activeVerts()
     if (bone === undefined) return s.notify('Select a joint first (Joints panel or Setup tab)')
     if (!verts.length) return s.notify('Select points or faces to bind')
-    s.edit(m => verts.forEach(v => (m.vbone[v] = bone)), 'Bind to joint')
-    s.notify(`Bound ${verts.length} points to ${s.model.bones[bone].name}`)
+    let cleared: ReturnType<typeof B.clearObjectKeysOfSkinned> = []
+    s.edit(m => { verts.forEach(v => (m.vbone[v] = bone)); cleared = B.clearObjectKeysOfSkinned(m) }, 'Bind to joint')
+    s.notify(`Bound ${verts.length} points to ${s.model.bones[bone].name}${clearedNote(cleared)}`)
   },
   autoBindSelection: () => {
     const s = get()
     if (!s.model.bones.length) return s.notify('Add joints first')
     const sel = s.activeVerts()
     const verts = sel.length ? sel : s.model.verts.map((_, i) => i)
-    s.edit(m => B.autoBind(m, verts), 'Auto-bind')
-    s.notify(`Auto-bound ${verts.length} points to the nearest bone`)
+    let cleared: ReturnType<typeof B.clearObjectKeysOfSkinned> = []
+    s.edit(m => { B.autoBind(m, verts); cleared = B.clearObjectKeysOfSkinned(m) }, 'Auto-bind')
+    s.notify(`Auto-bound ${verts.length} points to the nearest bone${clearedNote(cleared)}`)
   },
   reparentJoint: (b, parent) => {
     const s = get()

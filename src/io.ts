@@ -101,6 +101,7 @@ export function buildExportScene(m: Model) {
   })
 
   const animations: THREE.AnimationClip[] = []
+  const warnings: string[] = []
   for (const clip of m.clips) {
     const tracks: THREE.KeyframeTrack[] = []
     const interp = clip.interp === 'step' ? THREE.InterpolateDiscrete : THREE.InterpolateLinear
@@ -120,8 +121,11 @@ export function buildExportScene(m: Model) {
     })
     Object.entries(clip.okeys).forEach(([gs, ks]) => {
       const gi = Number(gs), node = nodeOf.get(gi)
-      if (!node || (node as THREE.SkinnedMesh).isSkinnedMesh) return
       const frames = Object.keys(ks).map(Number).sort((a, b) => a - b)
+      if (!node || (node as THREE.SkinnedMesh).isSkinnedMesh) {
+        if (frames.length) warnings.push(`Skipped ${frames.length} object key(s) of "${m.groups[gi]?.name ?? gi}" in clip "${clip.name}": ${node ? 'it is bound to joints (glTF ignores node transforms on skinned meshes)' : 'it has no faces'}`)
+        return
+      }
       if (!frames.length) return
       const piv = m.groups[gi].xf.pivot
       const times = frames.map(f => f / clip.fps)
@@ -133,16 +137,21 @@ export function buildExportScene(m: Model) {
     })
     if (tracks.length) animations.push(new THREE.AnimationClip(clip.name || 'Animation', (clip.frames - 1) / clip.fps, tracks))
   }
-  return { root, animations }
+  return { root, animations, warnings }
 }
 
-export async function exportGLBBuffer(m: Model): Promise<ArrayBuffer> {
-  const { root, animations } = buildExportScene(m)
-  return (await new GLTFExporter().parseAsync(root, { binary: true, animations, onlyVisible: false })) as ArrayBuffer
+export async function exportGLBBuffer(m: Model): Promise<{ glb: ArrayBuffer; warnings: string[] }> {
+  const { root, animations, warnings } = buildExportScene(m)
+  const glb = (await new GLTFExporter().parseAsync(root, { binary: true, animations, onlyVisible: false })) as ArrayBuffer
+  return { glb, warnings }
 }
 
-export async function exportGLB(m: Model, name = 'model') {
-  download(await exportGLBBuffer(m), `${name}.glb`, 'model/gltf-binary')
+/** Export and download; returns warnings (also logged) so the caller can show them. */
+export async function exportGLB(m: Model, name = 'model'): Promise<string[]> {
+  const { glb, warnings } = await exportGLBBuffer(m)
+  warnings.forEach(w => console.warn('[export]', w))
+  download(glb, `${name}.glb`, 'model/gltf-binary')
+  return warnings
 }
 
 export function exportOBJ(m: Model, name = 'model') {
