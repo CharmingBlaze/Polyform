@@ -1,5 +1,5 @@
 // Pure UV operations on face corners (corner id = face * MAX_CORNERS + corner). Used by the UV editor and tests.
-import { cornerFace, cornerId, cornerIdx, edgeEnds, edgeKey, faceNormal, type Model, type Vec2 } from './model'
+import { cornerFace, cornerId, cornerIdx, edgeEnds, edgeKey, faceNormal, newell, type Model, type Vec2 } from './model'
 
 export type UVAxis = 'x' | 'y' | 'z' | 'box'
 export const uvArea = (uv: Vec2[]) => polyArea(uv)
@@ -290,4 +290,59 @@ export function stitch(m: Model, faces: number[], allFaces: number[]): number {
   // weld the shared corners exactly onto the anchor side
   for (const pr of pairs) for (let k = 0; k < 2; k++) m.faces[pr.fb].uv[pr.cb[k]] = [...m.faces[pr.fa].uv[pr.ca[k]]] as Vec2
   return moved
+}
+
+// ---------- pack ----------
+/** 3D area of a face */
+export const faceArea3D = (m: Model, fi: number) => newell(m.verts, m.faces[fi].v).length() / 2
+
+/**
+ * Pack the UV islands of the given faces into 0..1: islands are first scaled to the same texel density (UV area
+ * proportional to 3D area), turned upright when taller than wide, then shelf-packed tallest first with padding,
+ * at the largest uniform scale that fits. Shapes are kept (no stretching). Returns the island count.
+ */
+export function packIslands(m: Model, faces: number[], padding = 0.01): number {
+  const isl = islands(m, faces)
+  const groups = new Map<number, number[]>()
+  for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
+  type Item = { faces: number[]; w: number; h: number; x0: number; y0: number; k: number; rot: boolean; x?: number; y?: number }
+  const items: Item[] = []
+  for (const fs of groups.values()) {
+    const a3 = fs.reduce((a, f) => a + faceArea3D(m, f), 0)
+    const auv = fs.reduce((a, f) => a + Math.abs(polyArea(m.faces[f].uv)), 0)
+    const k = auv > 1e-12 && a3 > 1e-12 ? Math.sqrt(a3 / auv) : 1
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const f of fs) for (const [u, v] of m.faces[f].uv) { x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v) }
+    let w = (x1 - x0) * k, h = (y1 - y0) * k
+    const rot = h > w * 1.0001
+    if (rot) [w, h] = [h, w]
+    items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot })
+  }
+  if (!items.length) return 0
+  items.sort((a, b) => b.h - a.h || b.w - a.w)
+  const fits = (s: number) => {
+    let x = padding, y = padding, rowH = 0
+    for (const it of items) {
+      const w = it.w * s, h = it.h * s
+      if (w + 2 * padding > 1 || h + 2 * padding > 1) return false
+      if (x + w + padding > 1) { x = padding; y += rowH + padding; rowH = 0 }
+      if (y + h + padding > 1) return false
+      it.x = x; it.y = y; x += w + padding; rowH = Math.max(rowH, h)
+    }
+    return true
+  }
+  // largest scale that fits (bisection)
+  const total = items.reduce((a, it) => a + it.w * it.h, 0)
+  let lo = 0, hi = Math.sqrt(1 / total) * 1.01
+  for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid }
+  fits(lo)
+  for (const it of items) {
+    const s = lo * it.k
+    for (const f of it.faces) m.faces[f].uv = m.faces[f].uv.map(([u, v]) => {
+      const lx = (u - it.x0) * s, ly = (v - it.y0) * s
+      // rotate 90° counter-clockwise (keeps winding): (x, y) -> (H - y, x) with H = original height
+      return (it.rot ? [it.x! + (it.w * lo - ly), it.y! + lx] : [it.x! + lx, it.y! + ly]) as Vec2
+    })
+  }
+  return items.length
 }

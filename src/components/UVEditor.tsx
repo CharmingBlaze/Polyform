@@ -399,6 +399,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
           <B id="rot90" label="Rot 90°" onClick={() => op('UV rotate', U.rot90)} />
           <B id="fit" label="Fit 0–1" onClick={() => op('UV fit', U.fit01)} />
+          <B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all) into 0–1: same texel density, no overlaps" onClick={() => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.packIslands(m, faces), 'Pack islands') }} />
           <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || 64, th || 64))} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
         </div>

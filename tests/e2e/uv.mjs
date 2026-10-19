@@ -192,6 +192,17 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   await p.screenshot({ path: '/workspace/shot-uv-seams.png' })
   await p.keyboard.press('Control+z'); await frame()
   check('one Ctrl+Z undoes the stitch', !(await joined(0, 2)))
+  // pack: seams everywhere, overlapping islands -> packed apart
+  await S(() => { const s = window.__polyform.getState(); s.setSelectMode('edge'); s.selectAll() })
+  await p.click('[data-testid="uv-seam-mark"]')
+  await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6], [0.1, 0.6]])), 'overlap'); s.setSelectMode('face'); s.selectNone() })
+  await p.click('[data-testid="uv-pack"]'); await frame()
+  const packed = await faces()
+  const inside = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) c = !c } return c }
+  const cents = packed.map(f => [f.reduce((s, q) => s + q[0], 0) / 4, f.reduce((s, q) => s + q[1], 0) / 4])
+  const overl = cents.some((c, i) => packed.some((f, j) => j !== i && inside(c, f)))
+  check('Pack separates the overlapping islands inside 0..1 with equal sizes', !overl && packed.flat().every(([u, v]) => u >= 0 && u <= 1 && v >= 0 && v <= 1) && Math.abs(area(packed[0]) - area(packed[5])) < 1e-6 && area(packed[0]) > 0.05, JSON.stringify(packed.map(area)))
+  await p.screenshot({ path: '/workspace/shot-uv-pack.png' })
 }
 
 // 5. Images library + per-face materials: two images on different faces of a box, export, validate

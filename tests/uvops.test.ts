@@ -113,3 +113,23 @@ describe('seams, pins, stitch', () => {
     expect(U.stitch(m, [0, 2], all(m))).toBe(0) // already stitched
   })
 })
+
+describe('pack islands', () => {
+  const rasterOverlap = (m: ReturnType<typeof box>) => {
+    const N = 200, grid = new Int32Array(N * N).fill(-1); let bad = 0
+    m.faces.forEach((f, fi) => { for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { if (!U.uvInFace(m, fi, [(x + .5) / N, (y + .5) / N])) continue; const c = y * N + x; if (grid[c] >= 0 && grid[c] !== fi) bad++; grid[c] = fi } })
+    return bad
+  }
+  for (const kind of ['box', 'cylinder']) it(`${kind}: overlapping islands end up separate, inside 0..1, same texel density`, () => {
+    const m = emptyModel(); addPrimitive(m, kind as never)
+    m.faces.forEach(f => (f.uv = f.uv.map(([u, v]) => [u * 0.3 + 0.2, v * 0.9]))) // squash + overlap everything
+    U.setSeams(m, m.faces.flatMap(f => f.v.map((a, i) => edgeKey(a, f.v[(i + 1) % f.v.length]))), true) // every face its own island
+    const n = U.packIslands(m, all(m))
+    expect(n).toBe(m.faces.length)
+    expect(rasterOverlap(m)).toBe(0)
+    for (const f of m.faces) for (const [u, v] of f.uv) { expect(u).toBeGreaterThanOrEqual(0); expect(u).toBeLessThanOrEqual(1); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1) }
+    const dens = m.faces.map((f, i) => U.uvArea(f.uv) / U.faceArea3D(m, i))
+    expect(dens.every(d => d > 0)).toBe(true) // winding kept
+    expect(Math.max(...dens) / Math.min(...dens)).toBeLessThan(1.01)
+  })
+})
