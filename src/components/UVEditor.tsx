@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
+import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 
 export type UVTool = 'select' | 'move' | 'rotate' | 'scale'
 type Xf = 'move' | 'rotate' | 'scale'
@@ -45,6 +46,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const texRev = useStore(s => s.texRev)
   const activeMat = useStore(s => s.activeMat)
   const model = useStore(s => s.model)
+  const globalTool = useStore(s => s.tool)
   // image of the first selected face's material, else the active material
   const firstSel = [...selFaces].find(f => model.faces[f])
   const [pick, setPick] = useState<{ mat: number; sel: Set<number> } | null>(null)
@@ -298,6 +300,16 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const { x, y } = loc(e)
     if (drag.current?.modal) { endXf(e.button !== 0); return }
     if (e.button === 1 || e.button === 2) { drag.current = { kind: 'pan', x, y }; return }
+    // Paint tool (Paint workspace): stamp into the shown image at this UV
+    if (globalTool === 'paint' && e.button === 0) {
+      const [u, v] = toUV(x, y)
+      if (paintUVStart(shownMat, u, v, side, e.ctrlKey || e.metaKey)) {
+        drag.current = { kind: 'paint' }
+        return
+      }
+      // pick / fill already handled; allow fall-through only if nothing happened
+      if (useStore.getState().paint.mode === 'pick' || useStore.getState().paint.mode === 'fill') return
+    }
     const add = e.shiftKey, sub = e.ctrlKey || e.metaKey
     if (tool !== 'select' && !add && !sub) { if (beginXf(tool, x, y, false)) return }
     // select tool: press on an element selects it (unless already selected) and a drag moves it; else marquee
@@ -315,6 +327,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     mouse.current = { x, y }
     const d = drag.current
     if (!d) return
+    if (d.kind === 'paint') { const [u, v] = toUV(x, y); paintUVAt(u, v); return }
     if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
     if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e.ctrlKey) } return }
@@ -323,6 +336,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const up = (e: React.PointerEvent) => {
     const d = drag.current
     if (!d || d.modal) return
+    if (d.kind === 'paint') { drag.current = null; paintUVEnd(); force(n => n + 1); return }
     if (d.kind === 'xf') return endXf(false)
     drag.current = null
     // a plain click on an already selected element selects only it
@@ -391,7 +405,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
-        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · click/drag select · G R S · L island · wheel zoom · right-drag pan</div>
+        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click/drag select · G R S · L island · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="label">Project</div>

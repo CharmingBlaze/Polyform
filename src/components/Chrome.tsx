@@ -318,7 +318,7 @@ export function StatusBar() {
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',
-    paint: 'Drag on the model to paint · Ctrl+click picks a colour · [ ] brush size · Mirror X in the Paint tab',
+    paint: 'Drag on the model or in the UV editor · Ctrl+click picks · [ ] brush size · Erase → transparent · Mirror X in the Paint tab',
   }
   const st = useStore.getState()
   return (

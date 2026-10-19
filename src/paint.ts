@@ -15,6 +15,9 @@ interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s
 interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCtx; last: [number, number]; tex: Map<string, TexStroke> }
 
 let cur: Active | null = null
+/** UV-editor stroke: paints directly in image space of a material. */
+interface UVActive { mat: number; lastUV: [number, number]; lastPx: [number, number]; tex: Map<string, TexStroke>; side: number }
+let uvcur: UVActive | null = null
 
 const S = () => useStore.getState()
 
@@ -244,9 +247,103 @@ function vertexStart(x: number, y: number, h: Hit, rayAt: (x: number, y: number)
   return true
 }
 
+
+/** Give material `mat` an image to paint into (same as the first 3D stroke on one of its faces). */
+function ensureMatTexture(mat: number): string | null {
+  const s = S(), mt = s.model.materials[mat]
+  if (!mt) return null
+  if (mt.texture && textures.canvas(mt.texture)) return mt.texture
+  const size = s.paint.texSize
+  const id = textures.create(size, size, mt.color)
+  s.edit(mm => { mm.materials[mat].texture = id }, 'New paint image')
+  s.notify(`${mt.name} now has a ${size}×${size} image to paint into`)
+  return id
+}
+
+function uvContains(uv: [number, number][], u: number, v: number) {
+  let inside = false
+  for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) {
+    const [xi, yi] = uv[i], [xj, yj] = uv[j]
+    if (((yi > v) !== (yj > v)) && (u < xi + ((v - yi) / (yj - yi + 1e-30)) * (xj - xi))) inside = !inside
+  }
+  return inside
+}
+
+function stampUV(a: UVActive, u: number, v: number) {
+  const id = ensureMatTexture(a.mat)
+  if (!id) return
+  const t = strokeFor({ rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: a.tex }, id)
+  if (!t) return
+  const { width: w, height: h } = t.img
+  const [x, y] = P.uvToPx(u, v, w, h)
+  const p = S().paint
+  const r = Math.max(0.5, (p.size / Math.max(1, a.side)) * w)
+  flush(t, P.dab(t.s, x, y, r, p.opacity, p.hardness))
+}
+
+/** Start a paint stroke in the UV editor at UV (u, v). `sidePx` = on-screen size of the 0–1 UV square. */
+export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false): boolean {
+  cur = null; vcur = null; uvcur = null
+  const s = S(), mode = pickMod ? 'pick' : s.paint.mode
+  if (s.paint.target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
+  const id = ensureMatTexture(mat)
+  if (!id) return false
+  if (mode === 'pick') {
+    const c = textures.canvas(id)!
+    const [x, y] = P.uvToPx(u, v, c.width, c.height)
+    const px = c.getContext('2d', { willReadFrequently: true })!.getImageData(Math.min(c.width - 1, Math.floor(x)), Math.min(c.height - 1, Math.floor(y)), 1, 1)
+    s.setPaint({ color: P.rgbToHex(Array.from(px.data)) })
+    return false
+  }
+  if (mode === 'fill') {
+    const m = s.model
+    let hit = -1
+    for (let fi = 0; fi < m.faces.length; fi++) {
+      if (faceMat(m, m.faces[fi]) !== mat) continue
+      if (uvContains(m.faces[fi].uv as [number, number][], u, v)) { hit = fi; break }
+    }
+    if (hit < 0) { s.notify("Click inside a face's UVs to fill"); return false }
+    const a: Active = { rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: new Map() }
+    const t = strokeFor(a, id)
+    if (!t) return false
+    flush(t, P.fillPolygon(t.s, facePoly(hit, t.img.width, t.img.height), s.paint.opacity))
+    finish(a, 'Fill')
+    return false
+  }
+  if (mode !== 'brush' && mode !== 'erase') return false
+  uvcur = { mat, lastUV: [u, v], lastPx: [0, 0], tex: new Map(), side: sidePx }
+  stampUV(uvcur, u, v)
+  return true
+}
+
+/** Continue a UV-editor stroke. */
+export function paintUVAt(u: number, v: number) {
+  const a = uvcur
+  if (!a) return
+  const stepU = Math.max(0.001, (S().paint.size / 4) / Math.max(1, a.side))
+  const [lu, lv] = a.lastUV
+  const d = Math.hypot(u - lu, v - lv)
+  if (d < stepU) return
+  const n = Math.floor(d / stepU)
+  for (let i = 1; i <= n; i++) {
+    const t = (i * stepU) / d
+    stampUV(a, lu + (u - lu) * t, lv + (v - lv) * t)
+  }
+  const k = (n * stepU) / d
+  a.lastUV = [lu + (u - lu) * k, lv + (v - lv) * k]
+}
+
+export function paintUVEnd() {
+  const a = uvcur
+  uvcur = null
+  if (!a) return
+  const active: Active = { rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: a.tex }
+  finish(active, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
+}
+
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false): boolean {
-  cur = null; vcur = null
+  cur = null; vcur = null; uvcur = null
   const h = hitOf(rayAt(x, y))
   const s = S(), mode = pickMod ? 'pick' : s.paint.mode
   if (!h) {
@@ -285,13 +382,14 @@ export function paintAt(x: number, y: number) {
 }
 
 export function paintStrokeEnd() {
+  if (uvcur) { paintUVEnd(); return }
   const a = cur, v = vcur
   cur = null; vcur = null
   if (a) finish(a, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
   if (v) { if (v.changed) S().commit(); else S().cancelEdit() }
 }
 
-export const painting = () => !!(cur || vcur)
+export const painting = () => !!(cur || vcur || uvcur)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {

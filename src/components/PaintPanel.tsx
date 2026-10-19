@@ -47,7 +47,7 @@ export function PaintPanel() {
           {[64, 128, 256, 512, 1024, 2048].map(n => <option key={n} value={n}>{n}×{n}</option>)}
         </select>
       </label>
-      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint)." : 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.'} [ ] resize the brush · Ctrl+click picks · each stroke is one undo step.</p>
+      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint). Drag on the model or in the UV editor." : 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.'} [ ] resize the brush · Ctrl+click picks · Erase → transparent · each stroke is one undo step.</p>
     </div>
   )
 }

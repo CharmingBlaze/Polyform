@@ -66,7 +66,7 @@ export function HintBar() {
   } else if (ws === 'paint') {
     if (!f.faces) text = 'Nothing to paint yet: add a shape in Model first.'
     else if (f.noUV) { text = 'Paint needs UVs to paint into an image (Vertex painting works without).'; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
-    else if (!f.painted) text = 'Drag on the model to paint; the first stroke creates the image. Fill makes flat faces, Ctrl+click picks a colour.'
+    else if (!f.painted) text = 'Drag on the model or in the UV editor to paint; the first stroke creates the image. Fill makes flat faces, Ctrl+click picks a colour.'
     else { text = 'Painted. Each stroke is one undo step; [ ] resize the brush; Mirror X paints both sides.'; acts = <Next to="rig" /> }
   } else if (ws === 'rig') {
     if (!f.joints) { text = 'Click in a view with the Joint tool to place a root joint; E extrudes a child joint, Shift+A adds one at the 3D cursor.'; acts = <Act cmd="tool.joint" label="Joint tool" testid="hint-joint" primary /> }
