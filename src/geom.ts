@@ -192,14 +192,19 @@ function insetRegion(m: Model, faces: number[], inset: number) {
  * LightWave-style bevel: extrude by `height` along the region normal, then inset the cap by `inset`.
  * With `individual`, every polygon is beveled on its own. Height 0 = Inset. Returns the cap faces.
  */
-export function bevelFaces(m: Model, faces: number[], inset: number, height: number, individual = false): number[] {
+export function bevelFaces(m: Model, faces: number[], inset: number, height: number, individual = false, segments = 1): number[] {
+  const segs = Math.max(1, Math.min(16, Math.round(segments)))
   const regions = individual ? faces.map(f => [f]) : [faces]
   for (const r of regions) {
-    extrudeFaces(m, r, height)
-    insetRegion(m, r, inset)
+    for (let i = 0; i < segs; i++) {
+      extrudeFaces(m, r, height / segs)
+      insetRegion(m, r, inset / segs)
+    }
   }
   return faces
 }
+
+
 
 // ---------------------------------------------------------------- bridge
 

@@ -11,7 +11,7 @@
     "lint:errors": "eslint . --quiet",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
@@ -28,7 +28,8 @@
     "test:ik": "node tests/e2e/run.mjs ik.mjs",
     "test:refs": "node tests/e2e/run.mjs refs.mjs",
     "test:select": "node tests/e2e/run.mjs select.mjs",
-    "test:inset": "node tests/e2e/run.mjs inset.mjs"
+    "test:inset": "node tests/e2e/run.mjs inset.mjs",
+    "test:bevel": "node tests/e2e/run.mjs bevel.mjs"
   },
   "dependencies": {
     "comlink": "4.4.2",

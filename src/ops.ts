@@ -70,9 +70,23 @@ export const OPS: OpDef[] = [
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {
-    id: 'mul.bevel', label: 'Bevel', tab: 'Multiply', needs: 'faces',
-    params: [N('inset', 'Inset', 0.1, -10, 10, 0.02), N('height', 'Shift', 0.15, -100, 100, 0.05), BOOL('individual', 'Individual', 0)],
-    run: (m, s, p) => facesSel(G.bevelFaces(m, s.faces, p.inset, p.height, !!p.individual)),
+    id: 'mul.bevel', label: 'Bevel', tab: 'Multiply',
+    params: [N('inset', 'Width', 0.1, 0, 10, 0.02), N('height', 'Depth', 0.0, -100, 100, 0.05), N('segments', 'Segments', 1, 1, 16, 1, true), BOOL('individual', 'Individual', 0)],
+    run: (m, s, p) => {
+      const segs = Math.max(1, Math.round(p.segments || 1))
+      let faces = s.faces
+      if (!faces.length && s.edges.length) {
+        // edge selection → faces that use those edges (Blender bevels edges; we bevel the touched faces)
+        const keys = new Set(s.edges.map(([a, b]) => M.edgeKey(a, b)))
+        faces = m.faces.map((_, i) => i).filter(i => {
+          const v = m.faces[i].v
+          for (let k = 0; k < v.length; k++) if (keys.has(M.edgeKey(v[k], v[(k + 1) % v.length]))) return true
+          return false
+        })
+      }
+      if (!faces.length) throw new Error('Select faces (or edges of faces) to bevel')
+      return facesSel(G.bevelFaces(m, faces, p.inset, p.height, !!p.individual, segs))
+    },
   },
   {
     id: 'mul.inset', label: 'Inset', tab: 'Multiply', needs: 'faces',

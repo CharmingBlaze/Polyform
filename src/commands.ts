@@ -49,6 +49,11 @@ export const commands: Command[] = [
   } },
   { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
+  { id: 'edit.bevel', label: 'Bevel (scroll = segments)', group: 'Multiply', keys: 'Ctrl+B', run: () => {
+    const s = S()
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
+    window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'bevel' }))
+  } },
   { id: 'edit.inset', label: 'Inset faces (Animate: insert key)', group: 'Multiply', keys: 'I', run: () => {
     const s = S()
     if (s.mode === 'animate') return s.setKey()

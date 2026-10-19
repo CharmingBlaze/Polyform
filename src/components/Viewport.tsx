@@ -479,6 +479,66 @@ export function Viewport({ pane }: { pane: number }) {
   }
 
 
+
+  /** Ctrl+B: bevel selected faces (or faces of selected edges). Mouse = width, scroll = segments. */
+  function startBevel() {
+    const st0 = useStore.getState()
+    if (st0.mode !== 'model') { st0.notify('Switch to Model mode to bevel'); return }
+    const faces = st0.activeFaces()
+    const edges = st0.activeEdges()
+    if (!faces.length && !edges.length) { st0.notify('Select faces or edges to bevel'); return }
+    const at0 = interaction.mouse[pane] ?? { x: ctx.current!.w / 2, y: ctx.current!.h / 2 }
+    let width = 0.08, segments = 1, individual = 0
+    const height = 0
+    st0.runOp('mul.bevel', { inset: width, height, segments, individual })
+    const center = () => {
+      const m = useStore.getState().model, P = sceneManager.posed
+      const c = new THREE.Vector3(); let n = 0
+      const fs = useStore.getState().activeFaces()
+      for (const fi of fs) { const f = m.faces[fi]; if (!f) continue; f.v.forEach(v => { c.add(new THREE.Vector3(...P[v])); n++ }) }
+      return n ? c.multiplyScalar(1 / n) : new THREE.Vector3()
+    }
+    const info = () => useStore.getState().set({
+      modalInfo: `Bevel width ${width.toFixed(3)} · ${segments} segment${segments > 1 ? 's' : ''}${individual ? ' · individual' : ''} · scroll segments · Enter confirm · Esc cancel`,
+    })
+    const apply = () => {
+      const st = useStore.getState()
+      if (st.lastOp?.id === 'mul.bevel') st.updateOp({ inset: width, height, segments, individual })
+      else st.runOp('mul.bevel', { inset: width, height, segments, individual })
+      info()
+    }
+    const end = (ok: boolean) => {
+      const st = useStore.getState()
+      if (ok) st.commit()
+      else { st.cancelEdit(); st.notify('Bevel cancelled') }
+      interaction.modal = false
+      activeXf = null
+      st.set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+    }
+    activeXf = {
+      pane,
+      cancel: () => end(false),
+      confirm: () => end(true),
+      move: () => {},
+      hover: (x) => {
+        const wpp = worldPerPixel(center())
+        width = Math.max(0.001, Math.min(2, (at0.x - x) * wpp + 0.08))
+        apply()
+      },
+      down: (button) => { if (button === 0) end(true); else if (button === 2) end(false) },
+      wheel: (dy) => { segments = THREE.MathUtils.clamp(segments + (dy < 0 ? 1 : -1), 1, 8); apply() },
+      key: e => {
+        if (e.key === 'Escape') return end(false)
+        if (e.key === 'Enter') return end(true)
+        if (e.key === 'i' || e.key === 'I') { individual = individual ? 0 : 1; apply() }
+      },
+    }
+    interaction.modal = true
+    info()
+  }
+
   /** I: inset selected faces (Model mode). Mouse sets thickness; Enter confirms, Esc undoes. */
   function startInset() {
     const st0 = useStore.getState()
@@ -874,6 +934,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (kind === 'loopcut') startLoopCut()
       else if (kind === 'knife') startKnife()
       else if (kind === 'inset') startInset()
+      else if (kind === 'bevel') startBevel()
     }
     window.addEventListener('modal-tool', onTool)
     return () => {
