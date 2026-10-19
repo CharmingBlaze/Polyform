@@ -49,7 +49,7 @@ export function validateModel(m: Model) {
     if (!Array.isArray(f.uv) || f.uv.length !== 3 || !f.uv.every(u => Array.isArray(u) && u.length === 2 && u.every(Number.isFinite))) throw new Error(`Face ${i} has invalid UVs`)
   })
   m.bones.forEach((b, i) => {
-    if (!int(b.parent, -1, nb) || b.parent === i) throw new Error(`Joint ${i} has an invalid parent`)
+    if (!int(b.parent, -1, i)) throw new Error(`Joint ${i} must have a parent listed before it (or none)`)
     if (!Array.isArray(b.pos) || b.pos.length !== 3 || !b.pos.every(Number.isFinite)) throw new Error(`Joint ${i} has an invalid position`)
   })
   // reject parent loops such as 0 -> 1 -> 0
