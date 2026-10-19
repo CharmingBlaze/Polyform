@@ -12,6 +12,8 @@ export interface Face {
   hidden?: boolean
   /** Corner indices whose UVs are pinned (UV ops leave them alone). */
   pin?: number[]
+  /** UV seams: corner i marks the edge from corner i to corner i+1 (an edge is a seam if either face marks it). */
+  seam?: number[]
   /** Per-face material slot; overrides the group's material (used by "Assign image to selection"). */
   mat?: number
 }
@@ -207,6 +209,7 @@ export function validateModel(m: Model) {
       else if (o !== f.g) throw new Error(`Vertex ${v} is shared by objects ${o} and ${f.g}; each object needs its own points`)
     })
     if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
+    if (f.seam !== undefined && !(Array.isArray(f.seam) && f.seam.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid seams`)
   })
   m.bones.forEach((b, i) => {
     if (!b || typeof b.name !== 'string') throw new Error(`Joint ${i} is invalid`)

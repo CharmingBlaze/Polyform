@@ -10,6 +10,7 @@ import { defaults, opById, type OpSel } from './ops'
 import { topology } from './topology'
 import * as X from './extrude'
 import { applyAtlas, atlasInput } from './unwrap'
+import * as UV from './uvops'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
@@ -181,6 +182,15 @@ interface State {
   addMaterial: () => number
   /** Auto UV (xatlas) on the selected faces, or every visible face; one undo step */
   autoUV: () => Promise<boolean>
+  /** visible faces (what the UV editor shows) */
+  uvFaces: () => number[]
+  /** UV corners covered by the selection */
+  uvCorners: () => number[]
+  /** mark / clear UV seams: selected edges, or the boundary of the selected faces in Face mode */
+  markSeams: (on: boolean) => void
+  pinUVs: (on: boolean) => void
+  /** stitch the selected faces (or the faces on both sides of the selected edges) onto the first one's island */
+  stitchUVs: () => void
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
   /** Images library: each image becomes a material named after it (one material per image). With assign, the
@@ -808,6 +818,42 @@ export const useStore = create<State>((set, get) => ({
   setClip: i => set({ clip: i, frame: 0, playing: false }),
 
   // ------------------------------------------------------------------ materials
+  uvFaces: () => { const m = get().model; return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0) },
+  uvCorners: () => { const s = get(); return [...UV.selectedCorners(s.model, s, s.uvFaces())] },
+  markSeams: on => {
+    const s = get(), m = s.model
+    let edges: number[]
+    if (s.selectMode === 'object' || s.subModes.includes('face')) {
+      // boundary of the selected faces
+      const cnt = new Map<number, number>()
+      for (const fi of s.selFaces) { const f = m.faces[fi]; if (f) f.v.forEach((a, i) => { const k = M.edgeKey(a, f.v[(i + 1) % f.v.length]); cnt.set(k, (cnt.get(k) || 0) + 1) }) }
+      edges = [...cnt].filter(([, n]) => n === 1).map(([k]) => k)
+    } else edges = s.activeEdges().map(([a, b]) => M.edgeKey(a, b))
+    if (!edges.length) return s.notify('Select edges (or faces: their outline) to mark seams')
+    let n = 0
+    s.edit(mm => { n = UV.setSeams(mm, edges, on) }, on ? 'Mark seam' : 'Clear seam')
+    s.notify(`${on ? 'Marked' : 'Cleared'} ${n} seam edge${n === 1 ? '' : 's'}`)
+  },
+  pinUVs: on => {
+    const s = get(), ids = s.uvCorners()
+    if (!ids.length) return s.notify('Select UVs to pin')
+    s.edit(m => UV.setPins(m, ids, on), on ? 'Pin UVs' : 'Unpin UVs')
+    s.notify(`${on ? 'Pinned' : 'Unpinned'} ${ids.length} UV corners`)
+  },
+  stitchUVs: () => {
+    const s = get(), m = s.model
+    let faces: number[]
+    if (s.selectMode !== 'object' && s.selectMode !== 'joint' && !s.subModes.includes('face') && s.selEdges.size) {
+      const es = new Set(s.selEdges)
+      faces = m.faces.map((f, i) => (f.v.some((a, c) => es.has(M.edgeKey(a, f.v[(c + 1) % f.v.length]))) ? i : -1)).filter(i => i >= 0)
+    } else faces = [...s.selFaces]
+    if (faces.length < 2) return s.notify('Select two faces across a seam (or the seam edges) to stitch')
+    const trial = M.cloneModel(m)
+    const n = UV.stitch(trial, faces, s.uvFaces())
+    if (JSON.stringify(trial.faces.map(f => f.uv)) === JSON.stringify(m.faces.map(f => f.uv))) return s.notify('Nothing to stitch: the shared edges already match')
+    s.edit(mm => { UV.stitch(mm, faces, s.uvFaces()) }, 'Stitch')
+    s.notify(n ? `Stitched (${n} UV corners moved)` : 'Stitched')
+  },
   autoUV: async () => {
     const s = get()
     let faces = s.activeFaces()
@@ -819,7 +865,7 @@ export const useStore = create<State>((set, get) => ({
       const { xatlasUnwrapper } = await import('./xatlas') // lazy: Worker + wasm only in the browser
       const out = await xatlasUnwrapper.unwrap(inp.positions, inp.indices)
       if (get().version !== ver) { get().notify('The model changed while unwrapping; run Auto UV again'); return false }
-      get().edit(m => applyAtlas(m, inp, out), 'Auto UV')
+      get().edit(m => UV.keepPins(m, faces, () => applyAtlas(m, inp, out)), 'Auto UV')
       get().notify(`Auto UV: unwrapped ${faces.length} faces`)
       return true
     } catch (e) {

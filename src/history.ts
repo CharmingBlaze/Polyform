@@ -15,11 +15,11 @@ interface Snap {
 }
 export interface Step { snap: Snap; label: string; tex?: TexPatch; bytes: number }
 
-const freezeFace = (f: Face): Face => Object.freeze({ ...f, v: Object.freeze([...f.v]) as number[], uv: Object.freeze(f.uv.map(u => Object.freeze([u[0], u[1]]))) as Face['uv'], ...(f.pin ? { pin: Object.freeze([...f.pin]) as number[] } : {}) })
-const faceKey = (f: Face) => `${f.g}|${f.mat ?? ''}|${f.hidden ? 1 : 0}|${f.v.join(',')}|${f.uv.map(u => `${u[0]},${u[1]}`).join(';')}|${f.pin?.join(',') ?? ''}`
+const freezeFace = (f: Face): Face => Object.freeze({ ...f, v: Object.freeze([...f.v]) as number[], uv: Object.freeze(f.uv.map(u => Object.freeze([u[0], u[1]]))) as Face['uv'], ...(f.pin ? { pin: Object.freeze([...f.pin]) as number[] } : {}), ...(f.seam ? { seam: Object.freeze([...f.seam]) as number[] } : {}) })
+const faceKey = (f: Face) => `${f.g}|${f.mat ?? ''}|${f.hidden ? 1 : 0}|${f.v.join(',')}|${f.uv.map(u => `${u[0]},${u[1]}`).join(';')}|${f.pin?.join(',') ?? ''}|${f.seam?.join(',') ?? ''}`
 
 const faceEq = (a: Face | undefined, b: Face) => {
-  if (!a || a.g !== b.g || a.mat !== b.mat || !!a.hidden !== !!b.hidden || a.v.length !== b.v.length || (a.pin?.join() ?? '') !== (b.pin?.join() ?? '')) return false
+  if (!a || a.g !== b.g || a.mat !== b.mat || !!a.hidden !== !!b.hidden || a.v.length !== b.v.length || (a.pin?.join() ?? '') !== (b.pin?.join() ?? '') || (a.seam?.join() ?? '') !== (b.seam?.join() ?? '')) return false
   for (let i = 0; i < b.v.length; i++) if (a.v[i] !== b.v[i] || a.uv[i][0] !== b.uv[i][0] || a.uv[i][1] !== b.uv[i][1]) return false
   return true
 }
@@ -71,7 +71,7 @@ export function materialize(s: Snap): Model {
     version: rest.version,
     verts: s.verts.map(v => [v[0], v[1], v[2]] as Vec3),
     vbone: [...s.vbone],
-    faces: s.faces.map(f => { const o: Face = { v: [...f.v], uv: f.uv.map(u => [u[0], u[1]] as [number, number]), g: f.g }; if (f.hidden) o.hidden = true; if (f.pin) o.pin = [...f.pin]; if (f.mat !== undefined) o.mat = f.mat; return o }),
+    faces: s.faces.map(f => { const o: Face = { v: [...f.v], uv: f.uv.map(u => [u[0], u[1]] as [number, number]), g: f.g }; if (f.hidden) o.hidden = true; if (f.pin) o.pin = [...f.pin]; if (f.seam) o.seam = [...f.seam]; if (f.mat !== undefined) o.mat = f.mat; return o }),
     groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips, wires: rest.wires ?? [],
   }
 }

@@ -66,3 +66,50 @@ describe('cylinder / sphere projection', () => {
     expect(total).toBeCloseTo(0.7, 3) // sides tile the 1 × 0.7 strip exactly
   })
 })
+
+import { atlasInput } from '../src/unwrap'
+describe('seams, pins, stitch', () => {
+  const allEdges = (m: ReturnType<typeof box>) => { const s = new Set<number>(); m.faces.forEach(f => f.v.forEach((a, i) => s.add(edgeKey(a, f.v[(i + 1) % f.v.length])))); return [...s] }
+  it('marking seams cuts the unwrap input and the islands', () => {
+    const m = box()
+    expect(atlasInput(m, all(m)).positions.length / 3).toBe(8)
+    expect(U.setSeams(m, allEdges(m), true)).toBe(12)
+    expect(U.seamSet(m).size).toBe(12)
+    expect(atlasInput(m, all(m)).positions.length / 3).toBe(24) // every face its own chart
+    // one seam only: still one piece around the other edges
+    U.setSeams(m, allEdges(m), false)
+    expect(m.faces.every(f => !f.seam)).toBe(true)
+    const [a, b] = m.faces[0].v
+    U.setSeams(m, [edgeKey(a, b)], true)
+    expect(atlasInput(m, all(m)).positions.length / 3).toBe(8 + 0) // a single open seam edge does not detach anything
+    // islands ignore seams between faces with identical UVs
+    const m2 = box(); m2.faces.forEach(f => (f.uv = f.uv.map(() => [0, 0])))
+    const n0 = new Set(U.islands(m2, all(m2)).values()).size
+    U.setSeams(m2, allEdges(m2), true)
+    expect(new Set(U.islands(m2, all(m2)).values()).size).toBeGreaterThan(n0)
+  })
+  it('pinned corners survive projections', () => {
+    const m = box()
+    m.faces[0].uv[0] = [0.9, 0.9]
+    U.setPins(m, [cornerId(0, 0)], true)
+    expect(m.faces[0].pin).toEqual([0])
+    U.keepPins(m, all(m), () => U.project(m, all(m), 'box'))
+    expect(m.faces[0].uv[0]).toEqual([0.9, 0.9])
+    U.setPins(m, [cornerId(0, 0)], false)
+    expect(m.faces[0].pin).toBeUndefined()
+  })
+  it('stitch moves the second island onto the first along the shared edge, keeping its shape', () => {
+    const m = box()
+    m.faces.forEach((f, i) => (f.uv = [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1]].map(([u, v]) => [u + (i % 3) * 0.3, v + Math.floor(i / 3) * 0.3]) as [number, number][]))
+    const area2 = U.uvArea(m.faces[2].uv)
+    expect(U.islandFaces(m, [0], all(m))).toEqual([0])
+    expect(U.stitch(m, [0, 2], all(m))).toBeGreaterThan(0)
+    expect(U.islandFaces(m, [0], all(m)).sort()).toEqual([0, 2])
+    expect(U.uvArea(m.faces[2].uv)).toBeCloseTo(area2, 9)
+    expect(U.uvArea(m.faces[2].uv)).toBeGreaterThan(0)
+    // the two faces do not overlap: centroids apart by one face width
+    const c = (f: number) => [0, 1].map(k => m.faces[f].uv.reduce((s, p) => s + p[k], 0) / 4)
+    expect(Math.hypot(c(0)[0] - c(2)[0], c(0)[1] - c(2)[1])).toBeCloseTo(0.1, 6)
+    expect(U.stitch(m, [0, 2], all(m))).toBe(0) // already stitched
+  })
+})

@@ -1,4 +1,5 @@
-import { triangulate, type Model, type Vec2 } from './model'
+import { edgeKey, triangulate, type Model, type Vec2 } from './model'
+import { seamSet } from './uvops'
 
 /**
  * Automatic UV unwrap behind a small interface so the engine (xatlas today, maybe own LSCM later) can be swapped.
@@ -24,15 +25,48 @@ export interface AtlasInput {
   faces: number[]
 }
 
-/** Indexed triangles for the given faces; vertices are shared between faces as in the model (xatlas finds seams). */
+/**
+ * Indexed triangles for the given faces. Points are shared between faces as in the model, except across marked
+ * seams: there the corners get separate points, so the mesh is cut and the unwrap must split the chart there.
+ */
 export function atlasInput(m: Model, faces: number[]): AtlasInput {
-  const remap = new Map<number, number>(), pos: number[] = [], idx: number[] = [], corners: [number, number][] = []
+  // corner clusters: corners of the same point joined across non-seam edges
+  const seams = seamSet(m)
+  const parent = new Map<string, string>()
+  const key = (fi: number, c: number) => `${fi}:${c}`
+  const find = (x: string): string => { let r = x; while (parent.get(r) !== r) r = parent.get(r)!; parent.set(x, r); return r }
+  const unite = (a: string, b: string) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb) }
+  const edges = new Map<number, [number, number, number][]>()
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    f.v.forEach((a, c) => {
+      parent.set(key(fi, c), key(fi, c))
+      const j = (c + 1) % f.v.length, k = edgeKey(a, f.v[j])
+      edges.set(k, [...(edges.get(k) || []), [fi, c, j]])
+    })
+  }
+  for (const [k, arr] of edges) {
+    if (seams.has(k)) continue
+    for (let x = 1; x < arr.length; x++) {
+      const [f0, a0, b0] = arr[0], [f1, a1, b1] = arr[x]
+      const v0 = m.faces[f0].v
+      // match corners by point
+      if (v0[a0] === m.faces[f1].v[a1]) { unite(key(f0, a0), key(f1, a1)); unite(key(f0, b0), key(f1, b1)) }
+      else { unite(key(f0, a0), key(f1, b1)); unite(key(f0, b0), key(f1, a1)) }
+    }
+  }
+  // corners of one point that are not connected through faces (fans around the point) stay separate only if a
+  // seam separates them; otherwise join everything else of the same point
+  const byPoint = new Map<number, string[]>()
+  for (const fi of faces) m.faces[fi].v.forEach((v, c) => byPoint.set(v, [...(byPoint.get(v) || []), key(fi, c)]))
+  if (!seams.size) for (const ks of byPoint.values()) for (let i = 1; i < ks.length; i++) unite(ks[0], ks[i])
+  const remap = new Map<string, number>(), pos: number[] = [], idx: number[] = [], corners: [number, number][] = []
   for (const fi of faces) {
     const f = m.faces[fi]
     for (const tri of triangulate(m.verts, f)) for (const c of tri) {
-      const v = f.v[c]
-      let k = remap.get(v)
-      if (k === undefined) { k = remap.size; remap.set(v, k); pos.push(...m.verts[v]) }
+      const r = find(key(fi, c))
+      let k = remap.get(r)
+      if (k === undefined) { k = remap.size; remap.set(r, k); pos.push(...m.verts[f.v[c]]) }
       idx.push(k); corners.push([fi, c])
     }
   }

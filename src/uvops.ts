@@ -1,5 +1,5 @@
 // Pure UV operations on face corners (corner id = face * MAX_CORNERS + corner). Used by the UV editor and tests.
-import { cornerFace, cornerId, cornerIdx, edgeEnds, faceNormal, type Model, type Vec2 } from './model'
+import { cornerFace, cornerId, cornerIdx, edgeEnds, edgeKey, faceNormal, type Model, type Vec2 } from './model'
 
 export type UVAxis = 'x' | 'y' | 'z' | 'box'
 export const uvArea = (uv: Vec2[]) => polyArea(uv)
@@ -168,7 +168,10 @@ export function islands(m: Model, faces: number[]): Map<number, number> {
       byEdge.set(k, arr)
     })
   }
-  for (const arr of byEdge.values()) for (let x = 1; x < arr.length; x++) {
+  const seams = seamSet(m)
+  for (const [k, arr] of byEdge) for (let x = 1; x < arr.length; x++) {
+    const [ea, eb] = k.split('_').map(Number)
+    if (seams.has(edgeKey(ea, eb))) continue
     const [f0, a0, b0] = arr[0], [f1, a1, b1] = arr[x]
     if (same(m.faces[f0].uv[a0], m.faces[f1].uv[a1]) && same(m.faces[f0].uv[b0], m.faces[f1].uv[b1])) {
       const r0 = find(f0), r1 = find(f1)
@@ -193,4 +196,98 @@ export function uvInFace(m: Model, fi: number, p: Vec2): boolean {
     if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside
   }
   return inside
+}
+
+// ---------- seams ----------
+/** Edge keys marked as seams (either adjacent face marks it). */
+export function seamSet(m: Model): Set<number> {
+  const out = new Set<number>()
+  m.faces.forEach(f => f.seam?.forEach(c => out.add(edgeKey(f.v[c], f.v[(c + 1) % f.v.length]))))
+  return out
+}
+/** Mark (on) or clear seams on the given edge keys, on every face that has them. Returns the number of edges. */
+export function setSeams(m: Model, edges: Iterable<number>, on: boolean): number {
+  const want = new Set(edges)
+  const hit = new Set<number>()
+  m.faces.forEach(f => {
+    const cur = new Set(f.seam ?? [])
+    f.v.forEach((a, c) => {
+      const k = edgeKey(a, f.v[(c + 1) % f.v.length])
+      if (!want.has(k)) return
+      hit.add(k)
+      if (on) cur.add(c); else cur.delete(c)
+    })
+    if (cur.size) f.seam = [...cur].sort((x, y) => x - y); else delete f.seam
+  })
+  return hit.size
+}
+
+// ---------- pins ----------
+export function setPins(m: Model, ids: Iterable<number>, on: boolean) {
+  const by = new Map<number, number[]>()
+  for (const id of ids) { const f = cornerFace(id); by.set(f, [...(by.get(f) || []), cornerIdx(id)]) }
+  by.forEach((cs, fi) => {
+    const f = m.faces[fi]
+    if (!f) return
+    const cur = new Set(f.pin ?? [])
+    cs.forEach(c => (on ? cur.add(c) : cur.delete(c)))
+    if (cur.size) f.pin = [...cur].sort((x, y) => x - y); else delete f.pin
+  })
+}
+/** Run a UV op on faces but keep pinned corners where they were. */
+export function keepPins(m: Model, faces: number[], fn: () => void) {
+  const saved: [number, number, Vec2][] = []
+  for (const fi of faces) m.faces[fi].pin?.forEach(c => saved.push([fi, c, [...m.faces[fi].uv[c]] as Vec2]))
+  fn()
+  for (const [fi, c, u] of saved) if (m.faces[fi]?.uv[c]) m.faces[fi].uv[c] = u
+}
+
+// ---------- stitch ----------
+/**
+ * Stitch: for mesh edges shared by two given faces whose UVs differ, move the other side's island onto the anchor
+ * island (the island of the first face) with a similarity transform (rotate + scale + move) fitted on the first
+ * shared edge, then weld the shared corners exactly. Returns the number of corners moved.
+ */
+export function stitch(m: Model, faces: number[], allFaces: number[]): number {
+  if (faces.length < 2) return 0
+  const inSel = new Set(faces)
+  const isl = islands(m, allFaces)
+  const anchor = isl.get(faces[0])
+  // shared edges between selected faces in different UV positions
+  type Pair = { fa: number; ca: [number, number]; fb: number; cb: [number, number] }
+  const pairs: Pair[] = []
+  const byEdge = new Map<number, [number, number, number][]>() // edge -> [face, corner of min vert, corner of max vert]
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    f.v.forEach((a, i) => {
+      const j = (i + 1) % f.v.length, b = f.v[j], k = edgeKey(a, b)
+      byEdge.set(k, [...(byEdge.get(k) || []), a < b ? [fi, i, j] : [fi, j, i]])
+    })
+  }
+  for (const arr of byEdge.values()) if (arr.length === 2 && inSel.has(arr[0][0]) && inSel.has(arr[1][0])) {
+    let [x, y] = arr
+    // the side on the anchor island (or the first) stays
+    if (isl.get(y[0]) === anchor && isl.get(x[0]) !== anchor) [x, y] = [y, x]
+    const ux = m.faces[x[0]].uv, uy = m.faces[y[0]].uv
+    if (same(ux[x[1]], uy[y[1]]) && same(ux[x[2]], uy[y[2]])) continue
+    pairs.push({ fa: x[0], ca: [x[1], x[2]], fb: y[0], cb: [y[1], y[2]] })
+  }
+  if (!pairs.length) return 0
+  let moved = 0
+  const done = new Set<number>()
+  for (const pr of pairs) {
+    const ib = isl.get(pr.fb)!, ia = isl.get(pr.fa)!
+    if (ib === ia || done.has(ib)) continue
+    done.add(ib)
+    const A0 = m.faces[pr.fa].uv[pr.ca[0]], A1 = m.faces[pr.fa].uv[pr.ca[1]]
+    const B0 = m.faces[pr.fb].uv[pr.cb[0]], B1 = m.faces[pr.fb].uv[pr.cb[1]]
+    // similarity z -> s*z + t with complex numbers: s = (A1-A0)/(B1-B0)
+    const bx = B1[0] - B0[0], by = B1[1] - B0[1], ax = A1[0] - A0[0], ay = A1[1] - A0[1], d = bx * bx + by * by || 1
+    const sr = (ax * bx + ay * by) / d, si = (ay * bx - ax * by) / d
+    const tf = (u: Vec2): Vec2 => { const x = u[0] - B0[0], y = u[1] - B0[1]; return [A0[0] + sr * x - si * y, A0[1] + si * x + sr * y] }
+    for (const fi of allFaces) if (isl.get(fi) === ib) { m.faces[fi].uv = m.faces[fi].uv.map(tf); moved += m.faces[fi].uv.length }
+  }
+  // weld the shared corners exactly onto the anchor side
+  for (const pr of pairs) for (let k = 0; k < 2; k++) m.faces[pr.fb].uv[pr.cb[k]] = [...m.faces[pr.fa].uv[pr.ca[k]]] as Vec2
+  return moved
 }

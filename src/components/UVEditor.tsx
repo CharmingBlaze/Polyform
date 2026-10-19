@@ -125,6 +125,24 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       })
     }
     g.stroke()
+    // seams (red) and pinned corners
+    const seams = U.seamSet(m)
+    if (seams.size) {
+      g.strokeStyle = '#ff3b3b'; g.lineWidth = 2; g.beginPath()
+      for (const fi of faces) {
+        const f = m.faces[fi]
+        f.v.forEach((a, i) => {
+          const j = (i + 1) % f.v.length
+          if (seams.has(edgeKey(a, f.v[j]))) { const p0 = toPx(f.uv[i]), p1 = toPx(f.uv[j]); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y) }
+        })
+      }
+      g.stroke()
+    }
+    for (const fi of faces) m.faces[fi].pin?.forEach(c => {
+      const p = toPx(m.faces[fi].uv[c])
+      g.fillStyle = '#ff3b3b'; g.beginPath(); g.arc(p.x, p.y, 4, 0, Math.PI * 2); g.fill()
+      g.strokeStyle = '#fff'; g.lineWidth = 1; g.stroke()
+    })
     const showPts = !faceMode
     if (showPts) for (const fi of faces) {
       m.faces[fi].uv.forEach((u, i) => {
@@ -325,7 +343,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const project = (axis: U.UVAxis | 'cyl' | 'sphere') => {
     const faces = targetFaces()
     if (!faces.length) return
-    useStore.getState().edit(m => (axis === 'cyl' ? U.projectCylinder(m, faces) : axis === 'sphere' ? U.projectSphere(m, faces) : U.project(m, faces, axis)), 'UV project')
+    useStore.getState().edit(m => U.keepPins(m, faces, () => (axis === 'cyl' ? U.projectCylinder(m, faces) : axis === 'sphere' ? U.projectSphere(m, faces) : U.project(m, faces, axis))), 'UV project')
   }
   const selectIsland = (hit: Hit | null) => {
     const st = useStore.getState(), faces = uvFaces()
@@ -383,6 +401,14 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="fit" label="Fit 0–1" onClick={() => op('UV fit', U.fit01)} />
           <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || 64, th || 64))} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
+        </div>
+        <div className="label">Seams</div>
+        <div className="btn-row">
+          <B id="seam-mark" label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />
+          <B id="seam-clear" label="Clear seam" onClick={() => useStore.getState().markSeams(false)} />
+          <B id="pin" label="Pin" tip="Pinned UVs stay put during projections and Auto UV" onClick={() => useStore.getState().pinUVs(true)} />
+          <B id="unpin" label="Unpin" onClick={() => useStore.getState().pinUVs(false)} />
+          <B id="stitch" label="Stitch" tip="Join the UV islands of the selected faces (or both sides of the selected edges) along their shared edges" onClick={() => useStore.getState().stitchUVs()} />
         </div>
         {!big && <>
           <div className="label">Texture</div>

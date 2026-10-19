@@ -2,8 +2,9 @@ import * as THREE from 'three'
 import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
-import { cornerNormals, faceMat, triangulate, type Face, type Vec3 } from './model'
+import { cornerNormals, edgeEnds, faceMat, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, textures } from './textures'
+import { seamSet } from './uvops'
 
 /**
  * Camera layers. Each pane's camera enables the layers for its view type and shading:
@@ -59,6 +60,8 @@ class SceneManager {
   selGeo = new THREE.BufferGeometry()
   wireGeo = new THREE.BufferGeometry()
   selEdgeGeo = new THREE.BufferGeometry()
+  /** UV seams, red, shown in Model mode */
+  seamGeo = new THREE.BufferGeometry()
   pointGeo = new THREE.BufferGeometry()
   jointGeo = new THREE.BufferGeometry()
   boneGeo = new THREE.BufferGeometry()
@@ -128,6 +131,9 @@ class SceneManager {
     wireO.layers.set(LAYER.wireXray); wireO.renderOrder = 3; s.add(wireO)
     const se = (depth: boolean, layer: number) => { const l = new THREE.LineSegments(this.selEdgeGeo, new THREE.LineBasicMaterial({ color: '#ffa040', depthTest: depth })); l.layers.set(layer); l.renderOrder = 4; s.add(l) }
     se(true, LAYER.overlayDepth); se(false, LAYER.overlayXray)
+    const seam = new THREE.LineSegments(this.seamGeo, new THREE.LineBasicMaterial({ color: '#ff3b3b', depthTest: true }))
+    seam.layers.set(LAYER.overlayDepth); seam.renderOrder = 4; s.add(seam)
+    this.seamObj = seam
 
     const pm = (depthTest: boolean) => new THREE.PointsMaterial({ size: 6, sizeAttenuation: false, vertexColors: true, depthTest })
     const ptsP = new THREE.Points(this.pointGeo, pm(true)); ptsP.layers.set(LAYER.overlayDepth); ptsP.renderOrder = 5; s.add(ptsP)
@@ -172,6 +178,7 @@ class SceneManager {
     requestAnimationFrame(loop)
   }
   wireObjs: THREE.Object3D[] = []
+  seamObj: THREE.Object3D | null = null
   pointObjs: THREE.Object3D[] = []
 
   invalidate() { this.dirty = true }
@@ -320,6 +327,12 @@ class SceneManager {
     setAttr(this.selGeo, 'position', sel, 3)
     setAttr(this.wireGeo, 'position', wire, 3)
     setAttr(this.selEdgeGeo, 'position', selEdge, 3)
+    {
+      const sp: number[] = []
+      for (const k of seamSet(m)) { const [a, b] = edgeEnds(k); if (P[a] && P[b]) sp.push(...P[a], ...P[b]) }
+      setAttr(this.seamGeo, 'position', sp, 3)
+      if (this.seamObj) this.seamObj.visible = st.mode === 'model'
+    }
     this.wireObjs.forEach(o => (o.visible = st.showWire || st.mode === 'model'))
 
     const pts: number[] = [], col: number[] = []
