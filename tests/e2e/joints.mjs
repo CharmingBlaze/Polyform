@@ -58,6 +58,21 @@ await reset(); await frame()
   await p.keyboard.press('Shift+C'); await frame()
   check('Shift+C puts the cursor back at the origin', JSON.stringify(await cursor()) === '[0,0,0]')
 }
+// 2. octahedral bones
+await reset(); await frame()
+{
+  await S(() => {
+    const s = window.__polyform.getState(), m = s.model
+    m.verts = m.verts.map(v => [v[0] * 0.5, v[1] * 2, v[2] * 0.5])
+    m.bones = [{ name: 'hip', parent: -1, pos: [0, -1, 0] }, { name: 'spine', parent: 0, pos: [0, 0, 0] }, { name: 'head', parent: 1, pos: [0, 1, 0] }]
+    s.loadModel(m)
+    const st = window.__polyform.getState(); st.setSelectMode('joint'); st.set({ selBones: new Set([1]) })
+  })
+  await frame()
+  const counts = await S(() => [window.__polyformScene.boneGeo.getAttribute('position').count, window.__polyformScene.boneFillGeo.getAttribute('position').count])
+  check('2 bones drawn as octahedra: 12 edges + 8 triangles each', counts.join() === '48,48', counts.join())
+  await p.screenshot({ path: process.env.SHOT_BONES || '/workspace/shot-bones.png' })
+}
 await b.close()
 for (const [n, ok, info] of results) console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info)
 console.log('pageErrors', JSON.stringify(errs))

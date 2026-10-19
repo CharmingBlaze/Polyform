@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerNormals, faceMat, triangulate, type Face, type Vec3 } from './model'
@@ -61,6 +62,7 @@ class SceneManager {
   pointGeo = new THREE.BufferGeometry()
   jointGeo = new THREE.BufferGeometry()
   boneGeo = new THREE.BufferGeometry()
+  boneFillGeo = new THREE.BufferGeometry()
   onionGeo = [new THREE.BufferGeometry(), new THREE.BufferGeometry()]
   ghost: THREE.MeshBasicMaterial
   meshes: Record<'solid' | 'smooth' | 'textured', THREE.Mesh>
@@ -138,7 +140,9 @@ class SceneManager {
     const jmat = new THREE.PointsMaterial({ size: 11, sizeAttenuation: false, vertexColors: true, depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 })
     const joints = new THREE.Points(this.jointGeo, jmat)
     joints.layers.enableAll(); joints.renderOrder = 7; s.add(joints)
-    this.boneObjs = [bones, joints]
+    const boneFill = new THREE.Mesh(this.boneFillGeo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.22, depthTest: false, depthWrite: false, side: THREE.DoubleSide }))
+    boneFill.layers.enableAll(); boneFill.renderOrder = 5; boneFill.frustumCulled = false; s.add(boneFill)
+    this.boneObjs = [bones, joints, boneFill]
     this.onionObjs = this.onionGeo.map((g, i) => {
       const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: i ? '#5fd38d' : '#ff6b6b', transparent: true, opacity: 0.45, depthTest: false }))
       l.layers.enableAll(); l.renderOrder = 1; s.add(l); return l
@@ -339,18 +343,22 @@ class SceneManager {
       }
       setAttr(this.cursorGeo, 'position', cp, 3); setAttr(this.cursorGeo, 'color', cc, 3)
     }
-    const jp: number[] = [], jc: number[] = [], bp: number[] = [], bc: number[] = []
+    const jp: number[] = [], jc: number[] = [], bp: number[] = [], bc: number[] = [], bt: number[] = [], btc: number[] = []
     this.joints.forEach((j, i) => {
       jp.push(...j)
       const s = st.selBones.has(i)
       jc.push(...(s ? ORANGE_HI : [0.35, 0.65, 1]))
       const p = m.bones[i].parent
       if (p >= 0) {
-        bp.push(...this.joints[p], ...j)
-        const c = s ? ORANGE_HI : [0.35, 0.65, 1]
-        bc.push(...c, ...c)
+        // octahedral bone from the parent joint to this one, highlighted when either end is selected
+        const o = octaBone(this.joints[p], j)
+        const c = s || st.selBones.has(p) ? ORANGE_HI : [0.35, 0.65, 1]
+        bp.push(...o.lines); for (let k = 0; k < o.lines.length / 3; k++) bc.push(...c)
+        bt.push(...o.tris); for (let k = 0; k < o.tris.length / 3; k++) btc.push(...c)
       }
     })
+    setAttr(this.boneFillGeo, 'position', bt, 3)
+    setAttr(this.boneFillGeo, 'color', btc, 3)
     setAttr(this.jointGeo, 'position', jp, 3)
     setAttr(this.jointGeo, 'color', jc, 3)
     setAttr(this.boneGeo, 'position', bp, 3)
