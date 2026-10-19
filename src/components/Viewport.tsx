@@ -9,8 +9,10 @@ import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction } from '../interaction'
+import { topology } from '../topology'
 import type { ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
+import { facePoint, knifeCut, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
@@ -533,6 +535,122 @@ export function Viewport({ pane }: { pane: number }) {
     info()
   }
 
+  /** Knife snapping: point, edge midpoint (or Ctrl), edge, face; null over empty space. */
+  const knifeSnap = (x: number, y: number, ctrl: boolean): { k: KPoint; pos: THREE.Vector3 } | null => {
+    const st = useStore.getState(), m = st.model, P = sceneManager.posed
+    const v = ctrl ? -1 : pickVert(x, y)
+    if (v >= 0) return { k: { kind: 'vert', v }, pos: new THREE.Vector3(...P[v]) }
+    const e = pickEdge(x, y, 10)
+    if (e >= 0) {
+      const a = Math.floor(e / 2 ** 26), b = e % 2 ** 26
+      const pa = new THREE.Vector3(...P[a]), pb = new THREE.Vector3(...P[b])
+      const mid = pa.clone().lerp(pb, 0.5), ms = project(mid)
+      let t = 0.5
+      if (!ctrl && Math.hypot(ms.x - x, ms.y - y) > 10) {
+        const sa = project(pa), sb = project(pb)
+        const dx = sb.x - sa.x, dy = sb.y - sa.y, L = dx * dx + dy * dy
+        const ts = L ? THREE.MathUtils.clamp(((x - sa.x) * dx + (y - sa.y) * dy) / L, 0.001, 0.999) : 0.5
+        // screen t -> world t (perspective-correct along the edge)
+        const r = ray(sa.x + dx * ts, sa.y + dy * ts).ray
+        const d = pb.clone().sub(pa)
+        const w0 = pa.clone().sub(r.origin)
+        const B = d.dot(r.direction), C = d.dot(d), D = d.dot(w0), E = r.direction.dot(w0)
+        const den = C - B * B
+        t = den > 1e-12 ? THREE.MathUtils.clamp((B * E - D) / den, 0.001, 0.999) : ts
+      }
+      return { k: { kind: 'edge', a, b, t }, pos: pa.lerp(pb, t) }
+    }
+    const h = ray(x, y).intersectObject(sceneManager.pickMesh, false)[0]
+    if (h && h.faceIndex != null) {
+      const f = sceneManager.triFace[h.faceIndex]
+      if (f !== undefined && f >= 0) return { k: facePoint(m, P, f, h.point), pos: h.point.clone() }
+    }
+    return null
+  }
+
+  /** K: click points on the mesh, Enter/Space cuts, Esc/right-click cancels; Backspace removes a point; Z cuts through. */
+  function startKnife() {
+    const clicks: { k: KPoint; eye: Eye }[] = []
+    let hover: { k: KPoint; pos: THREE.Vector3 } | null = null
+    let through = false
+    const eyeNow = (): Eye => {
+      const cam = ctx.current!.camera
+      return cam instanceof THREE.PerspectiveCamera ? { pos: cam.position.clone() } : { dir: camBasis().fwd }
+    }
+    const opts = () => {
+      const vis = new Set(sceneManager.visibleFaces)
+      const t = topology(useStore.getState().model)
+      return {
+        edgeOk: (a: number, b: number) => t.edgeFaces(a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a).some(f => vis.has(f)),
+        visible: through ? undefined : (X: THREE.Vector3) => !occluded(X),
+        topo: t,
+      }
+    }
+    const info = () => useStore.getState().set({
+      modalInfo: `Knife · ${clicks.length} point${clicks.length === 1 ? '' : 's'} · Ctrl midpoint · Z cut-through ${through ? 'ON' : 'off'} · Backspace undo point · Enter/Space cut · Esc/right-click cancel`,
+    })
+    const draw = () => {
+      const m = useStore.getState().model, P = sceneManager.posed
+      const pts = clicks.map(c => kpos(m, P, c.k))
+      const all = hover ? [...clicks, { k: hover.k, eye: eyeNow() }] : clicks
+      const lines: number[] = [], dots: number[] = []
+      const ws = all.map(c => kpos(m, P, c.k))
+      for (let i = 0; i + 1 < ws.length; i++) lines.push(ws[i].x, ws[i].y, ws[i].z, ws[i + 1].x, ws[i + 1].y, ws[i + 1].z)
+      pts.forEach(q => dots.push(q.x, q.y, q.z))
+      if (hover) dots.push(hover.pos.x, hover.pos.y, hover.pos.z)
+      // where the cut will cross edges
+      if (all.length > 1) for (const pp of knifePath(m, P, all, opts())) { if (pp.tau % 1 !== 0) { const q = kpos(m, P, pp.k); dots.push(q.x, q.y, q.z) } }
+      sceneManager.setToolOverlay(lines, dots)
+    }
+    const end = () => {
+      sceneManager.setToolOverlay(null)
+      interaction.modal = false
+      activeXf = null
+      useStore.getState().set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+    }
+    const confirm = () => {
+      if (clicks.length < 2) { end(); return }
+      const st = useStore.getState()
+      st.checkpoint('Knife')
+      const nv = knifeCut(st.model, sceneManager.posed, clicks, opts())
+      if (!nv.length) { st.cancelEdit(); end(); st.notify('Knife: nothing to cut along that path'); return }
+      st.touch()
+      if (st.selectMode !== 'object') st.setSelection({ verts: nv })
+      st.commit()
+      end()
+    }
+    activeXf = {
+      pane,
+      cancel: end,
+      confirm,
+      move: () => {},
+      hover: (x, y, ctrl) => { hover = knifeSnap(x, y, ctrl); draw() },
+      down: (button, x, y, ctrl) => {
+        if (button === 2) return end()
+        if (button !== 0) return
+        const h = knifeSnap(x, y, ctrl)
+        if (!h) return
+        const last = clicks[clicks.length - 1]
+        if (last && JSON.stringify(last.k) === JSON.stringify(h.k)) return
+        clicks.push({ k: h.k, eye: eyeNow() })
+        hover = h
+        draw(); info()
+      },
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return end()
+        if (k === 'Enter' || k === ' ') return confirm()
+        if (k === 'Backspace') { clicks.pop(); draw(); info(); return }
+        if (k === 'z' || k === 'Z') { through = !through; draw(); info(); return }
+        if (k === 'Control' || k === 'Meta') { const at = interaction.mouse[pane]; if (at) { hover = knifeSnap(at.x, at.y, true); draw() } }
+      },
+    }
+    interaction.modal = true
+    info()
+  }
+
   // window listeners for the active transform (modal transforms keep working outside the pane)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -579,6 +697,7 @@ export function Viewport({ pane }: { pane: number }) {
       const target = useStore.getState().maximized ?? interaction.hoverPane
       if (target !== pane || !ctx.current || hidden || activeXf) return
       if (kind === 'loopcut') startLoopCut()
+      else if (kind === 'knife') startKnife()
     }
     window.addEventListener('modal-tool', onTool)
     return () => {
