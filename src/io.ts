@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
 import { useStore } from './store'
+import { importGLTF } from './gltfImport'
+import { parseMs3d } from './ms3d'
 
 function download(data: BlobPart, name: string, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type }))
@@ -229,10 +230,20 @@ export async function importFile(file: File) {
     const [mat] = st.addImages([{ id, name: file.name }], assign)
     return st.notify(assign ? `${file.name} assigned to the selected faces` : `${file.name} added to Images (material ${useStore.getState().model.materials[mat].name})`)
   }
-  let obj: THREE.Object3D
-  if (ext === 'obj') obj = new OBJLoader().parse(await file.text())
-  else if (ext === 'glb' || ext === 'gltf') obj = (await new GLTFLoader().parseAsync(await file.arrayBuffer(), '')).scene
-  else throw new Error(`Unsupported file type .${ext}`)
+  if (ext === 'glb' || ext === 'gltf') {
+    const model = await importGLTF(await file.arrayBuffer(), file.name)
+    st.edit(m => { m.verts = model.verts; m.vbone = model.vbone; m.faces = model.faces; m.groups = model.groups; m.materials = model.materials; m.bones = model.bones; m.clips = model.clips; m.wires = model.wires }, `Import ${file.name}`)
+    st.set({ clip: 0, frame: 0, playing: false, activeMat: 0, ...{ selVerts: new Set(), selFaces: new Set(), selEdges: new Set(), selBones: new Set(), selUV: new Set() } })
+    return st.notify(`Imported ${file.name}: ${model.faces.length} faces, ${model.bones.length} joints, ${model.clips.length} clip${model.clips.length === 1 ? '' : 's'}`)
+  }
+  if (ext === 'ms3d') {
+    const model = parseMs3d(await file.arrayBuffer())
+    st.edit(m => { m.verts = model.verts; m.vbone = model.vbone; m.faces = model.faces; m.groups = model.groups; m.materials = model.materials; m.bones = model.bones; m.clips = model.clips; m.wires = model.wires }, `Import ${file.name}`)
+    st.set({ clip: 0, frame: 0, playing: false, activeMat: 0, selVerts: new Set(), selFaces: new Set(), selEdges: new Set(), selBones: new Set(), selUV: new Set() })
+    return st.notify(`Imported ${file.name}: ${model.faces.length} faces, ${model.bones.length} joints`)
+  }
+  if (ext !== 'obj') throw new Error(`Unsupported file type .${ext}`)
+  const obj = new OBJLoader().parse(await file.text())
   obj.updateMatrixWorld(true)
   st.checkpoint('Import')
   let count = 0

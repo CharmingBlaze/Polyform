@@ -46,7 +46,7 @@ export function Header({ onPalette }: { onPalette: () => void }) {
         <button className="ghost" onClick={byId['file.save'].run} title="Save project  ·  Ctrl+S"><Save size={15} /></button>
         <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run}><Download size={15} /> Export .glb</button>
       </div>
-      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
+      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
     </header>
   )
 }
