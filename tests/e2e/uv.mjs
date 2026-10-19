@@ -142,6 +142,15 @@ const sceneUV = () => S(() => Array.from(window.__polyformScene.meshGeo.getAttri
 await S(() => window.__polyform.getState().setSelection({ faces: [4] })); await frame()
 await p.screenshot({ path: '/workspace/shot-uv-workspace.png' })
 
+// cylinder / sphere projection buttons
+for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphere']]) {
+  await S(kind => { const s = window.__polyform.getState(); const m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().addPrimitive(kind); window.__polyform.getState().selectNone() }, kind)
+  await frame()
+  await p.click(`[data-testid="${btn}"]`); await frame()
+  const uv = await faces()
+  check(`${kind} projection: every face has positive UV area, all in 0..1`, uv.every(f => area(f) > 1e-7) && uv.flat().every(([u, v]) => u >= -1e-9 && u <= 1 + 1e-9 && v >= 0 && v <= 1), uv.filter(f => area(f) <= 1e-7).length + ' bad')
+}
+
 // 5. Images library + per-face materials: two images on different faces of a box, export, validate
 {
   await reset()

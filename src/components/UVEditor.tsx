@@ -322,7 +322,11 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const targetFaces = () => { const st = useStore.getState(); const f = st.activeFaces(); return f.length ? f : uvFaces() }
   const targetCorners = () => { const s = uvSelection(); return s.size ? [...s] : targetFaces().flatMap(fi => useStore.getState().model.faces[fi].uv.map((_, i) => fi * 1024 + i)) }
   const op = (label: string, fn: (m: typeof model, ids: number[]) => void) => { const ids = targetCorners(); if (!ids.length) return; useStore.getState().edit(m => fn(m, ids), label) }
-  const project = (axis: U.UVAxis) => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.project(m, faces, axis), 'UV project') }
+  const project = (axis: U.UVAxis | 'cyl' | 'sphere') => {
+    const faces = targetFaces()
+    if (!faces.length) return
+    useStore.getState().edit(m => (axis === 'cyl' ? U.projectCylinder(m, faces) : axis === 'sphere' ? U.projectSphere(m, faces) : U.project(m, faces, axis)), 'UV project')
+  }
   const selectIsland = (hit: Hit | null) => {
     const st = useStore.getState(), faces = uvFaces()
     const seeds = hit?.faces ?? (hit ? [] : [...st.selFaces])
@@ -367,6 +371,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="proj-top" label="Top" onClick={() => project('y')} />
           <B id="proj-side" label="Side" onClick={() => project('x')} />
           <B id="proj-box" label="Box" onClick={() => project('box')} />
+          <B id="proj-cyl" label="Cylinder" tip="Wrap around the vertical axis; caps go flat into the top strip" onClick={() => project('cyl')} />
+          <B id="proj-sphere" label="Sphere" tip="Longitude / latitude about the selection's centre" onClick={() => project('sphere')} />
           <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
         </div>
         <div className="label">Adjust</div>

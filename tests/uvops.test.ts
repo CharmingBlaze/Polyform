@@ -48,3 +48,21 @@ describe('uv ops', () => {
     expect(U.uvInFace(m, 3, [m.faces[3].uv.reduce((s, p) => s + p[0], 0) / 4, m.faces[3].uv.reduce((s, p) => s + p[1], 0) / 4])).toBe(true)
   })
 })
+
+describe('cylinder / sphere projection', () => {
+  const prim = (k: string) => { const m = emptyModel(); addPrimitive(m, k as never); return m }
+  for (const [kind, fn] of [['cylinder', U.projectCylinder], ['sphere', U.projectSphere]] as const) it(`${kind}: every face keeps positive area, UVs within 0..1`, () => {
+    const m = prim(kind)
+    fn(m, m.faces.map((_, i) => i))
+    const areas = m.faces.map(f => U.uvArea(f.uv))
+    expect(areas.filter(a => a <= 1e-7).length).toBe(0)
+    for (const f of m.faces) for (const [u, v] of f.uv) { expect(u).toBeGreaterThanOrEqual(-1e-9); expect(u).toBeLessThanOrEqual(1 + 1e-9); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1) }
+  })
+  it('cylinder side faces wrap around without overlapping', () => {
+    const m = prim('cylinder')
+    U.projectCylinder(m, m.faces.map((_, i) => i))
+    const sides = m.faces.filter(f => f.uv.every(p => p[1] <= 0.7 + 1e-9))
+    const total = sides.reduce((a, f) => a + U.uvArea(f.uv), 0)
+    expect(total).toBeCloseTo(0.7, 3) // sides tile the 1 × 0.7 strip exactly
+  })
+})

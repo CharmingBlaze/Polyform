@@ -2,6 +2,7 @@
 import { cornerFace, cornerId, cornerIdx, edgeEnds, faceNormal, type Model, type Vec2 } from './model'
 
 export type UVAxis = 'x' | 'y' | 'z' | 'box'
+export const uvArea = (uv: Vec2[]) => polyArea(uv)
 export interface SelLike { selectMode: string; subModes: string[]; selVerts: Set<number>; selEdges: Set<number>; selFaces: Set<number> }
 
 /** Corners the 3D selection covers (UV selection is synced with the 3D one): */
@@ -74,6 +75,80 @@ export function project(m: Model, faces: number[], axis: UVAxis) {
   uvs.flat().forEach(([u, v]) => { minU = Math.min(minU, u); minV = Math.min(minV, v); maxU = Math.max(maxU, u); maxV = Math.max(maxV, v) })
   const s = Math.max(maxU - minU, maxV - minV) || 1
   faces.forEach((fi, k) => { m.faces[fi].uv = uvs[k].map(([u, v]) => [(u - minU) / s, (v - minV) / s] as Vec2) })
+}
+
+const TAU = Math.PI * 2
+/** keep a face's u values together across the wrap-around seam, then bring the face back into 0..1 */
+function unwrapU(uv: Vec2[]) {
+  const u0 = uv[0][0]
+  for (const p of uv) { if (p[0] - u0 > 0.5) p[0] -= 1; else if (p[0] - u0 < -0.5) p[0] += 1 }
+  const lo = Math.min(...uv.map(p => p[0])), hi = Math.max(...uv.map(p => p[0]))
+  if (lo < -1e-9) uv.forEach(p => (p[0] += 1)); else if (hi > 1 + 1e-9) uv.forEach(p => (p[0] -= 1))
+}
+function polyArea(uv: Vec2[]) { let a = 0; uv.forEach((p, i) => { const q = uv[(i + 1) % uv.length]; a += p[0] * q[1] - q[0] * p[1] }); return a / 2 }
+function boundsOf(m: Model, faces: number[]) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (const fi of faces) for (const v of m.faces[fi].v) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], m.verts[v][k]); hi[k] = Math.max(hi[k], m.verts[v][k]) }
+  return { lo, hi, c: lo.map((x, k) => (x + hi[k]) / 2) }
+}
+/** u around the Y axis, increasing counter-clockwise seen from outside (so outward faces keep positive UV area) */
+const angleU = (x: number, z: number) => 0.5 + Math.atan2(x, z) / TAU
+/** shift u so the seam runs through the point nearest the back: faces then meet the seam at an edge, not across it */
+function seamOffset(m: Model, faces: number[], c: number[]) {
+  let best = 0, bd = Infinity
+  for (const fi of faces) for (const v of m.faces[fi].v) {
+    const p = m.verts[v], x = p[0] - c[0], z = p[2] - c[2]
+    if (Math.hypot(x, z) < 1e-9) continue
+    const u = angleU(x, z), d = Math.min(u, 1 - u)
+    if (d < bd) { bd = d; best = u > 0.5 ? u - 1 : u }
+  }
+  return (x: number, z: number) => { let u = angleU(x, z) - best; u -= Math.floor(u); return u }
+}
+
+/**
+ * Cylinder projection around the selection's vertical (Y) axis. Side faces wrap around (seam at the back) into
+ * v 0..0.7; cap faces (normal along the axis) are projected flat into the top strip, top cap left, bottom cap right.
+ */
+export function projectCylinder(m: Model, faces: number[]) {
+  if (!faces.length) return
+  const { lo, hi, c } = boundsOf(m, faces)
+  const h = hi[1] - lo[1] || 1, r = Math.max(hi[0] - lo[0], hi[2] - lo[2]) / 2 || 1
+  const U = seamOffset(m, faces, c)
+  for (const fi of faces) {
+    const f = m.faces[fi], n = faceNormal(m, f)
+    if (Math.abs(n.y) > 0.7) {
+      const top = n.y > 0, ox = top ? 0.02 : 0.32, s = 0.28 / (2 * r)
+      // seen from outside: top cap from above (x right, -z up), bottom cap from below (x right, z up)
+      f.uv = f.v.map(v => { const p = m.verts[v]; return [ox + (p[0] - c[0] + r) * s, 0.72 + ((top ? -(p[2] - c[2]) : p[2] - c[2]) + r) * s] as Vec2 })
+      continue
+    }
+    f.uv = f.v.map(v => { const p = m.verts[v]; return [U(p[0] - c[0], p[2] - c[2]), ((p[1] - lo[1]) / h) * 0.7] as Vec2 })
+    unwrapU(f.uv)
+  }
+}
+
+/** Sphere projection about the selection's centre: u = longitude (seam at the back), v = latitude. */
+export function projectSphere(m: Model, faces: number[]) {
+  if (!faces.length) return
+  const { c } = boundsOf(m, faces)
+  const U = seamOffset(m, faces, c)
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    const pole: boolean[] = []
+    f.uv = f.v.map(v => {
+      const p = m.verts[v], x = p[0] - c[0], y = p[1] - c[1], z = p[2] - c[2], r = Math.hypot(x, y, z) || 1
+      const lat = Math.asin(Math.max(-1, Math.min(1, y / r)))
+      pole.push(Math.hypot(x, z) < 1e-6 * r)
+      return [U(x, z), 0.5 + lat / Math.PI] as Vec2
+    })
+    const rest = f.uv.filter((_, i) => !pole[i])
+    if (rest.length) {
+      unwrapU(rest)
+      // a pole point has no longitude: give it the face's mean u so the triangle keeps its area
+      const mu = rest.reduce((a, p) => a + p[0], 0) / rest.length
+      f.uv.forEach((p, i) => { if (pole[i]) p[0] = mu })
+    }
+  }
 }
 
 const same = (a: Vec2, b: Vec2) => Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6
