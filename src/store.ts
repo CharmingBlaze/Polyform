@@ -78,6 +78,9 @@ interface State {
   onion: boolean
   /** How many frames on each side of the playhead the onion ghosts show (1–3). */
   onionSteps: number
+  /** Animate: FABRIK IK when dragging a joint (chain depth). */
+  ik: boolean
+  ikDepth: number
   /** X-mirror editing: transforms on one side update the paired verts across X = 0. */
   xMirror: boolean
   xMirrorMap: XMirror | null
@@ -289,6 +292,8 @@ export const useStore = create<State>((set, get) => ({
   autoKey: true,
   onion: false,
   onionSteps: 2,
+  ik: false,
+  ikDepth: 2,
   xMirror: false,
   xMirrorMap: null,
   showSkeleton: true,

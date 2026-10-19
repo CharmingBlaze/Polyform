@@ -118,6 +118,13 @@ export const commands: Command[] = [
   { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', keys: 'I', run: () => S().setKey() },
   { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },
   { id: 'anim.autokey', label: 'Toggle auto-key (record)', group: 'Animate', run: () => S().set({ autoKey: !S().autoKey }) },
+  { id: 'anim.ik', label: 'Toggle IK (drag tip to pose the chain)', group: 'Animate', keys: 'Shift+I', run: () => {
+    const s = S()
+    if (s.mode !== 'animate') s.setMode('animate')
+    const on = !s.ik
+    s.set({ ik: on })
+    s.notify(on ? `IK on (depth ${s.ikDepth}): select the tip joint and drag Move` : 'IK off')
+  } },
   { id: 'anim.copy', label: 'Copy keys', group: 'Animate', keys: 'Ctrl+C', run: () => { if (S().mode === 'animate') S().copyKeys() } },
   { id: 'anim.paste', label: 'Paste keys', group: 'Animate', keys: 'Ctrl+V', run: () => { if (S().mode === 'animate') S().pasteKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },

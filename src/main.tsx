@@ -13,4 +13,7 @@ if (import.meta.env.DEV) {
   import('./paint').then(m => ((window as unknown as Record<string, unknown>).__polyformPaint = m.paintDebug))
   import('./store').then(m => ((window as unknown as Record<string, unknown>).__polyformHistory = m.history))
   import('./scene').then(m => ((window as unknown as Record<string, unknown>).__polyformScene = m.sceneManager))
+  import('./ik').then(m => ((window as unknown as Record<string, unknown>).__polyformIK = m))
+  import('./transform').then(m => ((window as unknown as Record<string, unknown>).__polyformXf = m))
+  import('./anim').then(m => ((window as unknown as Record<string, unknown>).__polyformAnim = m))
 }

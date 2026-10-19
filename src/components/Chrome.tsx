@@ -62,6 +62,8 @@ export function ToolRail() {
   const xMirror = useStore(s => s.xMirror)
   const onion = useStore(s => s.onion)
   const onionSteps = useStore(s => s.onionSteps)
+  const ik = useStore(s => s.ik)
+  const ikDepth = useStore(s => s.ikDepth)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
@@ -120,6 +122,10 @@ export function ToolRail() {
           <CmdBtn cmd="anim.key" label="Insert key" testid="key" />
           <CmdBtn cmd="anim.unkey" label="Delete key" />
           <button className={`tool-btn rec ${autoKey ? 'on' : ''}`} data-testid="auto-key" onClick={() => set({ autoKey: !autoKey })}><Circle size={10} fill={autoKey ? 'currentColor' : 'none'} /> <span>Auto-key</span></button>
+          <button className={`tool-btn ${ik ? 'on' : ''}`} data-testid="ik" onClick={() => byId['anim.ik'].run()} title="IK (Shift+I): drag the tip joint to pose its parent chain"><span>IK</span></button>
+          {ik && <label className="paint-range" style={{ padding: '0 4px' }}><span>Depth</span><b>{ikDepth}</b>
+            <input type="range" min={1} max={4} step={1} value={ikDepth} data-testid="ik-depth"
+              onChange={e => set({ ikDepth: Number(e.target.value) })} /></label>}
           <CmdBtn cmd="anim.copy" label="Copy keys" />
           <CmdBtn cmd="anim.paste" label="Paste keys" />
           <button className={`tool-btn ${onion ? 'on' : ''}`} data-testid="onion" onClick={() => byId['view.onion'].run()}><span>Onion skin</span></button>
@@ -311,6 +317,9 @@ export function StatusBar() {
   const modalInfo = useStore(s => s.modalInfo)
   const xMirror = useStore(s => s.xMirror)
   const paint = useStore(s => s.paint)
+  const ik = useStore(s => s.ik)
+  const ikDepth = useStore(s => s.ikDepth)
+  const mode = useStore(s => s.mode)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const mir = xMirror ? ' · X-mirror on' : ''
   const paintHint = (() => {
@@ -327,8 +336,8 @@ export function StatusBar() {
   })()
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Shift add · Ctrl remove · Ctrl+click loop',
-    move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
-    rotate: 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°' + mir,
+    move: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): drag the tip joint — parents rotate to reach · ` : '') + 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
+    rotate: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): rotate orbits the tip · ` : '') + 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°' + mir,
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',

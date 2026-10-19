@@ -9,6 +9,7 @@ import { boneMatrices, sampleBone, sampleObject, skinnedGroups, vertexGroups, xf
 import { applyMirror, pairs as xPairs } from './xmirror'
 import { useStore } from './store'
 import { sceneManager } from './scene'
+import { effectorTarget, ikChain, solveIK } from './ik'
 
 export interface Xf { t: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }
 export const identityXf = (): Xf => ({ t: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1) })
@@ -142,6 +143,26 @@ export function applyXf(T: Targets, x: Xf) {
     if (T.okeys) { const c = m.clips[ci]; c.okeys[g] = { ...(c.okeys[g] || {}), [st.frame]: nt } }
     else Object.assign(m.groups[g].xf, nt)
   })
+  // IK: dragging the end of a chain solves parent rotations toward the translated tip
+  if (st.ik && st.mode === 'animate' && T.keys.size && (x.t.lengthSq() > 1e-12 || Math.abs(x.q.w - 1) > 1e-6)) {
+    const ends = [...T.keys.keys()]
+    const end = ends[ends.length - 1]!
+    const clip = m.clips[ci]
+    const target = effectorTarget(m, end, st.frame, clip, x.t)
+    // also fold in rotation of the tip by orbiting the target around the chain root
+    if (Math.abs(x.q.w - 1) > 1e-6) {
+      const chain = ikChain(m, end, st.ikDepth)
+      const root = sceneManager.joints[chain[0]] ?? m.bones[chain[0]].pos
+      const piv = new THREE.Vector3(root[0], root[1], root[2])
+      target.sub(piv).applyQuaternion(x.q).add(piv)
+    }
+    const solved = solveIK(m, end, target, st.ikDepth, st.frame, clip)
+    if (solved.size) {
+      solved.forEach((k, b) => { clip.keys[b] = { ...(clip.keys[b] || {}), [st.frame]: k } })
+      st.touch()
+      return
+    }
+  }
   T.keys.forEach((k, b) => {
     const qpInv = k.qp.clone().invert()
     const ql = eulerQ(k.rot)
@@ -158,5 +179,10 @@ export function applyXf(T: Targets, x: Xf) {
 export function needsKeyFirst(st: St, T: Targets): boolean {
   if (st.mode !== 'animate' || st.autoKey) return false
   const c = st.curClip()
-  return ![...T.keys.keys()].every(b => c.keys[b]?.[st.frame]) || ![...T.objs.keys()].every(g => c.okeys[g]?.[st.frame])
+  let bones = [...T.keys.keys()]
+  if (st.ik && bones.length) {
+    const tip = bones[bones.length - 1]!
+    bones = [...new Set([...bones, ...ikChain(st.model, tip, st.ikDepth)])]
+  }
+  return !bones.every(b => c.keys[b]?.[st.frame]) || ![...T.objs.keys()].every(g => c.okeys[g]?.[st.frame])
 }
