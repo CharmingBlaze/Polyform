@@ -126,6 +126,13 @@ export const OPS: OpDef[] = [
     run: (m, s) => s.edges.length && !s.faces.length ? facesSel(G.bridgeEdges(m, s.edges)) : facesSel(G.bridgeFaces(m, s.faces)),
   },
   { id: 'con.face', label: 'Make polygon', tab: 'Construct', needs: 'verts', params: [], run: (m, s) => facesSel([G.createFace(m, s.verts)]) },
+  {
+    id: 'con.fill', label: 'Fill', tab: 'Construct', params: [],
+    run: (m, s) => {
+      const fi = G.fillFromSelection(m, s.verts, s.edges)
+      return fi >= 0 ? facesSel([fi]) : { verts: s.verts, note: 'Added an edge' }
+    },
+  },
   { id: 'con.flip', label: 'Flip', tab: 'Construct', needs: 'faces', params: [], run: (m, s) => { M.flipFaces(m, s.faces); return facesSel(s.faces) } },
   {
     id: 'con.turn', label: 'Turn edge', tab: 'Construct', needs: 'edges', params: [],

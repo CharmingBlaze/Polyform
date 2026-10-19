@@ -3,6 +3,7 @@ import { exportGLB, exportOBJ, saveProject } from './io'
 import { pairs as xPairs } from './xmirror'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
+import * as G from './geom'
 import { isModalActive, overUV } from './interaction'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
@@ -15,7 +16,7 @@ const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}.add`, label: `Toggle ${m} in combined mode`, group: 'Selection', keys: `Shift+${n}`, run: () => S().setSelectMode(m, true) },
 ]
 // Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
-const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.weld': 'M', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
@@ -49,6 +50,24 @@ export const commands: Command[] = [
   } },
   { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
+  { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', run: () => {
+    const s = S()
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to merge')
+    const verts = s.activeVerts()
+    if (verts.length < 2) return s.notify('Select 2 or more points to merge')
+    const go = (fn: () => void) => () => { s.set({ popup: null }); fn() }
+    s.set({ popup: { title: 'Merge', items: [
+      { id: 'center', label: 'At center', run: go(() => { const st = S(); st.edit(m => { const c = verts.reduce((a, v) => [a[0] + m.verts[v][0], a[1] + m.verts[v][1], a[2] + m.verts[v][2]] as [number, number, number], [0, 0, 0]); const n = verts.length; G.mergeVertsAt(m, verts, [c[0] / n, c[1] / n, c[2] / n]) }, 'Merge at center'); st.selectNone() }) },
+      { id: 'first', label: 'At first', run: go(() => { const st = S(); st.edit(m => { G.mergeVertsAt(m, verts, [...m.verts[verts[0]]] as [number, number, number]) }, 'Merge at first'); st.selectNone() }) },
+      { id: 'cursor', label: 'At 3D cursor', run: go(() => { const st = S(); st.edit(m => { G.mergeVertsAt(m, verts, [...st.cursor3d] as [number, number, number]) }, 'Merge at cursor'); st.selectNone() }) },
+      { id: 'distance', label: 'By distance…', run: go(() => S().runOp('con.merge')) },
+    ] } })
+  } },
+  { id: 'edit.bridge', label: 'Bridge edge loops', group: 'Construct', run: () => {
+    const s = S()
+    if (s.mode !== 'model') return s.notify('Switch to Model mode to bridge')
+    s.runOp('con.bridge')
+  } },
   { id: 'edit.bevel', label: 'Bevel (scroll = segments)', group: 'Multiply', keys: 'Ctrl+B', run: () => {
     const s = S()
     if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
@@ -144,7 +163,20 @@ export const commands: Command[] = [
   { id: 'anim.paste', label: 'Paste keys', group: 'Animate', keys: 'Ctrl+V', run: () => { if (S().mode === 'animate') S().pasteKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },
   { id: 'anim.next', label: 'Next frame', group: 'Animate', keys: '.', run: () => { const s = S(); s.set({ frame: Math.min(s.curClip().frames - 1, s.frame + 1) }) } },
-  { id: 'view.frame', label: 'Frame selection', group: 'View', keys: 'F', run: () => window.dispatchEvent(new CustomEvent('frame-selection')) },
+  { id: 'edit.fill', label: 'Fill (or frame selection)', group: 'Construct', keys: 'F', run: () => {
+    const s = S()
+    if (s.mode === 'model' && s.selectMode !== 'joint') {
+      const verts = s.activeVerts(), edges = s.activeEdges()
+      if (verts.length >= 2 || edges.length >= 2) {
+        try {
+          s.edit(m => { G.fillFromSelection(m, verts, edges) }, 'Fill')
+          return
+        } catch (err) { s.notify(String((err as Error).message || err)); return }
+      }
+    }
+    window.dispatchEvent(new CustomEvent('frame-selection'))
+  } },
+  { id: 'view.frame', label: 'Frame selection', group: 'View', run: () => window.dispatchEvent(new CustomEvent('frame-selection')) },
   { id: 'view.frameAll', label: 'Frame all', group: 'View', keys: 'Home', run: () => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })) },
   { id: 'view.max', label: 'Maximize / restore view', group: 'View', keys: 'Shift+Space', run: () => S().set({ maximized: S().maximized !== null ? null : 1 }) },
   { id: 'view.skeleton', label: 'Toggle skeleton', group: 'View', run: () => S().set({ showSkeleton: !S().showSkeleton }) },

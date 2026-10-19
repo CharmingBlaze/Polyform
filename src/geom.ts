@@ -22,6 +22,42 @@ export function createVertex(m: Model, p: Vec3, bone = -1): number {
  * around their centroid on the best-fit plane. If the new face shares an edge with an existing face it is wound
  * to match; it joins that face's group (or the group of any face using one of the points, else a new group).
  */
+/** Fill: make a face from 3+ points, a closed edge loop, or a wire from 2 points. Returns face index or -1 for a wire. */
+export function fillFromSelection(m: Model, verts: number[], edges: [number, number][] = []): number {
+  const vs = [...new Set(verts)]
+  if (vs.length >= 3) return createFace(m, vs)
+  if (edges.length) {
+    const chains = edgeChains(edges)
+    const closed = chains.find(c => c.closed && c.verts.length >= 3)
+    if (closed) return createFace(m, closed.verts)
+    // open chain of 3+ → try as polygon
+    const open = chains.find(c => !c.closed && c.verts.length >= 3)
+    if (open) return createFace(m, open.verts)
+  }
+  if (vs.length === 2) {
+    const [a, b] = vs
+    if (!m.wires.some(([x, y]) => (x === a && y === b) || (x === b && y === a))
+      && !m.faces.some(f => f.v.some((v, i) => edgeKey(v, f.v[(i + 1) % f.v.length]) === edgeKey(a, b)))) {
+      m.wires.push(a < b ? [a, b] : [b, a])
+    }
+    return -1
+  }
+  throw new Error('Select 2+ points or a loop of edges to fill')
+}
+
+/** Weld selected points to a single position (keeps the first index). */
+export function mergeVertsAt(m: Model, verts: number[], at: Vec3): void {
+  if (verts.length < 2) return
+  const target = verts[0]
+  m.verts[target] = [at[0], at[1], at[2]]
+  const set = new Set(verts)
+  for (const f of m.faces) f.v = f.v.map(v => (set.has(v) ? target : v))
+  remapWires(m, v => (set.has(v) ? target : v))
+  cleanFaces(m)
+  removeOrphans(m, verts.slice(1))
+  removeEmptyGroups(m)
+}
+
 export function createFace(m: Model, verts: number[]): number {
   const vs = [...new Set(verts)]
   if (vs.length < 3) throw new Error('Select 3 or more points to make a polygon')
