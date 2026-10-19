@@ -19,6 +19,16 @@ export interface Face {
 /** Material index a face renders with. */
 export const faceMat = (m: Model, f: Face) => (f.mat !== undefined ? f.mat : m.groups[f.g]?.mat ?? 0)
 
+/** Remove material i; faces using it fall back to material 0 (or their group's), later indices shift down. */
+export function removeMaterial(m: Model, i: number): boolean {
+  if (m.materials.length < 2 || i < 0 || i >= m.materials.length) return false
+  const fix = (k: number) => (k === i ? 0 : k > i ? k - 1 : k)
+  for (const g of m.groups) g.mat = fix(g.mat)
+  for (const f of m.faces) if (f.mat !== undefined) { f.mat = fix(f.mat); if (f.mat === m.groups[f.g]?.mat) delete f.mat }
+  m.materials.splice(i, 1)
+  return true
+}
+
 /** Largest polygon a face may have; also the stride of UV corner ids. */
 export const MAX_CORNERS = 1024
 export const cornerId = (face: number, corner: number) => face * MAX_CORNERS + corner

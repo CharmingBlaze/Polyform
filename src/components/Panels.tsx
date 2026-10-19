@@ -293,6 +293,10 @@ function Images() {
   const [over, setOver] = useState(false)
   const st = useStore.getState()
   const imgs = m.materials.map((mt, i) => ({ mt, i })).filter(x => x.mt.texture && textures.has(x.mt.texture))
+  // the highlighted image; falls back to the selected face's image, then the last one (e.g. after an undo)
+  const firstSel = [...selFaces].find(f => m.faces[f])
+  const selMat = firstSel !== undefined ? faceMat(m, m.faces[firstSel]) : -1
+  const cur = imgs.some(x => x.i === activeMat) ? activeMat : imgs.some(x => x.i === selMat) ? selMat : imgs[imgs.length - 1]?.i ?? -1
   const uses = (i: number) => m.faces.reduce((n, f) => n + (faceMat(m, f) === i ? 1 : 0), 0)
   const add = async (files: File[], assign: boolean) => {
     const got: { id: string; name: string }[] = []
@@ -307,19 +311,20 @@ function Images() {
       onDrop={e => { e.preventDefault(); e.stopPropagation(); setOver(false); void add([...e.dataTransfer.files], false) }}>
       <div className="btn-row">
         <label className="btn primary" data-testid="img-add-btn">Add image…<input data-testid="img-add" type="file" multiple accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden onChange={e => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; void add(fs, false) }} /></label>
-        <button data-testid="img-assign" disabled={!imgs.some(x => x.i === activeMat) || !selFaces.size} title="Give the selected faces the highlighted image" onClick={() => st.assignMaterial(activeMat)}>Assign to selection</button>
+        <button data-testid="img-assign" disabled={cur < 0 || !selFaces.size} title="Give the selected faces the highlighted image" onClick={() => st.assignMaterial(cur)}>Assign to selection</button>
       </div>
       {!imgs.length && <Empty title="No images yet" body="Add PNG, JPEG or WebP images, or drop them here. Dropping an image on the 3D view with faces selected assigns it right away." />}
       {imgs.map(({ mt, i }) => {
         const sz = textures.size(mt.texture!)
         return (
-          <div key={i} className={`row img-row ${activeMat === i ? 'on' : ''}`} data-testid={`img-row-${i}`} onClick={() => useStore.setState({ activeMat: i })}
+          <div key={i} className={`row img-row ${cur === i ? 'on' : ''}`} data-testid={`img-row-${i}`} onClick={() => useStore.setState({ activeMat: i })}
             onDoubleClick={() => setEditing(i)}>
             <img className="thumb" src={thumb(mt.texture!)} alt="" />
             {editing === i
               ? <input autoFocus defaultValue={mt.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.materials[i].name = e.target.value || mt.name), 'Rename image'); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
               : <span className="name">{mt.name}<small className="dim">{sz ? ` ${sz.w}×${sz.h}` : ''}</small></span>}
             <span className="meta" data-testid={`img-uses-${i}`}>{uses(i)} f</span>
+            <button className="icon-btn" data-testid={`img-remove-${i}`} title="Remove from the library (faces fall back to the default material; Ctrl+Z restores)" onClick={e => { e.stopPropagation(); st.removeImage(i) }}><Trash2 size={13} /></button>
           </div>
         )
       })}

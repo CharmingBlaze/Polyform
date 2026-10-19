@@ -186,6 +186,8 @@ interface State {
   /** Images library: each image becomes a material named after it (one material per image). With assign, the
    *  selected faces get the first one, in the same undo step. Returns the new material indices. */
   addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
+  /** remove an image (its material) from the library; faces using it fall back to the default material */
+  removeImage: (mat: number) => void
 }
 
 let toastTimer = 0
@@ -297,14 +299,14 @@ export const useStore = create<State>((set, get) => ({
     if (s.extruding) return s.cancelExtrude()
     const r = history.undo(s.model)
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...keptSel(s, r.model) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   doRedo: () => {
     const s = get()
     const r = history.redo()
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...keptSel(s, r.model) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
@@ -854,6 +856,14 @@ export const useStore = create<State>((set, get) => ({
     }, faces.length ? 'Add image and assign' : 'Add image')
     set({ activeMat: out[0] })
     return out
+  },
+  removeImage: mat => {
+    const s = get(), mt = s.model.materials[mat]
+    if (!mt) return
+    if (s.model.materials.length < 2) return s.notify('The last material cannot be removed')
+    s.edit(m => M.removeMaterial(m, mat), 'Remove image')
+    set({ activeMat: Math.max(0, Math.min(mat, get().model.materials.length - 1)) })
+    s.notify(`Removed ${mt.name} (Ctrl+Z restores it)`)
   },
   setMaterialTexture: (mat, tex) => get().edit(m => { m.materials[mat].texture = tex }, tex ? 'Set texture' : 'Remove texture'),
 }))
