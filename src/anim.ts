@@ -40,7 +40,7 @@ export function boneMatrices(m: Model, frame: number | null): THREE.Matrix4[] {
       q = s.q; local.add(s.p)
     }
     const mat = new THREE.Matrix4().compose(local, q, new THREE.Vector3(1, 1, 1))
-    out[i] = b.parent >= 0 ? out[b.parent].clone().multiply(mat) : mat
+    out[i] = b.parent >= 0 && out[b.parent] ? out[b.parent].clone().multiply(mat) : mat // a loop (invalid data) degrades to a root
   }
   return out
 }
