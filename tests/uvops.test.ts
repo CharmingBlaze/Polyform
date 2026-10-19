@@ -133,3 +133,23 @@ describe('pack islands', () => {
     expect(Math.max(...dens) / Math.min(...dens)).toBeLessThan(1.01)
   })
 })
+
+describe('stretch heatmap', () => {
+  it('box projection is distortion-free; a front projection crushes the sides', () => {
+    const m = box()
+    U.project(m, all(m), 'box')
+    expect(Math.max(...U.stretch(m, all(m), 'area'))).toBeLessThan(1e-6)
+    expect(Math.max(...U.stretch(m, all(m), 'angle'))).toBeLessThan(1e-6)
+    U.project(m, all(m), 'z')
+    const a = U.stretch(m, all(m), 'angle')
+    expect(a.filter(x => x === 1).length).toBe(4) // side faces collapse to lines
+    expect(a.filter(x => x < 1e-6).length).toBe(2) // front and back are fine
+    // stretch one face to twice the width: area distortion shows on it
+    const m2 = box(); U.project(m2, all(m2), 'box'); U.packIslands(m2, all(m2))
+    m2.faces[0].uv = m2.faces[0].uv.map(([u, v]) => [u * 2 - m2.faces[0].uv[0][0], v])
+    const s2 = U.stretch(m2, all(m2), 'area')
+    expect(s2[0]).toBeGreaterThan(Math.max(...s2.slice(1)))
+    expect(U.heatColor(0)).toContain('hsla(240')
+    expect(U.heatColor(1)).toContain('hsla(0')
+  })
+})

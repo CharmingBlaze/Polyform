@@ -346,3 +346,38 @@ export function packIslands(m: Model, faces: number[], padding = 0.01): number {
   }
   return items.length
 }
+
+// ---------- stretch ----------
+export type StretchKind = 'area' | 'angle'
+/**
+ * UV distortion per face, 0 (none) .. 1 (extreme).
+ * area: |log2| of the face's UV/3D area ratio relative to the median ratio, 2 octaves = 1.
+ * angle: mean difference between the UV and 3D corner angles, 90 degrees = 1.
+ */
+export function stretch(m: Model, faces: number[], kind: StretchKind): number[] {
+  if (kind === 'area') {
+    const a3 = faces.map(f => faceArea3D(m, f)), au = faces.map(f => Math.abs(polyArea(m.faces[f].uv)))
+    // reference = median ratio, so one badly stretched face does not shift everyone else
+    const ratios = faces.map((_, i) => (a3[i] > 1e-12 && au[i] > 1e-12 ? au[i] / a3[i] : NaN)).filter(Number.isFinite).sort((x, y) => x - y)
+    if (!ratios.length) return faces.map(() => 1)
+    const g = ratios[Math.floor(ratios.length / 2)]
+    return faces.map((_, i) => (a3[i] < 1e-12 ? 0 : au[i] < 1e-12 ? 1 : Math.min(1, Math.abs(Math.log2(au[i] / a3[i] / g)) / 2)))
+  }
+  const ang2 = (a: Vec2, b: Vec2, c: Vec2) => { const ux = a[0] - b[0], uy = a[1] - b[1], vx = c[0] - b[0], vy = c[1] - b[1]; const l = Math.hypot(ux, uy) * Math.hypot(vx, vy); return l < 1e-12 ? 0 : Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / l))) }
+  const ang3 = (a: number[], b: number[], c: number[]) => { const u = a.map((x, k) => x - b[k]), v = c.map((x, k) => x - b[k]); const l = Math.hypot(...u) * Math.hypot(...v); return l < 1e-12 ? 0 : Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / l))) }
+  return faces.map(fi => {
+    const f = m.faces[fi], n = f.v.length
+    if (Math.abs(polyArea(f.uv)) < 1e-12) return 1
+    let d = 0
+    for (let i = 0; i < n; i++) {
+      const p = (i + n - 1) % n, q = (i + 1) % n
+      d += Math.abs(ang2(f.uv[p], f.uv[i], f.uv[q]) - ang3(m.verts[f.v[p]], m.verts[f.v[i]], m.verts[f.v[q]]))
+    }
+    return Math.min(1, d / n / (Math.PI / 2))
+  })
+}
+/** heatmap colour: blue (0) -> cyan -> green -> yellow -> red (1) */
+export function heatColor(t: number): string {
+  const h = (1 - Math.max(0, Math.min(1, t))) * 240
+  return `hsla(${h.toFixed(0)}, 85%, 50%, 0.55)`
+}

@@ -35,6 +35,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 })
   const [size, setSize] = useState({ w: 300, h: 300 })
   const [checker, setChecker] = useState(false)
+  const [heat, setHeat] = useState<'off' | U.StretchKind>('off')
   const version = useStore(s => s.version)
   const selFaces = useStore(s => s.selFaces)
   const selVerts = useStore(s => s.selVerts)
@@ -107,14 +108,15 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const st = useStore.getState()
     const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
     g.lineWidth = 1.2
-    for (const fi of faces) {
+    const heatVals = heat !== 'off' ? U.stretch(m, faces, heat) : null
+    faces.forEach((fi, k) => {
       const f = m.faces[fi]
       const p = f.uv.map(toPx)
       g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
       const on = st.selFaces.has(fi) && (faceMode || f.uv.every((_, i) => sel.has(fi * 1024 + i)))
-      g.fillStyle = on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
+      g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
       g.strokeStyle = on ? '#ffa04a' : '#7fb0ff'; g.stroke()
-    }
+    })
     // selected edges
     g.strokeStyle = '#ffa04a'; g.lineWidth = 2.2; g.beginPath()
     for (const fi of faces) {
@@ -379,6 +381,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <span className="grow" />
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
+        </select>
+        <select data-testid="uv-stretch" title="Stretch heatmap: blue = true to the 3D shape, red = distorted" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+          <option value="off">No heatmap</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option>
         </select>
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
         <button title="Reset view" data-testid="uv-reset-view" onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>⟲</button>

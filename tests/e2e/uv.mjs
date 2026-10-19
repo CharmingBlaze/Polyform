@@ -203,6 +203,14 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   const overl = cents.some((c, i) => packed.some((f, j) => j !== i && inside(c, f)))
   check('Pack separates the overlapping islands inside 0..1 with equal sizes', !overl && packed.flat().every(([u, v]) => u >= 0 && u <= 1 && v >= 0 && v <= 1) && Math.abs(area(packed[0]) - area(packed[5])) < 1e-6 && area(packed[0]) > 0.05, JSON.stringify(packed.map(area)))
   await p.screenshot({ path: '/workspace/shot-uv-pack.png' })
+  // stretch heatmap: shrink face 0 to a third of its width -> it turns warm, the rest stay blue
+  await S(() => window.__polyform.getState().edit(m => { const f = m.faces[0], u0 = Math.min(...f.uv.map(q => q[0])); f.uv = f.uv.map(([u, v]) => [u0 + (u - u0) / 3, v]) }, "shrink"))
+  await p.selectOption('[data-testid="uv-stretch"]', 'area'); await frame()
+  const px = fi => S(async fi => { const f = window.__polyform.getState().model.faces[fi]; const c = [f.uv.reduce((s, q) => s + q[0], 0) / 4, f.uv.reduce((s, q) => s + q[1], 0) / 4]; const at = window.__polyformUV.toClient(...c); const cv = document.querySelector('[data-testid="uv-canvas"]'); const r = cv.getBoundingClientRect(); const k = cv.width / r.width; return Array.from(cv.getContext('2d').getImageData((at.x - r.left) * k, (at.y - r.top) * k, 1, 1).data) }, fi)
+  const hot = await px(0), cold = await px(5)
+  check('stretch heatmap: the shrunk face is warm (red > blue), an undistorted one is blue', hot[0] > hot[2] && cold[2] > cold[0], JSON.stringify({ hot, cold }))
+  await p.screenshot({ path: '/workspace/shot-uv-stretch.png' })
+  await p.selectOption('[data-testid="uv-stretch"]', 'off')
 }
 
 // 5. Images library + per-face materials: two images on different faces of a box, export, validate
