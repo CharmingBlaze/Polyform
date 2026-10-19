@@ -78,6 +78,15 @@ export const commands: Command[] = [
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
   { id: 'edit.undo', label: 'Undo', group: 'Edit', keys: 'Ctrl+Z', run: () => S().doUndo() },
   { id: 'edit.redo', label: 'Redo', group: 'Edit', keys: 'Ctrl+Shift+Z', run: () => S().doRedo() },
+  { id: 'joint.addAtCursor', label: 'Add joint at 3D cursor', group: 'Setup', keys: 'Shift+A', run: () => S().addJointAtCursor() },
+  { id: 'cursor.origin', label: '3D cursor to origin', group: 'View', keys: 'Shift+C', run: () => S().set({ cursor3d: [0, 0, 0] }) },
+  { id: 'cursor.selection', label: '3D cursor to selection', group: 'View', run: () => void import('./scene').then(({ sceneManager }) => {
+    const s = S(), P = sceneManager.posed
+    const pts = s.selectMode === 'joint' || s.mode === 'animate' ? [...s.selBones].map(b => sceneManager.joints[b]) : s.activeVerts().map(v => P[v])
+    if (!pts.length) return s.notify('Select something first')
+    const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length], [0, 0, 0])
+    s.set({ cursor3d: c as [number, number, number] })
+  }) },
   { id: 'joint.bind', label: 'Bind selected verts to active joint', group: 'Setup', keys: 'Ctrl+P', run: () => S().assignToJoint() },
   { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', run: () => S().autoBindSelection() },
   { id: 'joint.mirror', label: 'Mirror joints (L/R)', group: 'Setup', run: () => S().mirrorSelectedJoints() },

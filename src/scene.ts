@@ -144,6 +144,10 @@ class SceneManager {
       l.layers.enableAll(); l.renderOrder = 1; s.add(l); return l
     })
 
+    // 3D cursor: a small red/white crosshair, always on top
+    const cur = new THREE.LineSegments(this.cursorGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false }))
+    cur.layers.enableAll(); cur.renderOrder = 8; cur.frustumCulled = false; s.add(cur)
+
     // tool overlay (loop cut preview, knife path): on top in every pane
     const toolL = new THREE.LineSegments(this.toolLineGeo, new THREE.LineBasicMaterial({ color: '#ffe04a', depthTest: false, transparent: true }))
     toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
@@ -153,7 +157,7 @@ class SceneManager {
     useStore.subscribe((st, prev) => {
       if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
-        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev) this.rebuild()
+        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.showSkeleton !== prev.showSkeleton || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d) this.rebuild()
     })
     textures.onChange(() => { this.matKey = ''; this.invalidate() })
     this.rebuild()
@@ -167,6 +171,7 @@ class SceneManager {
   pointObjs: THREE.Object3D[] = []
 
   invalidate() { this.dirty = true }
+  readonly cursorGeo = new THREE.BufferGeometry()
   readonly toolLineGeo = new THREE.BufferGeometry()
   readonly toolPointGeo = new THREE.BufferGeometry()
   /** Lines (xyz pairs) and points drawn on top of everything, for modal tools; null clears. */
@@ -326,6 +331,14 @@ class SceneManager {
     setAttr(this.pointGeo, 'color', col, 3)
     this.pointObjs.forEach(o => (o.visible = showPts))
 
+    {
+      const c = st.cursor3d, r = 0.12, cp: number[] = [], cc: number[] = []
+      for (let a = 0; a < 3; a++) for (const sgn of [-1, 1]) {
+        const q0 = [...c], q1 = [...c]; q0[a] += sgn * r * 0.35; q1[a] += sgn * r
+        cp.push(...q0, ...q1); const col = sgn > 0 ? [1, 0.25, 0.25] : [1, 1, 1]; cc.push(...col, ...col)
+      }
+      setAttr(this.cursorGeo, 'position', cp, 3); setAttr(this.cursorGeo, 'color', cc, 3)
+    }
     const jp: number[] = [], jc: number[] = [], bp: number[] = [], bc: number[] = []
     this.joints.forEach((j, i) => {
       jp.push(...j)

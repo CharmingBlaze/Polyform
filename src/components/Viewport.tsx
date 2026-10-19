@@ -25,7 +25,7 @@ const ORTHO_DIR: Record<string, { pos: Vec3; up: Vec3 }> = {
 
 type Drag =
   | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean }
-  | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number }
+  | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number; cursorAt?: { x: number; y: number } }
   | { kind: 'paint' }
   | { kind: 'draw'; phase: 'foot' | 'height'; p0: THREE.Vector3; x0: number; y0: number; moved: boolean; h0?: number }
   | { kind: 'drawHandle'; axis: number; side: 0 | 1; x0: number; y0: number; v: { x: number; y: number }; min: Vec3; max: Vec3 }
@@ -832,7 +832,7 @@ export function Viewport({ pane }: { pane: number }) {
     }
     hit.current!.setPointerCapture(e.pointerId)
     if (e.button === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
-    if (e.button === 1 || (e.button === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y }; return }
+    if (e.button === 1 || (e.button === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(e.button === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
     if (e.button === 2 || (e.button === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
     if (e.button !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
@@ -952,6 +952,16 @@ export function Viewport({ pane }: { pane: number }) {
 
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current
+    if (d?.kind === 'pan' && d.cursorAt) {
+      // Shift+right-click without dragging: place the 3D cursor on the surface under the mouse, else on the view plane
+      const { x, y } = local(e)
+      if (Math.hypot(x - d.cursorAt.x, y - d.cursorAt.y) < 4) {
+        const h = ray(x, y).intersectObject(sceneManager.pickMesh, false)[0]
+        const p = h ? h.point : placePoint(x, y)
+        useStore.getState().set({ cursor3d: [p.x, p.y, p.z] })
+      }
+      drag.current = null; return
+    }
     if (d?.kind === 'drawHandle') { drag.current = null; return }
     if (d?.kind === 'draw') {
       const dr = useStore.getState().draw

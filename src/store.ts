@@ -65,6 +65,9 @@ interface State {
   autoKey: boolean
   onion: boolean
   showSkeleton: boolean
+  /** Blender-style 3D cursor: Shift+right-click places it; Shift+A adds a joint there */
+  cursor3d: Vec3
+  addJointAtCursor: () => void
   layout: Layout
   panes: Pane[]
   maximized: number | null
@@ -229,6 +232,7 @@ export const useStore = create<State>((set, get) => ({
   autoKey: true,
   onion: false,
   showSkeleton: true,
+  cursor3d: [0, 0, 0],
   layout: '4',
   panes: DEFAULT_PANES,
   maximized: null,
@@ -607,6 +611,15 @@ export const useStore = create<State>((set, get) => ({
   subdivide: () => get().runOp('con.subdivide'),
 
   // ------------------------------------------------------------------ bones
+  addJointAtCursor: () => {
+    const s = get()
+    if (s.mode !== 'model') return s.notify('Switch to Model mode to add joints')
+    const parent = s.selectMode === 'joint' ? [...s.selBones][s.selBones.size - 1] ?? -1 : -1
+    const pos = [...s.cursor3d] as Vec3
+    s.edit(m => m.bones.push({ name: `Joint ${m.bones.length + 1}`, parent, pos }), 'Add joint at cursor')
+    set({ selectMode: 'joint', selBones: new Set([get().model.bones.length - 1]) })
+    s.notify(parent >= 0 ? `Added a joint at the 3D cursor under ${s.model.bones[parent].name}` : 'Added a root joint at the 3D cursor')
+  },
   assignToJoint: () => {
     const s = get()
     const bone = [...s.selBones][s.selBones.size - 1]
