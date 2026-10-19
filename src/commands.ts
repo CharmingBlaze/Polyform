@@ -2,7 +2,7 @@ import { useStore, type EditMode, type Tool } from './store'
 import { exportGLB, exportOBJ, saveProject } from './io'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
-import { interaction, isModalActive } from './interaction'
+import { isModalActive, overUV } from './interaction'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -149,7 +149,7 @@ export function installShortcuts(openPalette: () => void) {
     if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
     const combo = comboOf(e)
     if (!combo) return
-    if (interaction.hoverUV && ['G', 'R', 'S', 'L'].includes(combo)) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: e.code })); return }
+    if (['G', 'R', 'S', 'L'].includes(combo) && overUV()) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: e.code })); return }
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
     if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }
     const c = map.get(combo.toUpperCase())

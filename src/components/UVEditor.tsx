@@ -265,7 +265,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   // modal keys routed here while the pointer is over the editor
   useEffect(() => {
     const onUVKey = (e: Event) => {
-      const code = (e as CustomEvent<string>).detail, { x, y } = mouse.current
+      // pointer position from the global tracker (local px of the canvas)
+      const r = cv.current!.getBoundingClientRect()
+      const code = (e as CustomEvent<string>).detail, x = interaction.pointer.x - r.left, y = interaction.pointer.y - r.top
+      mouse.current = { x, y }
       if (drag.current) return
       if (code === 'KeyG') beginXf('move', x, y, true)
       else if (code === 'KeyR') beginXf('rotate', x, y, true)
@@ -282,7 +285,11 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     window.addEventListener('keydown', onKey, true)
     return () => { window.removeEventListener('uv-key', onUVKey); window.removeEventListener('keydown', onKey, true) }
   })
-  useEffect(() => () => { interaction.hoverUV = false }, [])
+  useEffect(() => {
+    interaction.uvCanvas = cv.current
+    const el = cv.current
+    return () => { if (interaction.uvCanvas === el) interaction.uvCanvas = null }
+  }, [])
 
   const down = (e: React.PointerEvent) => {
     cv.current!.setPointerCapture(e.pointerId)
@@ -378,8 +385,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       </div>
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()}
-          onPointerEnter={() => (interaction.hoverUV = true)} onPointerLeave={() => (interaction.hoverUV = false)} />
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
         <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · click/drag select · G R S · L island · wheel zoom · right-drag pan</div>
       </div>
       <div className="uv-actions">
