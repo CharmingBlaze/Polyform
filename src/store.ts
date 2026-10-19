@@ -9,6 +9,7 @@ import { History } from './history'
 import { defaults, opById, type OpSel } from './ops'
 import { topology } from './topology'
 import * as X from './extrude'
+import { applyAtlas, atlasInput } from './unwrap'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
@@ -171,6 +172,8 @@ interface State {
 
   // materials
   addMaterial: () => number
+  /** Auto UV (xatlas) on the selected faces, or every visible face; one undo step */
+  autoUV: () => Promise<boolean>
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
 }
@@ -779,6 +782,25 @@ export const useStore = create<State>((set, get) => ({
   setClip: i => set({ clip: i, frame: 0, playing: false }),
 
   // ------------------------------------------------------------------ materials
+  autoUV: async () => {
+    const s = get()
+    let faces = s.activeFaces()
+    if (!faces.length) faces = s.model.faces.map((f, i) => (f.hidden || s.model.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
+    if (!faces.length) { s.notify('Nothing to unwrap'); return false }
+    try {
+      const inp = atlasInput(s.model, faces)
+      const ver = s.version
+      const { xatlasUnwrapper } = await import('./xatlas') // lazy: Worker + wasm only in the browser
+      const out = await xatlasUnwrapper.unwrap(inp.positions, inp.indices)
+      if (get().version !== ver) { get().notify('The model changed while unwrapping; run Auto UV again'); return false }
+      get().edit(m => applyAtlas(m, inp, out), 'Auto UV')
+      get().notify(`Auto UV: unwrapped ${faces.length} faces`)
+      return true
+    } catch (e) {
+      get().notify(String((e as Error).message || e))
+      return false
+    }
+  },
   addMaterial: () => {
     let idx = 0
     get().edit(m => { idx = m.materials.length; m.materials.push(M.newMaterial(`Material ${m.materials.length + 1}`, ['#d0d4dc', '#e07a5f', '#81b29a', '#f2cc8f', '#6d8bff', '#b388eb'][m.materials.length % 6])) }, 'New material')

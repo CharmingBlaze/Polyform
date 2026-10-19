@@ -101,8 +101,8 @@ export function ToolRail() {
         {tab === 'Multiply' && ops('Multiply')}
         {tab === 'Construct' && <>{ops('Construct')}<CmdBtn cmd="edit.delete" label="Delete" /></>}
         {tab === 'Map' && <>
-          <h4>Materials</h4>
-          <p className="muted">Assign images and UV tools live in the UV workspace (coming with the UV step).</p>
+          <h4>UV</h4>
+          <CmdBtn cmd="uv.auto" label="Auto UV" testid="auto-uv" />
         </>}
         {tab === 'Paint' && <>
           <CmdBtn cmd="tool.paint" label="Paint brush" active={tool === 'paint'} testid="brush" />

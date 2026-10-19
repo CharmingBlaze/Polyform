@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
@@ -22,14 +22,17 @@
     "test:drawprim": "node tests/e2e/run.mjs drawprim.mjs",
     "test:rig": "node tests/e2e/run.mjs rig.mjs",
     "test:joints": "node tests/e2e/run.mjs joints.mjs",
-    "test:timeline": "node tests/e2e/run.mjs timeline.mjs"
+    "test:timeline": "node tests/e2e/run.mjs timeline.mjs",
+    "test:uv": "node tests/e2e/run.mjs uv.mjs"
   },
   "dependencies": {
+    "comlink": "4.4.2",
     "idb-keyval": "6.3.0",
     "lucide-react": "1.59.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.186.1",
+    "xatlasjs": "0.2.0",
     "zustand": "5.0.15"
   },
   "devDependencies": {
