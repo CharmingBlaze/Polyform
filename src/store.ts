@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { create } from 'zustand'
 import { interaction, isModalActive } from './interaction'
 import * as M from './model'
+import { SAMPLES, type SampleId } from './samples'
 import * as G from './geom'
 import * as B from './bones'
 import { sampleBone, sampleObject, skinnedGroups } from './anim'
@@ -208,6 +209,8 @@ interface State {
   assignMaterial: (mat: number) => void
   setMaterialTexture: (mat: number, tex: string | null) => void
   setPaint: (p: Partial<PaintSettings>) => void
+  /** Replace the scene with a sample project (one undo step: Ctrl+Z returns to the previous scene). */
+  openSample: (id: SampleId) => void
   /** Images library: each image becomes a material named after it (one material per image). With assign, the
    *  selected faces get the first one, in the same undo step. Returns the new material indices. */
   addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
@@ -311,7 +314,9 @@ export const useStore = create<State>((set, get) => ({
     const was = s.workspace
     s.setMode(w === 'animate' ? 'animate' : 'model')
     s.setUVSpace(w === 'uv')
-    const p: Partial<State> = { workspace: w, railTab: RAIL[w], sideTab: SIDE[w] }
+    // object animation (no joints) is picked in the Outliner
+    const side = w === 'animate' && !s.model.bones.length ? 'scene' : SIDE[w]
+    const p: Partial<State> = { workspace: w, railTab: RAIL[w], sideTab: side }
     const tool = get().tool
     if (w === 'paint') {
       // paint in one big textured perspective view; leaving restores the layout
@@ -960,6 +965,15 @@ export const useStore = create<State>((set, get) => ({
     s.edit(m => M.removeMaterial(m, mat), 'Remove image')
     set({ activeMat: Math.max(0, Math.min(mat, get().model.materials.length - 1)) })
     s.notify(`Removed ${mt.name} (Ctrl+Z restores it)`)
+  },
+  openSample: id => {
+    const sm = SAMPLES.find(x => x.id === id)
+    if (!sm) return
+    const s = get(), fresh = sm.make()
+    s.edit(m => { m.verts = fresh.verts; m.vbone = fresh.vbone; m.faces = fresh.faces; m.groups = fresh.groups; m.materials = fresh.materials; m.bones = fresh.bones; m.clips = fresh.clips; m.wires = fresh.wires }, `Open sample: ${sm.label}`)
+    set({ ...clearSel(), clip: 0, frame: 0, playing: false, activeMat: 0, lastOp: null })
+    s.notify(`Opened the ${sm.label} sample (Ctrl+Z returns to your scene)`)
+    setTimeout(() => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })), 0)
   },
   setPaint: p => set(s => ({ paint: { ...s.paint, ...p, size: Math.max(1, Math.min(200, p.size ?? s.paint.size)), opacity: Math.max(0.01, Math.min(1, p.opacity ?? s.paint.opacity)), hardness: Math.max(0, Math.min(1, p.hardness ?? s.paint.hardness)) } })),
   setMaterialTexture: (mat, tex) => get().edit(m => { m.materials[mat].texture = tex }, tex ? 'Set texture' : 'Remove texture'),

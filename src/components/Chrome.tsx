@@ -74,6 +74,9 @@ export function ToolRail() {
           <CmdBtn cmd="tool.point" label="Point" active={tool === 'point'} />
           <CmdBtn cmd="op.con.face" label="Make polygon" />
           <CmdBtn cmd="tool.joint" label="Joints" active={tool === 'joint'} />
+          <h4>Samples</h4>
+          <CmdBtn cmd="sample.character" label="Character + walk" testid="sample-character" />
+          <CmdBtn cmd="sample.windmill" label="Windmill" testid="sample-windmill" />
         </>}
         {tab === 'Modify' && <>
           <h4>Transform</h4>

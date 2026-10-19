@@ -1,4 +1,4 @@
-import { ArrowRight, Box, Check, Circle, Cylinder, FolderOpen } from 'lucide-react'
+import { ArrowRight, Box, Check, Circle, Cylinder, FolderOpen, PersonStanding, Wind } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { byId } from '../commands'
 import { useStore, WORKSPACES, type Workspace } from '../store'
@@ -57,7 +57,7 @@ export function HintBar() {
   const f = useMemo(() => flowState(m), [m, version]) // eslint-disable-line react-hooks/exhaustive-deps
   let text: ReactNode, acts: ReactNode = null
   if (ws === 'model') {
-    if (!f.faces) { text = 'Start with a primitive from the Create tab, a sample, or open a file.'; acts = <><Act onClick={() => useStore.getState().addPrimitive('box')} label="Add box" testid="hint-box" primary /><Act cmd="file.open" label="Open…" testid="hint-open" /></> }
+    if (!f.faces) { text = 'Start with a primitive from the Create tab, a sample, or open a file.'; acts = <><Act onClick={() => useStore.getState().addPrimitive('box')} label="Add box" testid="hint-box" primary /><Act cmd="sample.character" label="Sample character" testid="hint-sample" /><Act cmd="file.open" label="Open…" testid="hint-open" /></> }
     else { text = <>Shape it: <kbd>E</kbd> extrude · <kbd>Ctrl+R</kbd> loop cut · <kbd>K</kbd> knife · <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform · <kbd>Tab</kbd> cycles point / edge / face.</>; acts = <Next to="uv" /> }
   } else if (ws === 'uv') {
     if (!f.faces) text = 'Nothing to unwrap yet: add a shape in Model first.'
@@ -106,6 +106,11 @@ export function EmptyScene() {
           <button data-testid="empty-sphere" onClick={() => add('sphere')}><Circle size={14} /> Sphere</button>
           <button data-testid="empty-cylinder" onClick={() => add('cylinder')}><Cylinder size={14} /> Cylinder</button>
           <button data-testid="empty-open" onClick={() => byId['file.open']?.run()}><FolderOpen size={14} /> Open…</button>
+        </div>
+        <div className="eb samples-label">Samples</div>
+        <div className="row">
+          <button className="primary" data-testid="empty-sample-character" onClick={() => useStore.getState().openSample('character')}><PersonStanding size={14} /> Character + walk</button>
+          <button className="primary" data-testid="empty-sample-windmill" onClick={() => useStore.getState().openSample('windmill')}><Wind size={14} /> Windmill</button>
         </div>
       </div>
     </div>

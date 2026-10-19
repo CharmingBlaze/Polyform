@@ -13,7 +13,7 @@ export function Sidebar() {
   const setTab = (t: SideTab) => useStore.getState().set({ sideTab: t })
   const mode = useStore(s => s.mode)
   const uvSpace = useStore(s => s.uvSpace)
-  useEffect(() => { if (mode === 'animate' && useStore.getState().sideTab === 'scene') setTab('joints') }, [mode])
+  useEffect(() => { const s = useStore.getState(); if (mode === 'animate' && s.sideTab === 'scene' && s.model.bones.length) setTab('joints') }, [mode])
   useEffect(() => { if (uvSpace) setTab('uv') }, [uvSpace])
   return (
     <aside className="sidebar">

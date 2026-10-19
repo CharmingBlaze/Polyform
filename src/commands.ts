@@ -120,6 +120,8 @@ export const commands: Command[] = [
   { id: 'view.skeleton', label: 'Toggle skeleton', group: 'View', run: () => S().set({ showSkeleton: !S().showSkeleton }) },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
   { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
+  { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },
+  { id: 'sample.windmill', label: 'Open sample: Windmill (animated prop)', group: 'File', run: () => S().openSample('windmill') },
   { id: 'file.open', label: 'Open / import…', group: 'File', keys: 'Ctrl+O', run: openFile },
   { id: 'file.save', label: 'Save project (.json)', group: 'File', keys: 'Ctrl+S', run: () => saveProject(S().model) },
   { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => exportGLB(S().model).then(w => S().notify(w.length ? `Exported model.glb with ${w.length} warning(s): ${w[0]}` : 'Exported model.glb')) },
