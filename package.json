@@ -4,14 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/export.mjs",
-    "test:workflow": "node tests/e2e/workflow.mjs",
-    "test:viewport": "node tests/e2e/viewport.mjs"
+    "test:e2e": "node tests/e2e/run.mjs export.mjs",
+    "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
+    "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "idb-keyval": "6.3.0",
