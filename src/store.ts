@@ -394,11 +394,13 @@ export const useStore = create<State>((set, get) => ({
     history.begin(s.model, op.label)
     try {
       const r = op.run(s.model, sel, p) || {}
+      const copied = M.unshareVerts(s.model) // an op must never leave a point used by two objects
       M.validateModel(s.model)
       set(st => ({ version: st.version + 1, histRev: st.histRev + 1, extruding: false }))
       applyResult(r)
-      set({ lastOp: { id, params: p, sel, rev: get().version, note: r.note } })
-      if (r.note) s.notify(r.note)
+      const note = [r.note, copied ? `Objects can't share points: copied ${copied} point${copied > 1 ? 's' : ''} (join the objects first to weld across them)` : ''].filter(Boolean).join(' · ') || undefined
+      set({ lastOp: { id, params: p, sel, rev: get().version, note } })
+      if (note) s.notify(note)
     } catch (err) {
       history.cancel()
       set(st => ({ model: before, version: st.version + 1, histRev: st.histRev + 1 }))
@@ -415,6 +417,7 @@ export const useStore = create<State>((set, get) => ({
     history.begin(base, op.label)
     try {
       const r = op.run(base, lo.sel, p) || {}
+      M.unshareVerts(base)
       M.validateModel(base)
       set(st => ({ model: base, version: st.version + 1 }))
       applyResult(r)

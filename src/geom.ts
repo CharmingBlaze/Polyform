@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import {
   addPolys, cleanFaces, edgeEnds, edgeKey, extrudeFaces, faceCenter, lathePolys, newell, newGroup, removeEmptyGroups, removeOrphans,
   triangulate, vertsOfFaces, weldVerts, type Face, type Model, type Vec2, type Vec3,
+  unshareVerts,
 } from './model'
 
 export type Axis = 0 | 1 | 2
@@ -338,13 +339,13 @@ export function mergeByDistance(m: Model, verts: number[], dist: number): number
 
 // ---------------------------------------------------------------- groups
 
-/** Move faces into a new group. With `detach`, points shared with other faces are split so the parts separate. */
-export function separateFaces(m: Model, faces: number[], name: string, detach = true): number {
+/** Move faces into a new object. Points shared with the faces left behind are copied: objects never share points. */
+export function separateFaces(m: Model, faces: number[], name: string): number {
   const g = m.groups.length
   const src = m.groups[m.faces[faces[0]].g]
   m.groups.push({ ...newGroup(name, src?.mat ?? 0), smooth: src?.smooth ?? 0 })
   const sel = new Set(faces)
-  if (detach) {
+  {
     const outside = new Set<number>()
     m.faces.forEach((f, i) => { if (!sel.has(i)) f.v.forEach(v => outside.add(v)) })
     const dup = new Map<number, number>()
@@ -360,13 +361,14 @@ export function separateFaces(m: Model, faces: number[], name: string, detach = 
   return m.groups.length - 1
 }
 
-/** Merge groups into the first one listed. */
+/** Join objects into the first one listed (points stay separate; weld them afterwards if wanted). */
 export function mergeGroups(m: Model, groups: number[]) {
   const gs = [...new Set(groups)].sort((a, b) => a - b)
   if (gs.length < 2) return
   const into = gs[0], rest = new Set(gs.slice(1))
   m.faces.forEach(f => { if (rest.has(f.g)) f.g = into })
   removeEmptyGroups(m)
+  unshareVerts(m)
 }
 
 // ---------------------------------------------------------------- construct

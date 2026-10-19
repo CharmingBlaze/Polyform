@@ -119,8 +119,8 @@ export const OPS: OpDef[] = [
   },
   { id: 'con.unweld', label: 'Unweld', tab: 'Construct', needs: 'faces', params: [], run: (m, s) => { G.unweldFaces(m, s.faces); return facesSel(s.faces) } },
   {
-    id: 'con.separate', label: 'Separate to group', tab: 'Construct', needs: 'faces', params: [BOOL('detach', 'Detach points', 1)],
-    run: (m, s, p) => { const g = G.separateFaces(m, s.faces, `Group ${m.groups.length + 1}`, !!p.detach); const f = m.faces.map((x, i) => (x.g === g ? i : -1)).filter(i => i >= 0); return facesSel(f) },
+    id: 'con.separate', label: 'Separate to group', tab: 'Construct', needs: 'faces', params: [],
+    run: (m, s) => { const g = G.separateFaces(m, s.faces, `Group ${m.groups.length + 1}`); const f = m.faces.map((x, i) => (x.g === g ? i : -1)).filter(i => i >= 0); return facesSel(f) },
   },
   {
     id: 'con.mergeGroups', label: 'Merge groups', tab: 'Construct', needs: 'faces', params: [],

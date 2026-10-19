@@ -104,6 +104,8 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
     const clip = { ...newClip(), okeys: {}, frames: 'frames' in r ? r.frames : 30, fps: 'fps' in r ? r.fps : 24, keys: 'keys' in r ? r.keys : {} }
     const out: Raw = { ...r, version: 2, groups, materials: [{ ...newMaterial(), texture: legacyTex ? 'tex1' : null }], clips: [clip], textures }
     delete out.frames; delete out.fps; delete out.keys; delete out.texture
+    // v1 allowed one point to serve several groups; v2 objects own their points (bad data is left for validateModel)
+    try { if (Array.isArray(out.faces) && Array.isArray(out.verts) && Array.isArray(out.vbone)) unshareVerts(out as unknown as Model) } catch { /* rejected by validateModel */ }
     return out
   },
 }
@@ -170,6 +172,7 @@ export function validateModel(m: Model) {
     const x = g.xf
     if (!x || !vec(x.pivot, 3) || !vec(x.pos, 3) || !vec(x.rot, 3) || !vec(x.scale, 3)) throw new Error(`Group ${i} has an invalid transform`)
   })
+  const owner = new Int32Array(nv).fill(-1)
   m.faces.forEach((f, i) => {
     if (!f || !Array.isArray(f.v) || f.v.length < 3 || f.v.length > MAX_CORNERS || !f.v.every(v => int(v, 0, nv))) throw new Error(`Face ${i} references a missing vertex`)
     if (new Set(f.v).size !== f.v.length) throw new Error(`Face ${i} repeats a vertex`)
@@ -177,6 +180,11 @@ export function validateModel(m: Model) {
     if (!Array.isArray(f.uv) || f.uv.length !== f.v.length || !f.uv.every(u => vec(u, 2))) throw new Error(`Face ${i} has invalid UVs`)
     if (f.hidden !== undefined && typeof f.hidden !== 'boolean') throw new Error(`Face ${i} has an invalid hidden flag`)
     if (f.mat !== undefined && !int(f.mat, 0, nm)) throw new Error(`Face ${i} references a missing material`)
+    f.v.forEach(v => {
+      const o = owner[v]
+      if (o === -1) owner[v] = f.g
+      else if (o !== f.g) throw new Error(`Vertex ${v} is shared by objects ${o} and ${f.g}; each object needs its own points`)
+    })
     if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
   })
   m.bones.forEach((b, i) => {
@@ -799,5 +807,35 @@ export function deleteBones(m: Model, bones: Set<number>) {
 export function triCount(m: Model, faces?: number[]): number {
   let n = 0
   for (const i of faces ?? m.faces.keys()) n += triangulate(m.verts, m.faces[i]).length
+  return n
+}
+
+/** Points used by faces of more than one object (group). */
+export function sharedVerts(m: Model): number[] {
+  const owner = new Map<number, number>(), out = new Set<number>()
+  for (const f of m.faces) for (const v of f.v) { const o = owner.get(v); if (o === undefined) owner.set(v, f.g); else if (o !== f.g) out.add(v) }
+  return [...out]
+}
+
+/**
+ * Give every object its own copy of any point it shares with another object (the first object keeps the original).
+ * Export writes one node per object, so a shared point would be duplicated there anyway; doing it here keeps the
+ * editor and the game in agreement. Returns the number of copies made.
+ */
+export function unshareVerts(m: Model): number {
+  const owner = new Map<number, number>()
+  const copies = new Map<string, number>()
+  let n = 0
+  for (const f of m.faces) {
+    f.v = f.v.map(v => {
+      const o = owner.get(v)
+      if (o === undefined) { owner.set(v, f.g); return v }
+      if (o === f.g) return v
+      const k = `${v}:${f.g}`
+      let c = copies.get(k)
+      if (c === undefined) { c = m.verts.length; m.verts.push([...m.verts[v]] as Vec3); m.vbone.push(m.vbone[v]); copies.set(k, c); n++ }
+      return c
+    })
+  }
   return n
 }
