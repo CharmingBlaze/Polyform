@@ -1,8 +1,9 @@
 #!/bin/sh
-# Pre-commit gate: typecheck, unit tests, e2e (glb export validated by the Khronos validator), build.
+# Pre-commit gate: lint (errors only), typecheck, unit tests, e2e (glb export validated by the Khronos validator), build.
 # Installed by `npm install` / `npm run prepare` (git config core.hooksPath .githooks). Do not bypass with --no-verify.
 set -e
 cd "$(git rev-parse --show-toplevel)"
+echo "[pre-commit] lint";      npm run --silent lint:errors
 echo "[pre-commit] typecheck"; npm run --silent typecheck
 echo "[pre-commit] test";      npm run --silent test
 echo "[pre-commit] test:e2e";  npm run --silent test:e2e
