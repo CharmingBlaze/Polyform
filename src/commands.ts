@@ -105,7 +105,7 @@ export const commands: Command[] = [
   { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', run: () => S().autoBindSelection() },
   { id: 'joint.mirror', label: 'Mirror joints (L/R)', group: 'Setup', run: () => S().mirrorSelectedJoints() },
   { id: 'joint.children', label: 'Select joint children', group: 'Setup', run: () => S().selectJointChildren() },
-  { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Ctrl+Tab', run: () => { const s = S(); s.set(s.mode === 'model' ? { mode: 'animate', tool: s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' : s.tool, selectMode: s.selectMode === 'object' ? 'object' : 'joint' } : { mode: 'model', playing: false }) } },
+  { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Ctrl+Tab', run: () => { const s = S(); s.setMode(s.mode === 'model' ? 'animate' : 'model') } },
   { id: 'anim.mode2', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => byId['anim.mode'].run() },
   { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', keys: 'I', run: () => S().setKey() },
   { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },

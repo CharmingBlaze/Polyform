@@ -7,13 +7,13 @@ import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
+import { WorkspaceTabs } from './Workspace'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
 export type Tab = typeof TABS[number]
 
 export function Header({ onPalette }: { onPalette: () => void }) {
-  const mode = useStore(s => s.mode)
   useStore(s => s.histRev)
   const layout = useStore(s => s.layout)
   const tool = useStore(s => s.tool)
@@ -22,10 +22,7 @@ export function Header({ onPalette }: { onPalette: () => void }) {
   return (
     <header className="header">
       <div className="brand"><span className="logo">◆</span> Polyform</div>
-      <div className="seg">
-        <button className={mode === 'model' ? 'on' : ''} data-testid="ws-model" onClick={() => mode !== 'model' && byId['anim.mode'].run()}>Model</button>
-        <button className={mode === 'animate' ? 'on' : ''} data-testid="ws-animate" onClick={() => mode !== 'animate' && byId['anim.mode'].run()}>Animate</button>
-      </div>
+      <WorkspaceTabs />
       <div className="hdr-group">
         <button className="icon-btn" disabled={!history.canUndo()} onClick={byId['edit.undo'].run} title="Undo  ·  Ctrl+Z" data-testid="undo"><Undo2 size={16} /></button>
         <button className="icon-btn" disabled={!history.canRedo()} onClick={byId['edit.redo'].run} title="Redo  ·  Ctrl+Shift+Z" data-testid="redo"><Redo2 size={16} /></button>
@@ -36,16 +33,16 @@ export function Header({ onPalette }: { onPalette: () => void }) {
         ))}
       </div>
       <button className={`ghost ${gizmoSpace === 'local' ? 'on' : ''}`} data-testid="gizmo-space" title="Gizmo axes: global (world) or local (the object's own)" onClick={() => set({ gizmoSpace: gizmoSpace === 'local' ? 'global' : 'local' })}>{gizmoSpace === 'local' ? 'Local' : 'Global'}</button>
-      <label className="layout-pick" title="Viewport layout">Layout
+      <label className="layout-pick" title="Viewport layout">
         <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
           <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
         </select>
       </label>
-      <button className="palette-trigger" onClick={onPalette}><CmdIcon size={14} /> Search commands… <kbd>Ctrl K</kbd></button>
+      <button className="palette-trigger" onClick={onPalette} title="Search commands  ·  Ctrl+K"><CmdIcon size={14} /> <kbd>Ctrl K</kbd></button>
       <span className="grow" />
       <div className="hdr-group">
-        <button className="ghost" onClick={byId['file.open'].run}><Upload size={15} /> Open</button>
-        <button className="ghost" onClick={byId['file.save'].run}><Save size={15} /> Save</button>
+        <button className="ghost" onClick={byId['file.open'].run} title="Open / import  ·  Ctrl+O"><Upload size={15} /></button>
+        <button className="ghost" onClick={byId['file.save'].run} title="Save project  ·  Ctrl+S"><Save size={15} /></button>
         <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run}><Download size={15} /> Export .glb</button>
       </div>
       <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
@@ -55,7 +52,8 @@ export function Header({ onPalette }: { onPalette: () => void }) {
 
 /** LightWave Modeler-style left panel: tool tabs with labeled text buttons. Tabs only change the panel, never the mode. */
 export function ToolRail() {
-  const [tab, setTab] = useState<Tab>('Create')
+  const tab = useStore(s => s.railTab)
+  const setTab = (t: Tab) => useStore.getState().set({ railTab: t })
   const tool = useStore(s => s.tool)
   const axis = useStore(s => s.axis)
   const snap = useStore(s => s.snap)

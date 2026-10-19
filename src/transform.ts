@@ -48,7 +48,7 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
   const clip = st.curClip()
   if (onlyVerts) addVerts(onlyVerts)
   else if (st.mode === 'animate') {
-    const bones = new Set(st.selBones)
+    const bones = new Set([...st.selBones].filter(b => !!m.bones[b]))
     if (st.selectMode === 'object') {
       const skinned = skinnedGroups(m)
       for (const g of objGroups(st)) {
@@ -71,7 +71,7 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
       add(sceneManager.joints[b] ?? m.bones[b].pos)
     })
   } else if (st.selectMode === 'joint') {
-    st.selBones.forEach(b => { T.bones.set(b, v3(m.bones[b].pos)); add(m.bones[b].pos) })
+    st.selBones.forEach(b => { if (!m.bones[b]) return; T.bones.set(b, v3(m.bones[b].pos)); add(m.bones[b].pos) })
   } else if (st.selectMode === 'object') {
     for (const g of objGroups(st)) {
       const x = m.groups[g].xf

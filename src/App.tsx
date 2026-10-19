@@ -3,6 +3,7 @@ import { Viewport } from './components/Viewport'
 import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel } from './components/Chrome'
 import { Sidebar, Timeline } from './components/Panels'
 import { UVEditor } from './components/UVEditor'
+import { EmptyScene, HintBar } from './components/Workspace'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
@@ -38,6 +39,7 @@ export default function App() {
       onDragLeave={e => { if (e.currentTarget === e.target) setDragging(false) }}
       onDrop={e => { e.preventDefault(); setDragging(false); [...e.dataTransfer.files].forEach(f => importFile(f).catch(err => useStore.getState().notify(String(err.message || err)))) }}>
       <Header onPalette={() => setPalette(true)} />
+      <HintBar />
       <div className="main">
         <ToolRail />
         <div className="center">
@@ -45,6 +47,7 @@ export default function App() {
             <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
               {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
+              <EmptyScene />
             </div>
             {uvSpace && <>
               <UVDivider />

@@ -13,6 +13,11 @@ import { applyAtlas, atlasInput } from './unwrap'
 import * as UV from './uvops'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
+/** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
+export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
+export const WORKSPACES: Workspace[] = ['model', 'uv', 'paint', 'rig', 'animate', 'export']
+export type RailTab = 'Create' | 'Modify' | 'Multiply' | 'Construct' | 'Map' | 'Paint' | 'Setup' | 'Animate' | 'Export'
+export type SideTab = 'scene' | 'joints' | 'uv'
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
 export type EditMode = 'vertex' | 'edge' | 'face'
 export type SelectMode = 'object' | EditMode | 'joint'
@@ -82,6 +87,13 @@ interface State {
   /** one side of the UV workspace maximized */
   uvMax: '3d' | 'uv' | null
   setUVSpace: (on: boolean) => void
+  /** current workspace (the highlighted tab follows the mode: Animate mode always shows Animate) */
+  workspace: Workspace
+  railTab: RailTab
+  sideTab: SideTab
+  setWorkspace: (w: Workspace) => void
+  /** Model / Animate mode switch with its tool and selection-mode rules */
+  setMode: (mode: Mode) => void
   showTexture: boolean
   showWire: boolean
   activeMat: number
@@ -205,6 +217,7 @@ interface State {
 }
 
 let toastTimer = 0
+let prePaintMax: number | null = null
 let preUVMax: number | null = null
 const DEFAULT_PANES: Pane[] = [
   { type: 'top', shade: 'wire', grid: true }, { type: 'persp', shade: 'textured', grid: true },
@@ -281,6 +294,38 @@ export const useStore = create<State>((set, get) => ({
       const persp = s.panes.findIndex(p => p.type === 'persp')
       set({ uvSpace: true, uvMax: null, maximized: persp >= 0 ? persp : 1 })
     } else set({ uvSpace: false, uvMax: null, maximized: preUVMax })
+  },
+  workspace: 'model',
+  railTab: 'Create',
+  sideTab: 'scene',
+  setMode: mode => {
+    const s = get()
+    if (mode === s.mode) return
+    if (mode === 'animate') s.set({ mode: 'animate', tool: s.tool === 'joint' || s.tool === 'point' || s.tool === 'paint' ? 'rotate' : s.tool, selectMode: s.selectMode === 'object' ? 'object' : 'joint' })
+    else s.set({ mode: 'model', playing: false })
+  },
+  setWorkspace: w => {
+    const s = get()
+    const RAIL: Record<Workspace, RailTab> = { model: 'Create', uv: 'Map', paint: 'Paint', rig: 'Setup', animate: 'Animate', export: 'Export' }
+    const SIDE: Record<Workspace, SideTab> = { model: 'scene', uv: 'uv', paint: 'uv', rig: 'joints', animate: 'joints', export: 'scene' }
+    const was = s.workspace
+    s.setMode(w === 'animate' ? 'animate' : 'model')
+    s.setUVSpace(w === 'uv')
+    const p: Partial<State> = { workspace: w, railTab: RAIL[w], sideTab: SIDE[w] }
+    const tool = get().tool
+    if (w === 'paint') {
+      // paint in one big textured perspective view; leaving restores the layout
+      if (was !== 'paint') prePaintMax = get().maximized
+      const persp = Math.max(0, get().panes.findIndex(q => q.type === 'persp'))
+      p.tool = 'paint'; p.maximized = persp
+      p.panes = get().panes.map((q, i) => (i === persp ? { ...q, shade: 'textured' } : q))
+    } else {
+      if (tool === 'paint') p.tool = 'select'
+      if (was === 'paint' && w !== 'uv') p.maximized = prePaintMax
+    }
+    if (w === 'rig') { p.showSkeleton = true; if (!s.model.bones.length) p.tool = 'joint' }
+    if (w !== 'rig' && w !== 'model' && get().tool === 'joint') p.tool = 'select'
+    s.set(p)
   },
   showTexture: true,
   showWire: true,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
-import { useStore } from '../store'
+import { useStore, type SideTab } from '../store'
 import { faceMat, triCount } from '../model'
 import { textures } from '../textures'
 import { importImage } from '../io'
@@ -8,10 +8,11 @@ import { UVEditor } from './UVEditor'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 
 export function Sidebar() {
-  const [tab, setTab] = useState<'scene' | 'joints' | 'uv'>('scene')
+  const tab = useStore(s => s.sideTab)
+  const setTab = (t: SideTab) => useStore.getState().set({ sideTab: t })
   const mode = useStore(s => s.mode)
   const uvSpace = useStore(s => s.uvSpace)
-  useEffect(() => { if (mode === 'animate' && tab === 'scene') setTab('joints') }, [mode])
+  useEffect(() => { if (mode === 'animate' && useStore.getState().sideTab === 'scene') setTab('joints') }, [mode])
   useEffect(() => { if (uvSpace) setTab('uv') }, [uvSpace])
   return (
     <aside className="sidebar">
