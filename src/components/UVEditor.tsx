@@ -287,7 +287,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (!d) return
     if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
-    if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { beginXf('move', d.x0, d.y0, false) && updateXf(x, y, e.ctrlKey) } return }
+    if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e.ctrlKey) } return }
     if (d.kind === 'xf') updateXf(x, y, e.ctrlKey)
   }
   const up = (e: React.PointerEvent) => {
