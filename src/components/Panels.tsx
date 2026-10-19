@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
+import { Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
 import { useStore } from '../store'
 import { triCount } from '../model'
 import { UVEditor } from './UVEditor'
@@ -194,7 +194,8 @@ export function Timeline() {
   return (
     <div className={`timeline ${mode === 'animate' ? 'active' : ''}`}>
       <div className="tl-controls">
-        <button className="icon-btn" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
+        <button className="icon-btn" data-testid="frame-start" onClick={() => set({ frame: 0 })} data-tip="First frame"><ChevronFirst size={15} /></button>
+        <button className="icon-btn" data-testid="key-prev" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
         <select className="clip-pick" data-testid="clip-select" value={Math.min(clipIdx, m.clips.length - 1)} onChange={e => st.setClip(+e.target.value)} title="Animation clip">
           {m.clips.map((c, i) => <option key={i} value={i}>{c.name}</option>)}
         </select>
@@ -203,9 +204,10 @@ export function Timeline() {
         <button className="icon-btn" title="Rename clip" onClick={() => { const nm = prompt('Clip name', clip.name); if (nm) st.edit(mm => (mm.clips[clipIdx].name = nm), 'Rename clip') }}>✎</button>
         <button className="icon-btn" title="Delete clip" disabled={m.clips.length < 2} onClick={() => st.deleteClip(clipIdx)}>−</button>
         <button className="icon-btn play" onClick={() => { if (mode !== 'animate') set({ mode: 'animate' }); set({ playing: !playing }) }} data-tip="Play / pause  ·  Space" data-testid="play">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
-        <button className="icon-btn" onClick={() => jump(1)} data-tip="Next key"><SkipForward size={15} /></button>
+        <button className="icon-btn" data-testid="key-next" onClick={() => jump(1)} data-tip="Next key"><SkipForward size={15} /></button>
+        <button className="icon-btn" data-testid="frame-end" onClick={() => set({ frame: n - 1 })} data-tip="Last frame"><ChevronLast size={15} /></button>
         <button className="icon-btn" data-testid="frame-next-10" onClick={() => set({ frame: Math.min(n - 1, useStore.getState().frame + 10) })} data-tip="Forward 10 frames">+10</button>
-        <div className="frame-box">{frame}<span>/{n - 1}</span></div>
+        <div className="frame-box"><FrameInput frame={frame} max={n - 1} onSet={f => set({ frame: f })} /><span>/{n - 1}</span></div>
         <button className="icon-btn" onClick={() => st.setKey()} data-tip="Insert key for selection  ·  I"><KeyRound size={15} /></button>
         <button className="icon-btn" onClick={() => st.deleteKey()} data-tip="Delete key  ·  Alt+I"><Trash2 size={15} /></button>
         <button className={`icon-btn rec ${useStore.getState().autoKey ? 'on' : ''}`} data-testid="autokey-tl" onClick={() => set({ autoKey: !useStore.getState().autoKey })} data-tip="Auto-key (record)">●</button>
@@ -222,10 +224,33 @@ export function Timeline() {
           <div key={k} className={`key ${keyDrag?.from === k ? 'drag' : ''}`} data-testid={`key-${k}`} style={{ left: `${((keyDrag?.from === k ? keyDrag.to : k) / (n - 1)) * 100}%` }}
             onPointerDown={e => { e.stopPropagation(); (e.target as HTMLElement).setPointerCapture(e.pointerId); setKeyDrag({ from: k, to: k }) }}
             onPointerMove={e => { if (keyDrag?.from === k) setKeyDrag({ from: k, to: frameAt(e.clientX) }) }}
-            onPointerUp={() => { if (keyDrag && keyDrag.to !== keyDrag.from) st.moveKey(keyDrag.from, keyDrag.to); setKeyDrag(null) }} />
+            onPointerUp={() => {
+              if (keyDrag && keyDrag.to !== keyDrag.from) st.moveKey(keyDrag.from, keyDrag.to)
+              else if (keyDrag) set({ frame: k }) // a click (no drag) jumps the playhead to the key
+              setKeyDrag(null)
+            }} />
         ))}
         <div className="playhead" style={{ left: `${(frame / (n - 1)) * 100}%` }} />
       </div>
     </div>
+  )
+}
+
+/** editable current frame: type a number, Enter / blur applies (clamped), Esc reverts */
+function FrameInput({ frame, max, onSet }: { frame: number; max: number; onSet: (f: number) => void }) {
+  const [text, setText] = useState<string | null>(null)
+  const cancel = useRef(false)
+  const apply = () => { if (cancel.current) { cancel.current = false; setText(null); return } if (text !== null) { const v = parseInt(text); if (Number.isFinite(v)) onSet(Math.max(0, Math.min(max, v))) } setText(null) }
+  return (
+    <input className="frame-input" data-testid="frame-input" inputMode="numeric" value={text ?? String(frame)} size={4}
+      onFocus={e => { setText(String(frame)); e.target.select() }}
+      onChange={e => setText(e.target.value)}
+      onBlur={apply}
+      onKeyDown={e => {
+        e.stopPropagation()
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') { cancel.current = true; (e.target as HTMLInputElement).blur() }
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); onSet(Math.max(0, Math.min(max, frame + (e.key === 'ArrowUp' ? 1 : -1)))); setText(null) }
+      }} />
   )
 }
