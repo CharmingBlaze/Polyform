@@ -3,7 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, cornerNormals, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
+import { addGeometry, baseColor, cornerNormals, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
 import { useStore } from './store'
@@ -36,7 +36,7 @@ export function buildExportScene(m: Model) {
     // per-material sampler: clone shares the image, so the exporter still embeds it once
     const src = textures.three(mt.texture)
     const tex = src ? applyFilter(src.clone(), mt.filter) : null
-    const mat = new THREE.MeshStandardMaterial({ color: mt.color, roughness: mt.roughness, metalness: mt.metalness, map: tex })
+    const mat = new THREE.MeshStandardMaterial({ color: tex ? '#ffffff' : mt.color, roughness: mt.roughness, metalness: mt.metalness, map: tex })
     mat.name = mt.name
     return mat
   })
@@ -175,7 +175,7 @@ export function exportOBJ(m: Model, name = 'model') {
   })
   download(lines.join('\n'), `${name}.obj`, 'text/plain')
   const mtl = m.materials.map((mt, i) => {
-    const c = new THREE.Color(mt.color)
+    const c = new THREE.Color(baseColor(mt))
     return `newmtl ${sanitize(mt.name)}_${i}\nKd ${c.r.toFixed(4)} ${c.g.toFixed(4)} ${c.b.toFixed(4)}${mt.texture ? `\nmap_Kd ${sanitize(mt.name)}_${i}.png` : ''}\n`
   }).join('\n')
   download(mtl, `${name}.mtl`, 'text/plain')

@@ -252,7 +252,8 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   await p.screenshot({ path: '/workspace/shot-images.png' })
   await p.click(`[data-testid="img-filter-${Bm}"]`); await frame()
   check('filter toggle: blue becomes linear (undoable model change)', (await S(n => window.__polyform.getState().model.materials[n].filter, Bm)) === 'linear' && (await p.textContent(`[data-testid="img-filter-${Bm}"]`)) === 'Smooth')
-  // export
+  // export (give the blue image's material a red base colour: it must not tint the image)
+  await S(n => window.__polyform.getState().edit(m => { m.materials[n].color = '#ff0000' }, 'tint'), Bm)
   const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press('Control+e')])
   const file = '/tmp/polyform-uv-images.glb'; await dl.saveAs(file)
   const bytes = new Uint8Array(fs.readFileSync(file))
@@ -262,6 +263,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   const gltf = JSON.parse(new TextDecoder().decode(bytes.slice(20, 20 + jlen)))
   const bin = bytes.slice(20 + jlen + 8)
   const prims = gltf.meshes.flatMap(me => me.primitives)
+  check('export: textured materials are not tinted (white base colour factor)', gltf.materials.filter(mt => mt.pbrMetallicRoughness?.baseColorTexture).every(mt => !mt.pbrMetallicRoughness.baseColorFactor || mt.pbrMetallicRoughness.baseColorFactor.slice(0, 3).every(v => v === 1)), JSON.stringify(gltf.materials))
   check('export: two images on two face sets = 2 primitives', prims.length === 2, String(prims.length))
   const texOf = pr => gltf.materials[pr.material]?.pbrMetallicRoughness?.baseColorTexture?.index
   const imgs = prims.map(pr => gltf.images[gltf.textures[texOf(pr)]?.source])

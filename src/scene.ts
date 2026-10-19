@@ -244,7 +244,7 @@ class SceneManager {
       if (own) applyFilter(own, mt.filter)
       const map = tex ? own ?? (st.showTexture ? this.checker : null) : null
       return new THREE.MeshStandardMaterial({
-        color: mt.color, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
+        color: own ? '#ffffff' : mt.color, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       })
     })

@@ -41,7 +41,7 @@ function texOf(fi: number): string | null {
   return id && textures.canvas(id) ? id : null
 }
 
-/** Give the face's material an image to paint into: filled with its colour, which then turns white so it looks the same. */
+/** Give the face's material an image to paint into, filled with its colour (images are never tinted by the base colour). */
 function ensureTexture(fi: number): string | null {
   const have = texOf(fi)
   if (have) return have
@@ -49,7 +49,7 @@ function ensureTexture(fi: number): string | null {
   if (!mt) return null
   const size = s.paint.texSize
   const id = textures.create(size, size, mt.color)
-  s.edit(mm => { mm.materials[mat].texture = id; mm.materials[mat].color = '#ffffff' }, 'New paint image')
+  s.edit(mm => { mm.materials[mat].texture = id }, 'New paint image')
   s.notify(`${mt.name} now has a ${size}×${size} image to paint into`)
   return id
 }

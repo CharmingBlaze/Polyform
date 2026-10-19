@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addPrimitive, emptyModel, faceMat, newMaterial, removeMaterial, validateModel } from '../src/model'
+import { addPrimitive, baseColor, emptyModel, faceMat, newMaterial, removeMaterial, validateModel } from '../src/model'
 
 describe('removeMaterial', () => {
   it('faces fall back, later indices shift, model stays valid', () => {
@@ -18,5 +18,12 @@ describe('removeMaterial', () => {
     removeMaterial(m, 1)
     expect(m.groups[0].mat).toBe(0)
     expect(removeMaterial(m, 0)).toBe(false)
+  })
+})
+
+describe('baseColor', () => {
+  it('is white when the material has an image (no tint), else the material colour', () => {
+    expect(baseColor({ color: '#ff0000', texture: 'tex-1' })).toBe('#ffffff')
+    expect(baseColor({ color: '#ff0000' })).toBe('#ff0000')
   })
 })

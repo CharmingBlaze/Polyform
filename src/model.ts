@@ -19,6 +19,9 @@ export interface Face {
 }
 
 /** Material index a face renders with. */
+/** Base colour that multiplies the image: white when the material has one, so the image shows untinted. */
+export const baseColor = (mt: { color: string; texture?: string | null }) => (mt.texture ? '#ffffff' : mt.color)
+
 export const faceMat = (m: Model, f: Face) => (f.mat !== undefined ? f.mat : m.groups[f.g]?.mat ?? 0)
 
 /** Remove material i; faces using it fall back to material 0 (or their group's), later indices shift down. */
