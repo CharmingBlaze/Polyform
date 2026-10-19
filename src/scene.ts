@@ -86,6 +86,12 @@ class SceneManager {
   targets = new Set<RenderTarget>()
   dirty = true
   dragging = false
+  /** Vert index per mesh-corner (parallel to position attr); enables incremental pos updates while dragging. */
+  private cornerVerts: number[] = []
+  private meshVertCount = 0
+  private meshFaceCount = 0
+  /** False after a full rebuild that used modes incremental update cannot refresh (e.g. weight paint). */
+  private incrOk = false
   private matKey = ''
   boneObjs: THREE.Object3D[] = []
   onionObjs: THREE.Object3D[] = []
@@ -168,9 +174,15 @@ class SceneManager {
     toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
 
     useStore.subscribe((st, prev) => {
-      if (st.version !== prev.version || st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
+      const selOrView = st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
         st.selFaces !== prev.selFaces || st.selBones !== prev.selBones || st.selectMode !== prev.selectMode || st.subModes !== prev.subModes || st.clip !== prev.clip ||
-        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.showRefs !== prev.showRefs || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d || st.tool !== prev.tool || st.paint.target !== prev.paint.target) this.rebuild()
+        st.showWire !== prev.showWire || st.showTexture !== prev.showTexture || st.onion !== prev.onion || st.onionSteps !== prev.onionSteps || st.showSkeleton !== prev.showSkeleton || st.showRefs !== prev.showRefs || st.texRev !== prev.texRev || st.cursor3d !== prev.cursor3d || st.tool !== prev.tool || st.paint.target !== prev.paint.target
+      if (selOrView) { this.rebuild(); return }
+      if (st.version !== prev.version) {
+        // drag path: only verts / posed joints moved — refresh positions in place
+        if (this.dragging && this.tryUpdatePositions()) return
+        this.rebuild()
+      }
     })
     textures.onChange(() => { this.matKey = ''; this.invalidate() })
     this.rebuild()
@@ -303,6 +315,7 @@ class SceneManager {
 
     const normals = cornerNormals(m, P, this.visibleFaces)
     const pos: number[] = [], uv: number[] = [], nrm: number[] = [], sel: number[] = [], vcol: number[] = []
+    const cornerVerts: number[] = []
     const vcm = vcMaterials(m), tmp = new THREE.Color()
     const weightBone = st.tool === 'paint' && st.paint.target === 'weight' ? ([...st.selBones].pop() ?? -1) : -1
     if (weightBone >= 0) ensureSkin(m)
@@ -329,6 +342,7 @@ class SceneManager {
       for (const t of this.tris(P, f)) {
         this.triFace.push(fi); triCount++
         for (const c of t) {
+          cornerVerts.push(f.v[c])
           pos.push(...P[f.v[c]]); uv.push(...f.uv[c]); nrm.push(fn[c].x, fn[c].y, fn[c].z); if (on) sel.push(...P[f.v[c]])
           if (weightBone >= 0) { const [r, g, b] = heat(weightOf(m.skin[f.v[c]], weightBone)); vcol.push(r, g, b) }
           else if (vcm.has(fm)) { tmp.set(cornerColor(m, f, c)); vcol.push(tmp.r, tmp.g, tmp.b) }
@@ -443,7 +457,139 @@ class SceneManager {
       }
     }
     this.syncRefs(m.refs ?? [], st.showRefs !== false)
+    this.cornerVerts = cornerVerts
+    this.meshVertCount = m.verts.length
+    this.meshFaceCount = m.faces.length
+    this.incrOk = !(st.tool === 'paint' && st.paint.target === 'weight')
     this.invalidate()
+  }
+
+  /**
+   * Fast path while dragging a transform: rewrite position buffers from current verts without
+   * re-triangulating or rebuilding UVs / materials / groups. Returns false if a full rebuild is needed.
+   */
+  tryUpdatePositions(): boolean {
+    const st = useStore.getState()
+    const m = st.model
+    if (!this.incrOk || !this.dragging) return false
+    if (m.verts.length !== this.meshVertCount || m.faces.length !== this.meshFaceCount) return false
+    if (this.cornerVerts.length === 0 && m.faces.length > 0) return false
+
+    const clip = m.clips[Math.min(st.clip, m.clips.length - 1)]
+    const frame = st.mode === 'animate' ? st.frame : null
+    this.posed = posedVerts(m, frame, clip)
+    this.joints = posedJoints(m, frame, clip)
+    const P = this.posed
+
+    const posAttr = this.meshGeo.getAttribute('position') as THREE.BufferAttribute | undefined
+    if (!posAttr || posAttr.array.length !== this.cornerVerts.length * 3) return false
+    const arr = posAttr.array as Float32Array
+    for (let i = 0; i < this.cornerVerts.length; i++) {
+      const v = P[this.cornerVerts[i]]
+      const o = i * 3
+      arr[o] = v[0]; arr[o + 1] = v[1]; arr[o + 2] = v[2]
+    }
+    posAttr.needsUpdate = true
+    this.meshGeo.computeBoundingSphere()
+    this.meshGeo.computeBoundingBox()
+
+    // light normals refresh (face-flat) so lit shading does not look stuck during the drag
+    const nrmAttr = this.meshGeo.getAttribute('normal') as THREE.BufferAttribute | undefined
+    if (nrmAttr && nrmAttr.array.length === this.cornerVerts.length * 3) {
+      const normals = cornerNormals(m, P, this.visibleFaces)
+      const narr = nrmAttr.array as Float32Array
+      let ci = 0
+      for (const fi of this.visibleFaces) {
+        const f = m.faces[fi]
+        const fn = normals[fi]
+        for (const t of this.tris(P, f)) {
+          for (const c of t) {
+            const n = fn[c], o = ci * 3
+            narr[o] = n.x; narr[o + 1] = n.y; narr[o + 2] = n.z
+            ci++
+          }
+        }
+      }
+      nrmAttr.needsUpdate = true
+    }
+
+    // wire + selected edges
+    const wire: number[] = [], selEdge: number[] = []
+    const edgeSel = st.mode === 'model' && st.selectMode !== 'object' && st.subModes.includes('edge')
+    for (const [a, b] of this.edges) {
+      wire.push(...P[a], ...P[b])
+      if (edgeSel) {
+        const k = a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a
+        if (st.selEdges.has(k)) selEdge.push(...P[a], ...P[b])
+      }
+    }
+    setAttr(this.wireGeo, 'position', wire, 3)
+    setAttr(this.selEdgeGeo, 'position', selEdge, 3)
+
+    // selected face highlight
+    const faceSel = st.mode === 'model' && (st.selectMode === 'object' || st.subModes.includes('face'))
+    if (faceSel && st.selFaces.size) {
+      const sel: number[] = []
+      let ci = 0
+      for (const fi of this.visibleFaces) {
+        const f = m.faces[fi]
+        const nTris = this.tris(P, f).length
+        if (st.selFaces.has(fi)) {
+          for (let t = 0; t < nTris * 3; t++, ci++) sel.push(...P[this.cornerVerts[ci]])
+        } else ci += nTris * 3
+      }
+      setAttr(this.selGeo, 'position', sel, 3)
+    }
+
+    // vertex points
+    const pts: number[] = [], col: number[] = []
+    const showPts = st.mode === 'model' && st.selectMode !== 'joint' && st.selectMode !== 'object'
+    if (showPts) {
+      const vSel = st.subModes.includes('vertex') ? st.selVerts : null
+      const dimPts = !st.subModes.includes('vertex')
+      this.visibleVerts.forEach(i => {
+        pts.push(...P[i])
+        const on = vSel ? vSel.has(i) : false
+        col.push(...(on ? ORANGE : dimPts ? [0.45, 0.5, 0.6] : [0.92, 0.94, 1]))
+      })
+    }
+    const showBound = st.mode === 'model' && st.selectMode === 'joint' && st.selBones.size > 0
+    if (showBound) this.visibleVerts.forEach(i => {
+      if (!st.selBones.has(m.vbone[i] ?? -1)) return
+      pts.push(...P[i]); col.push(1, 0.82, 0.25)
+    })
+    setAttr(this.pointGeo, 'position', pts, 3)
+    setAttr(this.pointGeo, 'color', col, 3)
+
+    // joints / bones (animate drag)
+    const jp: number[] = [], jc: number[] = [], bp: number[] = [], bc: number[] = [], bt: number[] = [], btc: number[] = []
+    this.joints.forEach((j, i) => {
+      jp.push(...j)
+      const selB = st.selBones.has(i)
+      jc.push(...(selB ? ORANGE_HI : [0.35, 0.65, 1]))
+      const parent = m.bones[i].parent
+      if (parent >= 0) {
+        const o = octaBone(this.joints[parent], j)
+        const c = selB || st.selBones.has(parent) ? ORANGE_HI : [0.35, 0.65, 1]
+        bp.push(...o.lines); for (let k = 0; k < o.lines.length / 3; k++) bc.push(...c)
+        bt.push(...o.tris); for (let k = 0; k < o.tris.length / 3; k++) btc.push(...c)
+      }
+    })
+    setAttr(this.boneFillGeo, 'position', bt, 3)
+    setAttr(this.boneFillGeo, 'color', btc, 3)
+    setAttr(this.jointGeo, 'position', jp, 3)
+    setAttr(this.jointGeo, 'color', jc, 3)
+    setAttr(this.boneGeo, 'position', bp, 3)
+    setAttr(this.boneGeo, 'color', bc, 3)
+
+    {
+      const sp: number[] = []
+      for (const k of seamSet(m)) { const [a, b] = edgeEnds(k); if (P[a] && P[b]) sp.push(...P[a], ...P[b]) }
+      setAttr(this.seamGeo, 'position', sp, 3)
+    }
+
+    this.invalidate()
+    return true
   }
 
   /** Sync textured planes for viewport reference images. */

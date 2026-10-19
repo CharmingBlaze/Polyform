@@ -440,6 +440,8 @@ export function Viewport({ pane }: { pane: number }) {
       if (ex) updateWallUVs(st.model, ex.walls, d.axisVec ? xf.t.dot(d.axisVec) : xf.t.length())
     }
     if (d.src === 'modal') st.set({ modalInfo: infoOf(d) })
+    // extrude-individual mutates verts without touch(); keep the mesh live during the drag
+    if (d.started && !sceneManager.tryUpdatePositions()) { /* subscribe/touch path already refreshed or needs full rebuild */ }
   }
 
   function endXf(d: XfDrag, ok: boolean) {
