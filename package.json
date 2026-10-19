@@ -10,10 +10,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs",
     "test:workflow": "node tests/e2e/run.mjs workflow.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test:gizmo": "node tests/e2e/run.mjs gizmo.mjs"
   },
   "dependencies": {
     "idb-keyval": "6.3.0",

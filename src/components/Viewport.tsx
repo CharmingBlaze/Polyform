@@ -3,11 +3,13 @@ import * as THREE from 'three'
 import { Move, Rotate3d, Search, Maximize2, Minimize2 } from 'lucide-react'
 import { LAYER, paneLayers, sceneManager } from '../scene'
 import { useStore, type Shading, type ViewType } from '../store'
-import { boneMatrices, sampleBone, sampleObject, skinnedGroups } from '../anim'
-import { edgeEnds, faceCenter, triangulate, type Vec3 } from '../model'
-import { topology } from '../topology'
+import { faceCenter, faceNormal, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
 import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
+import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
+import { applyXf, collectTargets, identityXf, needsKeyFirst, type Targets, type Xf } from '../transform'
+import { interaction } from '../interaction'
+import type { ModalKind } from '../commands'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -21,11 +23,44 @@ type Drag =
   | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean }
   | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number }
   | { kind: 'paint' }
-  | { kind: 'xform'; x0: number; y0: number; started: boolean; center: THREE.Vector3; wpp: number; right: THREE.Vector3; up: THREE.Vector3; fwd: THREE.Vector3;
-      verts: Map<number, Vec3>; bones: Map<number, Vec3>; keys: Map<number, { rot: Vec3; pos: Vec3; qp: THREE.Quaternion }>;
-      objs: Map<number, { pos: Vec3; rot: Vec3; scale: Vec3 }>; okeys: boolean }
+  | XfDrag
 
-export interface ViewCtx { camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void; el: HTMLDivElement }
+/** A running transform: from the gizmo, a modal G/R/S/E, or a click-drag tweak. */
+interface XfDrag {
+  kind: 'xf'
+  src: 'gizmo' | 'modal' | 'tweak'
+  op: GizmoKind
+  /** constraint: axis index in `frame` (0-2), or null = free / view axis / uniform */
+  axis: 0 | 1 | 2 | null
+  /** custom axis vector (extrude along the normal) */
+  axisVec: THREE.Vector3 | null
+  frame: THREE.Quaternion
+  space: 'global' | 'local'
+  T: Targets
+  x0: number; y0: number
+  hit0: THREE.Vector3
+  lastAng: number; accAng: number
+  typed: string
+  started: boolean
+  label: string
+  modal?: ModalKind
+  ctrl: boolean
+}
+
+const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
+const AXIS_NAME = ['X', 'Y', 'Z']
+/** gizmo center/frame cache, recomputed after any store change */
+let gizmoDirty = true
+let gizmoState: { center: THREE.Vector3; frame: THREE.Quaternion } | null = null
+useStore.subscribe(() => { gizmoDirty = true; sceneManager.invalidate() })
+/** the drag that owns the current transform (only one at a time across panes) */
+let activeXf: { pane: number; cancel: () => void; confirm: () => void; key: (e: KeyboardEvent) => void; move: (e: PointerEvent) => void } | null = null
+
+export interface ViewCtx {
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void; el: HTMLDivElement
+  /** client-space point on a gizmo handle (axis 0-2 at `along` of the arrow, 3 = center; ring: angle in radians), for e2e tests */
+  handlePoint?: (axis: 0 | 1 | 2 | 3, along?: number, ring?: boolean) => { x: number; y: number } | null
+}
 /** Live view contexts by pane, for tools that need a camera (gizmos, paint, modal transforms). */
 export const viewCtx: (ViewCtx | null)[] = [null, null, null, null]
 
@@ -38,6 +73,7 @@ export function Viewport({ pane }: { pane: number }) {
   const cfg = useStore(s => s.panes[pane])
   const set = useStore(s => s.set)
   const ctx = useRef<ViewCtx | null>(null)
+  const gizmo = useRef(new Gizmo(pane))
   const isPersp = cfg.type === 'persp'
 
   useEffect(() => {
@@ -65,7 +101,19 @@ export function Viewport({ pane }: { pane: number }) {
     }
     ctx.current = c
     viewCtx[pane] = c
-    const rt = { el: hit.current!, camera }
+    const giz = gizmo.current
+    sceneManager.scene.add(giz.root)
+    c.handlePoint = (axis, along = 0.9, ring = false) => {
+      if (!giz.root.visible) return null
+      const p = new THREE.Vector3()
+      if (axis === 3 && ring) p.set(Math.cos(along), Math.sin(along), 0).multiplyScalar(1.0).applyQuaternion(giz.viewRing!.quaternion)
+      else if (ring) { const a = Math.cos(along) * 0.8, b = Math.sin(along) * 0.8; p.set(axis === 0 ? 0 : a, axis === 0 ? a : axis === 1 ? 0 : b, axis === 2 ? 0 : b) }
+      else if (axis < 3) p.setComponent(axis, along)
+      p.applyMatrix4(giz.root.matrixWorld).project(camera)
+      const r = hit.current!.getBoundingClientRect()
+      return { x: r.left + (p.x * 0.5 + 0.5) * c.w, y: r.top + (-p.y * 0.5 + 0.5) * c.h }
+    }
+    const rt = { el: hit.current!, camera, pre: () => placeGizmo(c, giz) }
     sceneManager.targets.add(rt)
     const ro = new ResizeObserver(() => {
       const r = host.current!.getBoundingClientRect()
@@ -73,7 +121,7 @@ export function Viewport({ pane }: { pane: number }) {
       c.update()
     })
     ro.observe(host.current!)
-    return () => { ro.disconnect(); sceneManager.targets.delete(rt); if (viewCtx[pane] === c) viewCtx[pane] = null }
+    return () => { ro.disconnect(); sceneManager.targets.delete(rt); sceneManager.scene.remove(giz.root); if (viewCtx[pane] === c) viewCtx[pane] = null }
   }, [cfg.type, pane])
 
   useEffect(() => {
@@ -209,16 +257,225 @@ export function Viewport({ pane }: { pane: number }) {
 
   const drag = useRef<Drag | null>(null)
 
+  // ---------- gizmo placement (called right before this pane renders) ----------
+  function placeGizmo(c: ViewCtx, giz: Gizmo) {
+    const st = useStore.getState()
+    const kind: GizmoKind | null = st.tool === 'move' || st.tool === 'rotate' || st.tool === 'scale' ? st.tool : null
+    giz.setKind(kind)
+    if (gizmoDirty) { gizmoDirty = false; const T = kind ? collectTargets(st) : null; gizmoState = T ? { center: T.center, frame: T.frame } : null }
+    const d = drag.current
+    const hideForModal = activeXf && d?.kind !== 'xf' && interaction.modal
+    giz.root.visible = !!kind && !!gizmoState && !hideForModal
+    if (!giz.root.visible || !gizmoState) return
+    const cam = c.camera
+    const wpp = cam instanceof THREE.OrthographicCamera ? (cam.top - cam.bottom) / cam.zoom / c.h
+      : (2 * cam.position.distanceTo(gizmoState.center) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / c.h
+    giz.place(gizmoState.center, gizmoState.frame, wpp, cam)
+  }
+
+  // ---------- transforms (gizmo / modal / tweak) ----------
+  const axisVector = (d: XfDrag): THREE.Vector3 | null => d.axisVec ?? (d.axis === null ? null : AXES[d.axis].clone().applyQuaternion(d.frame))
+  const planeHit = (d: XfDrag, x: number, y: number): THREE.Vector3 => {
+    const { fwd } = camBasis()
+    const a = d.op === 'move' ? axisVector(d) : null
+    let n = fwd.clone()
+    if (a) { const p = fwd.clone().sub(a.clone().multiplyScalar(a.dot(fwd))); if (p.lengthSq() > 1e-6) n = p.normalize() }
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, d.T.center)
+    return ray(x, y).ray.intersectPlane(plane, new THREE.Vector3()) ?? d.T.center.clone()
+  }
+  const screenAngle = (x: number, y: number, c: { x: number; y: number }) => Math.atan2(y - c.y, x - c.x)
+
+  function beginXf(src: XfDrag['src'], op: GizmoKind, x: number, y: number, opts: { axis?: 0 | 1 | 2 | null; axisVec?: THREE.Vector3 | null; modal?: ModalKind; label?: string } = {}): XfDrag | null {
+    const st = useStore.getState()
+    const T = collectTargets(st)
+    if (!T) { st.notify('Select something to transform'); return null }
+    if (op === 'scale' && T.keys.size && !T.objs.size) { st.notify('Joints are not scaled — use Move or Rotate'); return null }
+    if (needsKeyFirst(st, T)) { st.notify('Auto-key is off: press I to key this frame first'); return null }
+    if (T.note) st.notify(T.note)
+    const d: XfDrag = {
+      kind: 'xf', src, op, axis: opts.axis ?? null, axisVec: opts.axisVec ?? null, frame: T.frame.clone(), space: st.gizmoSpace,
+      T, x0: x, y0: y, hit0: new THREE.Vector3(), lastAng: 0, accAng: 0, typed: '', started: false,
+      label: opts.label ?? (op === 'move' ? 'Move' : op === 'rotate' ? 'Rotate' : 'Scale'), modal: opts.modal, ctrl: false,
+    }
+    d.hit0 = planeHit(d, x, y)
+    d.lastAng = screenAngle(x, y, project(T.center))
+    return d
+  }
+
+  function computeXf(d: XfDrag, x: number, y: number): Xf {
+    const st = useStore.getState()
+    const out = identityXf()
+    const snap = st.snap !== d.ctrl
+    const typed = d.typed !== '' && d.typed !== '-' && d.typed !== '.' ? parseFloat(d.typed) : NaN
+    const cs = project(d.T.center)
+    if (d.op === 'move') {
+      const a = axisVector(d)
+      if (Number.isFinite(typed)) { out.t.copy(a ?? AXES[0]).multiplyScalar(typed); return out }
+      const delta = planeHit(d, x, y).sub(d.hit0)
+      if (a) {
+        let k = delta.dot(a)
+        if (snap) k = Math.round(k / st.gridStep) * st.gridStep
+        out.t.copy(a).multiplyScalar(k)
+      } else {
+        if (snap) { const g = st.gridStep; delta.set(Math.round(delta.x / g) * g, Math.round(delta.y / g) * g, Math.round(delta.z / g) * g) }
+        out.t.copy(delta)
+      }
+    } else if (d.op === 'rotate') {
+      const toViewer = camBasis().fwd.negate()
+      const a = axisVector(d) ?? toViewer
+      let ang: number
+      if (Number.isFinite(typed)) ang = THREE.MathUtils.degToRad(typed)
+      else {
+        const cur = screenAngle(x, y, cs)
+        let dd = cur - d.lastAng
+        if (dd > Math.PI) dd -= 2 * Math.PI; else if (dd < -Math.PI) dd += 2 * Math.PI
+        d.accAng += dd; d.lastAng = cur
+        ang = -d.accAng * (a.dot(toViewer) < 0 ? -1 : 1)
+        if (snap) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
+      }
+      out.q.setFromAxisAngle(a.clone().normalize(), ang)
+    } else {
+      let f: number
+      if (Number.isFinite(typed)) f = typed
+      else {
+        const r0 = Math.max(6, Math.hypot(d.x0 - cs.x, d.y0 - cs.y))
+        f = Math.hypot(x - cs.x, y - cs.y) / r0
+        if (snap) f = Math.round(f * 10) / 10
+      }
+      if (Math.abs(f) < 1e-4) f = 1e-4
+      if (d.axis === null) out.s.set(f, f, f)
+      else out.s.setComponent(d.axis, f)
+    }
+    return out
+  }
+
+  const infoOf = (d: XfDrag) => {
+    const ax = d.axisVec ? 'along normal' : d.axis === null ? (d.op === 'rotate' ? 'view axis' : d.op === 'scale' ? 'uniform' : 'free') : `${AXIS_NAME[d.axis]} (${d.space})`
+    return `${d.label} · ${ax}${d.typed ? ` · ${d.typed}` : ''} · X/Y/Z axis · type a value · Ctrl snaps · Enter/click confirm · Esc/right-click cancel`
+  }
+
+  function updateXf(d: XfDrag, x: number, y: number) {
+    const st = useStore.getState()
+    if (!d.started) {
+      d.started = true
+      sceneManager.dragging = true
+      if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint')) { if (!st.extruding) st.checkpoint(d.label) }
+    }
+    applyXf(d.T, computeXf(d, x, y))
+    if (d.src === 'modal') st.set({ modalInfo: infoOf(d) })
+  }
+
+  function endXf(d: XfDrag, ok: boolean) {
+    const st = useStore.getState()
+    sceneManager.dragging = false
+    interaction.modal = false
+    activeXf = null
+    drag.current = null
+    st.set({ modalInfo: null })
+    if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
+    else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
+    else if (d.started) { if (ok) st.commit(); else st.cancelEdit() }
+    gizmoDirty = true
+    sceneManager.rebuild()
+  }
+
+  /** Make `d` the active transform: window-level keys (axis, typed value, Enter, Esc) and pointer moves. */
+  function activate(d: XfDrag) {
+    drag.current = d
+    interaction.modal = true
+    const local2 = (e: { clientX: number; clientY: number }) => { const r = hit.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+    let last = { x: d.x0, y: d.y0 }
+    activeXf = {
+      pane,
+      cancel: () => endXf(d, false),
+      confirm: () => endXf(d, true),
+      move: e => { d.ctrl = e.ctrlKey || e.metaKey; last = local2(e); updateXf(d, last.x, last.y) },
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return endXf(d, false)
+        if (k === 'Enter') { if (!d.started) updateXf(d, last.x, last.y); return endXf(d, true) }
+        if (k === 'Control' || k === 'Meta') { d.ctrl = true; updateXf(d, last.x, last.y); return }
+        if (d.src === 'modal' && /^[xyz]$/i.test(k) && !d.axisVec) {
+          const i = 'xyz'.indexOf(k.toLowerCase()) as 0 | 1 | 2
+          // Blender cycle: global axis -> local axis -> free
+          const st = useStore.getState()
+          if (d.axis !== i) { d.axis = i; d.space = 'global'; d.frame = new THREE.Quaternion() }
+          else if (d.space === 'global') { d.space = 'local'; d.frame = collectTargets(st, 'local')?.frame ?? new THREE.Quaternion() }
+          else { d.axis = null; d.space = st.gizmoSpace; d.frame = d.T.frame.clone() }
+          d.T.frame = d.op === 'scale' ? d.frame.clone() : d.T.frame
+          d.hit0 = planeHit(d, d.x0, d.y0)
+          updateXf(d, last.x, last.y); return
+        }
+        if (d.src === 'modal' && (/^[0-9.]$/.test(k) || (k === '-' && !d.typed) || k === 'Backspace')) {
+          d.typed = k === 'Backspace' ? d.typed.slice(0, -1) : d.typed + k
+          updateXf(d, last.x, last.y); return
+        }
+      },
+    }
+    if (d.src === 'modal') { useStore.getState().set({ modalInfo: infoOf(d) }); updateXf(d, d.x0, d.y0) }
+  }
+
+  // window listeners for the active transform (modal transforms keep working outside the pane)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!activeXf || activeXf.pane !== pane) return
+      // the transform owns this key: no app shortcut may also see it (Esc must not deselect after cancelling)
+      e.preventDefault(); e.stopImmediatePropagation()
+      activeXf.key(e)
+    }
+    const onKeyUp = (e: KeyboardEvent) => { if (activeXf?.pane === pane && (e.key === 'Control' || e.key === 'Meta')) { const d = drag.current; if (d?.kind === 'xf') d.ctrl = false } }
+    const onMove = (e: PointerEvent) => { if (activeXf?.pane === pane && drag.current?.kind === 'xf' && drag.current.src === 'modal') activeXf.move(e) }
+    const onModal = (e: Event) => {
+      const kind = (e as CustomEvent<ModalKind>).detail
+      const target = useStore.getState().maximized ?? interaction.hoverPane
+      if (target !== pane || !ctx.current || hidden) return
+      if (activeXf) return
+      const st = useStore.getState()
+      const at = interaction.mouse[pane] ?? { x: ctx.current.w / 2, y: ctx.current.h / 2 }
+      let d: XfDrag | null = null
+      if (kind === 'extrude') {
+        const n = new THREE.Vector3()
+        st.activeFaces().forEach(f => n.add(faceNormal(st.model, st.model.faces[f], sceneManager.posed)))
+        d = beginXf('modal', 'move', at.x, at.y, { modal: 'extrude', axisVec: n.lengthSq() > 1e-8 ? n.normalize() : null, label: 'Extrude' })
+        if (!d) { st.cancelExtrude(); return }
+      } else if (kind === 'joint') {
+        d = beginXf('modal', 'move', at.x, at.y, { modal: 'joint', label: 'Grow joint' })
+        if (!d) return
+      } else d = beginXf('modal', kind, at.x, at.y)
+      if (d) activate(d)
+    }
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('modal-transform', onModal)
+    return () => {
+      window.removeEventListener('keydown', onKey, true); window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('pointermove', onMove); window.removeEventListener('modal-transform', onModal)
+    }
+  })
+
   const onPointerDown = (e: React.PointerEvent) => {
     const c = ctx.current!
-    hit.current!.setPointerCapture(e.pointerId)
     const { x, y } = local(e)
     const st = useStore.getState()
+    // a running modal transform: left confirms, right cancels
+    if (activeXf) {
+      e.preventDefault()
+      if (e.button === 2) activeXf.cancel(); else if (e.button === 0) activeXf.confirm()
+      return
+    }
+    hit.current!.setPointerCapture(e.pointerId)
     if (e.button === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
-    if (drag.current?.kind === 'xform' && e.button === 2) return
     if (e.button === 1 || (e.button === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y }; return }
     if (e.button === 2 || (e.button === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
     if (e.button !== 0) return
+    // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still
+    const h: Handle | null = gizmo.current.hit(ray(x, y))
+    if (h) {
+      const d = beginXf('gizmo', h.kind, x, y, { axis: h.axis === 3 ? null : h.axis })
+      if (d) { d.ctrl = e.ctrlKey || e.metaKey; activate(d) }
+      return
+    }
     const tool = st.tool
     if (tool === 'paint') {
       if (st.mode !== 'model') st.set({ mode: 'model' })
@@ -244,67 +501,22 @@ export function Viewport({ pane }: { pane: number }) {
       useStore.getState().setSelection({ verts: sv })
       return
     }
-    if (tool === 'select') { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.ctrlKey || e.metaKey, alt: e.altKey }; return }
-
-    // transform tools
-    const m = st.model
-    const verts = new Map<number, Vec3>(), bones = new Map<number, Vec3>()
-    const keys = new Map<number, { rot: Vec3; pos: Vec3; qp: THREE.Quaternion }>()
-    const objs = new Map<number, { pos: Vec3; rot: Vec3; scale: Vec3 }>()
-    const center = new THREE.Vector3()
-    let n = 0, okeys = false
-    const clip = st.curClip()
-    if (st.mode === 'animate') {
-      let animBones = new Set(st.selBones)
-      if (st.selectMode === 'object' && st.selFaces.size) {
-        const gs = [...new Set([...st.selFaces].map(f => m.faces[f].g))]
-        const skinned = skinnedGroups(m)
-        gs.forEach(g => {
-          if (skinned.has(g)) {
-            // glTF ignores node transforms on skinned meshes: move the object's root joint instead
-            const b = m.vbone.find((vb, vi) => vb >= 0 && m.faces.some(f => f.g === g && f.v.includes(vi)))
-            if (b !== undefined) { let r = b; while (m.bones[r].parent >= 0) r = m.bones[r].parent; animBones.add(r); st.notify('Bound to joints: moving its root joint instead of the object') }
-          } else {
-            const k = sampleObject(clip, g, st.frame) ?? m.groups[g].xf
-            objs.set(g, { pos: [...k.pos] as Vec3, rot: [...k.rot] as Vec3, scale: [...k.scale] as Vec3 })
-            const piv = m.groups[g].xf.pivot
-            center.add(new THREE.Vector3(piv[0] + k.pos[0], piv[1] + k.pos[1], piv[2] + k.pos[2])); n++
-          }
-        })
-        okeys = objs.size > 0
-      }
-      const mats = boneMatrices(m, st.frame, clip)
-      animBones.forEach(b => {
-        const k = sampleBone(clip, b, st.frame).key
-        const qp = new THREE.Quaternion()
-        const par = m.bones[b].parent
-        if (par >= 0) mats[par].decompose(new THREE.Vector3(), qp, new THREE.Vector3())
-        keys.set(b, { rot: [...k.rot] as Vec3, pos: [...k.pos] as Vec3, qp })
-        center.add(new THREE.Vector3(...sceneManager.joints[b])); n++
-      })
-      animBones = new Set()
-      if (tool === 'scale' && keys.size) return st.notify('Joints are not scaled — use Rotate or Move')
-      if (!st.autoKey && (keys.size || objs.size)) {
-        const hasKey = [...keys.keys()].every(b => clip.keys[b]?.[st.frame]) && [...objs.keys()].every(g => clip.okeys[g]?.[st.frame])
-        if (!hasKey) return st.notify('Auto-key is off: press I to key this frame first')
-      }
-    } else if (st.selectMode === 'joint') {
-      st.selBones.forEach(b => { bones.set(b, [...m.bones[b].pos] as Vec3); center.add(new THREE.Vector3(...m.bones[b].pos)); n++ })
-    } else if (st.selectMode === 'object' && st.selFaces.size) {
-      const gs = [...new Set([...st.selFaces].map(f => m.faces[f].g))]
-      gs.forEach(g => { const x = m.groups[g].xf; objs.set(g, { pos: [...x.pos] as Vec3, rot: [...x.rot] as Vec3, scale: [...x.scale] as Vec3 }); center.add(new THREE.Vector3(x.pivot[0] + x.pos[0], x.pivot[1] + x.pos[1], x.pivot[2] + x.pos[2])); n++ })
-    } else {
-      st.activeVerts().forEach(v => { verts.set(v, [...m.verts[v]] as Vec3); center.add(new THREE.Vector3(...sceneManager.posed[v] ?? m.verts[v])); n++ })
-    }
-    if (!n) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: false, alt: e.altKey }; return }
-    center.divideScalar(n)
-    drag.current = { kind: 'xform', x0: x, y0: y, started: false, center, wpp: worldPerPixel(center), ...camBasis(), verts, bones, keys, objs, okeys }
+    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.ctrlKey || e.metaKey, alt: e.altKey }
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current
-    if (!d) return
     const { x, y } = local(e)
+    interaction.hoverPane = pane
+    interaction.mouse[pane] = { x, y }
+    const d = drag.current
+    if (!d) {
+      // gizmo hover highlight
+      const h = gizmo.current.root.visible ? gizmo.current.hit(ray(x, y)) : null
+      const before = gizmo.current.hovered
+      gizmo.current.setHover(h)
+      if (before !== gizmo.current.hovered) sceneManager.invalidate()
+      return
+    }
     if (d.kind === 'orbit') { orbit(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'pan') { pan(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'zoom') { zoom(Math.exp((y - d.y) * 0.01)); d.x = x; d.y = y; return }
@@ -314,85 +526,28 @@ export function Viewport({ pane }: { pane: number }) {
       setRect({ x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) })
       return
     }
-    if (d.kind !== 'xform') return
-    const dx = x - d.x0, dy = y - d.y0
-    const st = useStore.getState()
-    if (!d.started) {
-      if (Math.abs(dx) + Math.abs(dy) < 3) return
-      d.started = true
-      sceneManager.dragging = true
-      if (!st.extruding) st.checkpoint(st.tool === 'move' ? 'Move' : st.tool === 'rotate' ? 'Rotate' : 'Scale')
+    if (d.kind === 'xf' && d.src !== 'modal') {
+      // right button pressed while dragging arrives as a chorded pointermove: cancel
+      if (e.buttons & 2) { endXf(d, false); return }
+      d.ctrl = e.ctrlKey || e.metaKey
+      if (!d.started && Math.abs(x - d.x0) + Math.abs(y - d.y0) < 3) return
+      updateXf(d, x, y)
     }
-    const ax = st.axis
-    const lock = new THREE.Vector3(ax.x ? 1 : 0, ax.y ? 1 : 0, ax.z ? 1 : 0)
-    const tool = st.tool
-    const m = st.model
-    const snapOn = st.snap !== (e.ctrlKey || e.metaKey)
-    let apply: (p: THREE.Vector3) => THREE.Vector3
-    let rotQ = new THREE.Quaternion()
-    let moveDelta = new THREE.Vector3()
-    let scaleV = new THREE.Vector3(1, 1, 1)
-    if (tool === 'move') {
-      moveDelta = d.right.clone().multiplyScalar(dx * d.wpp).addScaledVector(d.up, -dy * d.wpp).multiply(lock)
-      if (snapOn) { const g = st.gridStep; moveDelta.set(Math.round(moveDelta.x / g) * g, Math.round(moveDelta.y / g) * g, Math.round(moveDelta.z / g) * g) }
-      apply = p => p.add(moveDelta)
-    } else if (tool === 'rotate') {
-      const only = [ax.x, ax.y, ax.z].filter(Boolean).length === 1
-      const axis = only ? new THREE.Vector3(ax.x ? 1 : 0, ax.y ? 1 : 0, ax.z ? 1 : 0) : d.fwd.clone().negate()
-      let ang = -dx * 0.012
-      if (snapOn) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
-      rotQ = new THREE.Quaternion().setFromAxisAngle(axis, ang)
-      apply = p => p.sub(d.center).applyQuaternion(rotQ).add(d.center)
-    } else {
-      let f = Math.max(0.01, 1 + (dx - dy) * 0.006)
-      if (snapOn) f = Math.max(0.1, Math.round(f * 10) / 10)
-      scaleV = new THREE.Vector3(ax.x ? f : 1, ax.y ? f : 1, ax.z ? f : 1)
-      apply = p => p.sub(d.center).multiply(scaleV).add(d.center)
-    }
-    d.verts.forEach((o, i) => { const p = apply(new THREE.Vector3(...o)); m.verts[i] = [p.x, p.y, p.z] })
-    d.bones.forEach((o, i) => { const p = apply(new THREE.Vector3(...o)); m.bones[i].pos = [p.x, p.y, p.z] })
-    const clipIdx = Math.min(st.clip, m.clips.length - 1)
-    d.objs.forEach((o, g) => {
-      const nt = { pos: [...o.pos] as Vec3, rot: [...o.rot] as Vec3, scale: [...o.scale] as Vec3 }
-      if (tool === 'move') nt.pos = [o.pos[0] + moveDelta.x, o.pos[1] + moveDelta.y, o.pos[2] + moveDelta.z]
-      else if (tool === 'rotate') { const q = rotQ.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...o.rot))); const eu = new THREE.Euler().setFromQuaternion(q); nt.rot = [eu.x, eu.y, eu.z] }
-      else nt.scale = [o.scale[0] * scaleV.x, o.scale[1] * scaleV.y, o.scale[2] * scaleV.z]
-      if (d.okeys) { const c = m.clips[clipIdx]; c.okeys[g] = { ...(c.okeys[g] || {}), [st.frame]: nt } }
-      else Object.assign(m.groups[g].xf, nt)
-    })
-    d.keys.forEach((k, b) => {
-      const qpInv = k.qp.clone().invert()
-      let rot = k.rot, pos = k.pos
-      if (tool === 'rotate') {
-        const ql = new THREE.Quaternion().setFromEuler(new THREE.Euler(...k.rot))
-        const nq = qpInv.clone().multiply(rotQ).multiply(k.qp).multiply(ql)
-        const eu = new THREE.Euler().setFromQuaternion(nq)
-        rot = [eu.x, eu.y, eu.z]
-      } else if (tool === 'move') {
-        const ld = moveDelta.clone().applyQuaternion(qpInv)
-        pos = [k.pos[0] + ld.x, k.pos[1] + ld.y, k.pos[2] + ld.z]
-      }
-      const c = m.clips[clipIdx]
-      c.keys[b] = { ...(c.keys[b] || {}), [st.frame]: { rot, pos } }
-    })
-    st.touch()
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current
+    if (d?.kind === 'xf') { if (d.src !== 'modal') endXf(d, true); return }
     drag.current = null
     setRect(null)
     const st = useStore.getState()
     if (d?.kind === 'paint') { paintStrokeEnd(); return }
-    if (d?.kind === 'xform') {
-      sceneManager.dragging = false
-      if (st.extruding) st.finishExtrude()
-      else if (d.started) st.commit()
-      sceneManager.rebuild()
-      return
-    }
     if (!d || d.kind !== 'rect') return
     void e
+    selectRect(d, st)
+  }
+
+  function selectRect(d: Extract<Drag, { kind: 'rect' }>, st: ReturnType<typeof useStore.getState>) {
     const mode = st.mode === 'animate' ? (st.selectMode === 'object' ? 'object' : 'joint') : st.selectMode
     const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1)
     const click = x1 - x0 < 4 && y1 - y0 < 4
@@ -406,11 +561,8 @@ export function Viewport({ pane }: { pane: number }) {
     }
     if (mode === 'joint') {
       let hits: number[] = []
-      if (click) {
-        let best = -1, bd = 196
-        sceneManager.joints.forEach((j, i) => { const p = project(j); const dd = (p.x - d.x0) ** 2 + (p.y - d.y0) ** 2; if (dd < bd) { bd = dd; best = i } })
-        if (best >= 0) hits = [best]
-      } else sceneManager.joints.forEach((j, i) => { if (inside(project(j))) hits.push(i) })
+      if (click) { const j = pickJoint(d.x0, d.y0); if (j >= 0) hits = [j] }
+      else sceneManager.joints.forEach((j, i) => { if (inside(project(j))) hits.push(i) })
       useStore.setState({ selBones: merge(st.selBones, hits) })
       return
     }
@@ -428,12 +580,14 @@ export function Viewport({ pane }: { pane: number }) {
       if (e2 >= 0) st.selectLoop(e2, d.add)
       return
     }
-    // combined sub-modes: a click picks the nearest element among the enabled kinds (vertex, then edge, then face)
     const subs = st.subModes
     if (click) {
-      if (subs.includes('vertex')) { const v = pickVert(d.x0, d.y0); if (v >= 0 || subs.length === 1) { st.setSelection({ verts: merge(st.selVerts, v >= 0 ? [v] : []) }); if (v >= 0 || subs.length === 1) return } }
-      if (subs.includes('edge')) { const k = pickEdge(d.x0, d.y0); if (k >= 0 || !subs.includes('face')) { st.setSelection({ edges: merge(st.selEdges, k >= 0 ? [k] : []) }); return } }
-      if (subs.includes('face')) { const f = pickFaceScreen(d.x0, d.y0); st.setSelection({ faces: merge(st.selFaces, f >= 0 ? [f] : []) }); return }
+      const hitEl = pickElement(d.x0, d.y0, st)
+      if (hitEl) {
+        if (hitEl.type === 'vert') st.setSelection({ verts: merge(st.selVerts, [hitEl.i]) })
+        else if (hitEl.type === 'edge') st.setSelection({ edges: merge(st.selEdges, [hitEl.i]) })
+        else st.setSelection({ faces: merge(st.selFaces, [hitEl.i]) })
+      } else if (!d.add && !d.sub) st.selectNone()
       return
     }
     // box select follows the sub-mode; in solid shading only visible elements are taken
@@ -448,7 +602,20 @@ export function Viewport({ pane }: { pane: number }) {
       sceneManager.visibleVerts.forEach(i => { if (inside(project(P[i])) && !occluded(new THREE.Vector3(...P[i]))) hits.push(i) })
       st.setSelection({ verts: merge(st.selVerts, hits) })
     }
-    void topology; void edgeEnds
+  }
+
+  /** Element under the cursor for the enabled sub-modes (vertex first, then edge, then face). */
+  function pickElement(x: number, y: number, st: ReturnType<typeof useStore.getState>): { type: 'vert' | 'edge' | 'face'; i: number } | null {
+    const subs = st.subModes
+    if (subs.includes('vertex')) { const v = pickVert(x, y); if (v >= 0) return { type: 'vert', i: v } }
+    if (subs.includes('edge')) { const k = pickEdge(x, y); if (k >= 0) return { type: 'edge', i: k } }
+    if (subs.includes('face')) { const f = pickFaceScreen(x, y); if (f >= 0) return { type: 'face', i: f } }
+    return null
+  }
+  function pickJoint(x: number, y: number) {
+    let best = -1, bd = 196
+    sceneManager.joints.forEach((j, i) => { const p = project(j); const dd = (p.x - x) ** 2 + (p.y - y) ** 2; if (dd < bd) { bd = dd; best = i } })
+    return best
   }
 
   const onWheel = (e: React.WheelEvent) => zoom(Math.exp(e.deltaY * 0.0012))

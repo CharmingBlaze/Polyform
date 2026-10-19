@@ -39,11 +39,10 @@ export default function App() {
           <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
             <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
             {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
-            <NumericPanel />
           </div>
           <Timeline />
         </div>
-        <Sidebar />
+        <div className="right-col"><NumericPanel /><Sidebar /></div>
       </div>
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />

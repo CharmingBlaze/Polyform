@@ -24,6 +24,8 @@ export function Header({ onPalette }: { onPalette: () => void }) {
   const mode = useStore(s => s.mode)
   useStore(s => s.histRev)
   const layout = useStore(s => s.layout)
+  const tool = useStore(s => s.tool)
+  const gizmoSpace = useStore(s => s.gizmoSpace)
   const set = useStore(s => s.set)
   return (
     <header className="header">
@@ -36,6 +38,12 @@ export function Header({ onPalette }: { onPalette: () => void }) {
         <button className="icon-btn" disabled={!history.canUndo()} onClick={byId['edit.undo'].run} title="Undo  ·  Ctrl+Z" data-testid="undo"><Undo2 size={16} /></button>
         <button className="icon-btn" disabled={!history.canRedo()} onClick={byId['edit.redo'].run} title="Redo  ·  Ctrl+Shift+Z" data-testid="redo"><Redo2 size={16} /></button>
       </div>
+      <div className="seg" data-testid="gizmo-toggle" title="Gizmo type (G / R / S also start a modal transform)">
+        {(['select', 'move', 'rotate', 'scale'] as const).map(t => (
+          <button key={t} className={tool === t ? 'on' : ''} data-testid={`gizmo-${t}`} onClick={() => set({ tool: t })}>{t[0].toUpperCase() + t.slice(1)}</button>
+        ))}
+      </div>
+      <button className={`ghost ${gizmoSpace === 'local' ? 'on' : ''}`} data-testid="gizmo-space" title="Gizmo axes: global (world) or local (the object's own)" onClick={() => set({ gizmoSpace: gizmoSpace === 'local' ? 'global' : 'local' })}>{gizmoSpace === 'local' ? 'Local' : 'Global'}</button>
       <label className="layout-pick" title="Viewport layout">Layout
         <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
           <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
@@ -225,12 +233,13 @@ export function StatusBar() {
   const selectMode = useStore(s => s.selectMode)
   const subModes = useStore(s => s.subModes)
   const numericOpen = useStore(s => s.numericOpen)
+  const modalInfo = useStore(s => s.modalInfo)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Shift add · Ctrl remove · Alt+click loop',
-    move: 'Drag in any view to move · Ctrl snaps',
-    rotate: 'Drag to rotate around the view axis (or the one allowed axis) · Ctrl snaps 15°',
-    scale: 'Drag to scale · allow one axis to scale along it',
+    move: 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid',
+    rotate: 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°',
+    scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1',
     joint: 'Click to place a joint · it parents to the selected joint',
     point: 'Click to create a point on the grid plane · Shift adds to selection',
     paint: 'Painting arrives in the painting step',
@@ -252,7 +261,7 @@ export function StatusBar() {
       <span>{m.groups.length} groups</span><span>{m.bones.length} joints</span>
       <span className="sel" data-testid="sel-count">Selected: {sv} v · {se} e · {sf} f · {sb} j</span>
       <span className="grow" />
-      <span className="hint">{hint[tool]}</span>
+      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint">{modalInfo ?? hint[tool]}</span>
       <button className={`ghost small ${numericOpen ? 'on' : ''}`} onClick={byId['edit.numeric'].run} title="Numeric panel · N">Numeric</button>
     </footer>
   )

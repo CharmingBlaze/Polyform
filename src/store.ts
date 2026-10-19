@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { create } from 'zustand'
+import { isModalActive } from './interaction'
 import * as M from './model'
 import * as G from './geom'
 import * as B from './bones'
@@ -69,6 +70,10 @@ interface State {
   lastOp: LastOp | null
   /** an interactive extrude is in progress (Esc / right-click cancels the whole thing) */
   extruding: boolean
+  /** gizmo axes: world or the object's own */
+  gizmoSpace: 'global' | 'local'
+  /** status text while a modal transform runs */
+  modalInfo: string | null
   keyClipboard: KeyClip | null
   texRev: number
   toast: string | null
@@ -173,6 +178,17 @@ function edgesOfFaces(m: Model, fs: Iterable<number>): Set<number> {
   for (const f of fs) t.faceEdges(f).forEach(e => s.add(e))
   return s
 }
+/** Selection kept across undo/redo (like Blender), minus indices that no longer exist in `m`. */
+function keptSel(s: { selVerts: Set<number>; selFaces: Set<number>; selEdges: Set<number>; selBones: Set<number> }, m: Model) {
+  const nv = m.verts.length, nf = m.faces.length, nb = m.bones.length
+  return {
+    selVerts: new Set([...s.selVerts].filter(v => v < nv)),
+    selFaces: new Set([...s.selFaces].filter(f => f < nf)),
+    selEdges: new Set([...s.selEdges].filter(e => { const [a, b] = M.edgeEnds(e); return a < nv && b < nv })),
+    selBones: new Set([...s.selBones].filter(b => b < nb)),
+    selUV: new Set<number>(),
+  }
+}
 const clearSel = () => ({ selVerts: new Set<number>(), selFaces: new Set<number>(), selEdges: new Set<number>(), selBones: new Set<number>(), selUV: new Set<number>() })
 
 export const useStore = create<State>((set, get) => ({
@@ -206,6 +222,8 @@ export const useStore = create<State>((set, get) => ({
   numericOpen: false,
   lastOp: null,
   extruding: false,
+  gizmoSpace: 'global',
+  modalInfo: null,
   keyClipboard: null,
   texRev: 0,
   toast: null,
@@ -226,14 +244,14 @@ export const useStore = create<State>((set, get) => ({
     if (s.extruding) return s.cancelExtrude()
     const r = history.undo(s.model)
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...clearSel() })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...keptSel(s, r.model) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   doRedo: () => {
     const s = get()
     const r = history.redo()
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...clearSel() })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, ...keptSel(s, r.model) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
@@ -466,8 +484,7 @@ export const useStore = create<State>((set, get) => ({
     M.extrudeFaces(s.model, faces, 0)
     s.touch()
     s.setSelection({ faces })
-    set({ extruding: true, tool: s.tool === 'move' || s.tool === 'select' ? 'move' : s.tool })
-    s.notify('Extrude: drag to pull it out · Esc or right-click cancels')
+    set({ extruding: true })
   },
   cancelExtrude: () => {
     if (!get().extruding) return
@@ -489,8 +506,9 @@ export const useStore = create<State>((set, get) => ({
     m.bones.push({ name: `Joint ${m.bones.length + 1}`, parent, pos: [pp[0] + dir.x, pp[1] + dir.y, pp[2] + dir.z] })
     set({ selBones: new Set([m.bones.length - 1]), selectMode: 'joint' })
     s.touch()
-    s.commit()
+    // the hovered viewport takes over (joint follows the mouse; click confirms, Esc removes it again)
     window.dispatchEvent(new CustomEvent('modal-transform', { detail: 'joint' }))
+    if (!isModalActive()) s.commit()
   },
   knife: () => get().notify('Knife arrives with the Extrude / Loop cut / Knife step'),
   loopCut: () => get().notify('Loop cut arrives with the Extrude / Loop cut / Knife step'),

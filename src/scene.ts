@@ -47,7 +47,7 @@ function checkerTexture(): THREE.Texture {
 }
 
 /** A view drawn into a region of the one shared canvas. */
-export interface RenderTarget { el: HTMLElement; camera: THREE.Camera }
+export interface RenderTarget { el: HTMLElement; camera: THREE.Camera; /** called right before this view renders (gizmo sizing) */ pre?: () => void }
 
 const ORANGE = [1, 0.62, 0.2], ORANGE_HI = [1, 0.8, 0.35]
 
@@ -195,6 +195,7 @@ class SceneManager {
       r.setViewport(x, y, vr.width, vr.height)
       r.setScissor(x, y, vr.width, vr.height)
       r.clear()
+      t.pre?.()
       r.render(this.scene, t.camera)
     })
   }

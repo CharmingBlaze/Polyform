@@ -2,6 +2,7 @@ import { useStore, type EditMode, type Tool } from './store'
 import { exportGLB, exportOBJ, saveProject } from './io'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
+import { isModalActive } from './interaction'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -116,6 +117,7 @@ export function installShortcuts(openPalette: () => void) {
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+    if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
     const combo = comboOf(e)
     if (!combo) return
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
