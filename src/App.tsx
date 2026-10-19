@@ -6,6 +6,7 @@ import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
 import { addPrimitive } from './model'
+import { sceneManager } from './scene'
 
 let booted = false
 
@@ -13,6 +14,7 @@ export default function App() {
   const [palette, setPalette] = useState(false)
   const [dragging, setDragging] = useState(false)
   const maximized = useStore(s => s.maximized)
+  useEffect(() => sceneManager.invalidate(), [maximized])
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
   useEffect(() => {
@@ -34,6 +36,7 @@ export default function App() {
         <ToolRail />
         <div className="center">
           <div className={`views ${maximized ? 'max' : ''}`}>
+            <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
             <Viewport view="top" />
             <Viewport view="persp" />
             <Viewport view="front" />

@@ -16,16 +16,13 @@ type Drag =
 
 export function Viewport({ view }: { view: ViewName }) {
   const host = useRef<HTMLDivElement>(null)
-  const canvas = useRef<HTMLCanvasElement>(null)
+  const canvas = useRef<HTMLDivElement>(null)
   const [rect, setRect] = useState<null | { x: number; y: number; w: number; h: number }>(null)
   const maximized = useStore(s => s.maximized)
   const set = useStore(s => s.set)
-  const ctx = useRef<{ renderer: THREE.WebGLRenderer; camera: THREE.Camera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void } | null>(null)
+  const ctx = useRef<{ camera: THREE.Camera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void } | null>(null)
 
   useEffect(() => {
-    const el = canvas.current!
-    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     const target = new THREE.Vector3(0, 0.3, 0)
     const sph = new THREE.Spherical(6, 1.05, 0.75)
     let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera
@@ -38,7 +35,7 @@ export function Viewport({ view }: { view: ViewName }) {
       camera.layers.set(LAYER.common); camera.layers.enable(LAYER.ortho)
       camera.layers.enable(view === 'top' ? LAYER.gridXZ : view === 'front' ? LAYER.gridXY : LAYER.gridZY)
     }
-    const c = { renderer, camera, target, sph, w: 1, h: 1, update: () => {} }
+    const c = { camera, target, sph, w: 1, h: 1, update: () => {} }
     c.update = () => {
       if (camera instanceof THREE.PerspectiveCamera) {
         camera.aspect = c.w / c.h
@@ -58,16 +55,15 @@ export function Viewport({ view }: { view: ViewName }) {
       sceneManager.invalidate()
     }
     ctx.current = c
-    const rt = { render: () => renderer.render(sceneManager.scene, camera) }
+    const rt = { el: canvas.current!, camera }
     sceneManager.targets.add(rt)
     const ro = new ResizeObserver(() => {
       const r = host.current!.getBoundingClientRect()
       c.w = Math.max(1, r.width); c.h = Math.max(1, r.height)
-      renderer.setSize(c.w, c.h, false)
       c.update()
     })
     ro.observe(host.current!)
-    return () => { ro.disconnect(); sceneManager.targets.delete(rt); renderer.dispose() }
+    return () => { ro.disconnect(); sceneManager.targets.delete(rt) }
   }, [view])
 
   // ---------- helpers ----------
@@ -308,7 +304,7 @@ export function Viewport({ view }: { view: ViewName }) {
   const hidden = maximized && maximized !== view
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()}>
-      <canvas ref={canvas} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel}
+      <div className="vp-hit" ref={canvas} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel}
         onDoubleClick={() => set({ maximized: maximized ? null : view })} />
       <div className="vp-label">
         <span>{LABEL[view]}</span>

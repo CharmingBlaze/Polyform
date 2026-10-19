@@ -50,11 +50,12 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .header [data-tip]:hover::after, .timeline [data-tip]:hover::after { transform: translate(-30%, 30px); }
 
 .center { display: grid; grid-template-rows: 1fr 84px; min-width: 0; min-height: 0; }
-.views { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; background: var(--line); min-height: 0; }
+.views { position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px; background: var(--line); min-height: 0; }
 .views.max { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-.viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #14161c; }
+.viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 .viewport.hidden { display: none; }
-.viewport canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.vp-hit { position: absolute; inset: 0; touch-action: none; }
 .vp-label { position: absolute; top: 8px; left: 8px; display: flex; align-items: center; gap: 4px; background: rgba(14,16,21,.72); backdrop-filter: blur(6px); border: 1px solid var(--line); border-radius: 7px; padding: 2px 4px 2px 9px; font-size: 11.5px; font-weight: 600; color: #c5ccdb; }
 .vp-label button { border: none; background: transparent; padding: 1px 5px; color: var(--dim); font-size: 13px; }
 .vp-label button:hover { color: var(--text); }

@@ -24,7 +24,8 @@ function checkerTexture(): THREE.Texture {
   return t
 }
 
-export interface RenderTarget { render: () => void }
+/** A view drawn into a region of the one shared canvas. */
+export interface RenderTarget { el: HTMLElement; camera: THREE.Camera }
 
 class SceneManager {
   scene = new THREE.Scene()
@@ -112,7 +113,7 @@ class SceneManager {
     })
     this.rebuild()
     const loop = () => {
-      if (this.dirty) { this.dirty = false; this.targets.forEach(t => t.render()) }
+      if (this.dirty && this.renderer && !this.contextLost) { this.dirty = false; this.renderAll() }
       requestAnimationFrame(loop)
     }
     requestAnimationFrame(loop)
@@ -122,14 +123,53 @@ class SceneManager {
 
   invalidate() { this.dirty = true }
 
+  renderer: THREE.WebGLRenderer | null = null
+  contextLost = false
+
+  /** One WebGLRenderer for every view: a single context to upload to, lose, and restore. */
+  attach(canvas: HTMLCanvasElement) {
+    if (this.renderer?.domElement === canvas) return
+    this.renderer?.dispose()
+    const r = new THREE.WebGLRenderer({ canvas, antialias: true })
+    r.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    r.setClearColor('#262b36')
+    r.autoClear = false
+    canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.contextLost = true })
+    canvas.addEventListener('webglcontextrestored', () => { this.contextLost = false; this.texture.needsUpdate = true; this.invalidate() })
+    this.renderer = r
+    this.invalidate()
+  }
+
+  private renderAll() {
+    const r = this.renderer!
+    const canvas = r.domElement
+    const cr = canvas.getBoundingClientRect()
+    const size = r.getSize(new THREE.Vector2())
+    if (size.x !== cr.width || size.y !== cr.height) r.setSize(cr.width, cr.height, false)
+    r.setScissorTest(false)
+    r.clear()
+    r.setScissorTest(true)
+    this.targets.forEach(t => {
+      const vr = t.el.getBoundingClientRect()
+      if (vr.width < 1 || vr.height < 1) return
+      const x = vr.left - cr.left, y = cr.height - (vr.top - cr.top) - vr.height
+      r.setViewport(x, y, vr.width, vr.height)
+      r.setScissor(x, y, vr.width, vr.height)
+      r.clear()
+      r.render(this.scene, t.camera)
+    })
+  }
+
   setTexture(url: string | null) {
     if (!url) {
+      if (this.texture !== this.checker) this.texture.dispose()
       this.texture = this.checker
       this.textureImage = this.checker.image as HTMLCanvasElement
       this.applyTexture()
       return
     }
     new THREE.TextureLoader().load(url, t => {
+      if (this.texture !== this.checker) this.texture.dispose()
       t.colorSpace = THREE.SRGBColorSpace
       t.magFilter = THREE.NearestFilter
       this.texture = t
@@ -224,8 +264,17 @@ function dotTexture() {
   return new THREE.CanvasTexture(c)
 }
 
+/** Write into the existing GPU buffer when the size is unchanged (the drag path);
+ *  otherwise free the old buffers before swapping in a new attribute. */
 function setAttr(geo: THREE.BufferGeometry, name: string, data: number[], size: number) {
-  geo.setAttribute(name, new THREE.Float32BufferAttribute(data, size))
+  const cur = geo.getAttribute(name) as THREE.BufferAttribute | undefined
+  if (cur && cur.itemSize === size && cur.array.length === data.length) {
+    ;(cur.array as Float32Array).set(data)
+    cur.needsUpdate = true
+  } else {
+    if (cur) geo.dispose() // releases every GPU buffer of this geometry; they re-upload on next draw
+    geo.setAttribute(name, new THREE.Float32BufferAttribute(data, size))
+  }
   geo.setDrawRange(0, data.length / size)
 }
 

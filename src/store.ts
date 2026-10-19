@@ -96,7 +96,11 @@ export const useStore = create<State>((set, get) => ({
     set({ model: next, redo: s.redo.slice(0, -1), undo: [...s.undo, M.cloneModel(s.model)], version: s.version + 1, selVerts: new Set(), selFaces: new Set(), selBones: new Set(), selUV: new Set() })
   },
   edit: fn => { get().checkpoint(); fn(get().model); get().touch() },
-  loadModel: m => set(s => ({ model: m, undo: [], redo: [], version: s.version + 1, selVerts: new Set(), selFaces: new Set(), selBones: new Set(), selUV: new Set(), frame: 0, textureUrl: m.texture ?? null })),
+  loadModel: m => {
+    const textureUrl = m.texture ?? null
+    delete m.texture // textures live outside the model so undo snapshots stay small
+    set(s => ({ model: m, undo: [], redo: [], version: s.version + 1, selVerts: new Set(), selFaces: new Set(), selBones: new Set(), selUV: new Set(), frame: 0, textureUrl }))
+  },
   notify: msg => {
     set({ toast: msg })
     clearTimeout(toastTimer)

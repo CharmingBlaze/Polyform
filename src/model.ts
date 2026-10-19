@@ -33,6 +33,24 @@ export function cloneModel(m: Model): Model {
   return JSON.parse(JSON.stringify(m))
 }
 
+/** Quantize for welding; `+ 0` folds -0 into 0 so twins on the zero plane merge. */
+const weldKey = (n: number) => Math.round(n * 1e4) + 0
+
+/** Throws if any face, vertex-bone or bone-parent index is out of range. */
+export function validateModel(m: Model) {
+  const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length
+  const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
+  m.verts.forEach((v, i) => { if (!Array.isArray(v) || v.length !== 3 || v.some(x => !Number.isFinite(x))) throw new Error(`Vertex ${i} is invalid`) })
+  if (m.vbone.length !== nv) throw new Error('Vertex/bone table length mismatch')
+  m.vbone.forEach((b, i) => { if (!int(b, -1, nb)) throw new Error(`Vertex ${i} references missing joint ${b}`) })
+  m.faces.forEach((f, i) => {
+    if (!Array.isArray(f.v) || f.v.length !== 3 || !f.v.every(v => int(v, 0, nv))) throw new Error(`Face ${i} references a missing vertex`)
+    if (!int(f.g, 0, ng)) throw new Error(`Face ${i} references a missing group`)
+    if (!Array.isArray(f.uv) || f.uv.length !== 3) throw new Error(`Face ${i} has invalid UVs`)
+  })
+  m.bones.forEach((b, i) => { if (!int(b.parent, -1, nb) || b.parent === i) throw new Error(`Joint ${i} has an invalid parent`) })
+}
+
 export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus'
 
 function makeGeometry(kind: PrimitiveKind): THREE.BufferGeometry {
@@ -68,7 +86,7 @@ export function addGeometry(m: Model, geo: THREE.BufferGeometry, name: string, a
   const newVerts: number[] = []
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) + at[0], y = pos.getY(i) + at[1], z = pos.getZ(i) + at[2]
-    const k = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`
+    const k = `${weldKey(x)},${weldKey(y)},${weldKey(z)}`
     let vi = weld.get(k)
     if (vi === undefined) {
       vi = m.verts.length

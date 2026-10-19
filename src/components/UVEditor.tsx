@@ -189,7 +189,7 @@ export function UVEditor() {
 
   const loadTexture = (file: File) => {
     const r = new FileReader()
-    r.onload = () => { const url = r.result as string; useStore.setState({ textureUrl: url }); useStore.getState().model.texture = url }
+    r.onload = () => { const url = r.result as string; useStore.setState({ textureUrl: url }) }
     r.readAsDataURL(file)
   }
 
@@ -224,7 +224,7 @@ export function UVEditor() {
         <div className="label">Texture</div>
         <div className="btn-row">
           <label className="btn">Load image…<input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
-          <button onClick={() => { useStore.setState({ textureUrl: null }); useStore.getState().model.texture = undefined }}>Checker</button>
+          <button onClick={() => { useStore.setState({ textureUrl: null }) }}>Checker</button>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
-import { addGeometry, emptyModel, type Model } from './model'
+import { addGeometry, emptyModel, validateModel, type Model } from './model'
 import { keyFrames } from './anim'
 import { sceneManager } from './scene'
 import { useStore } from './store'
@@ -113,7 +113,7 @@ export function exportOBJ(m: Model, name = 'model') {
 }
 
 export function saveProject(m: Model, name = 'model') {
-  download(JSON.stringify(m), `${name}.polyform.json`, 'application/json')
+  download(JSON.stringify({ ...m, texture: useStore.getState().textureUrl ?? undefined }), `${name}.polyform.json`, 'application/json')
 }
 
 /** Import .json project, .glb/.gltf or .obj (geometry is merged into the current model). */
@@ -121,9 +121,11 @@ export async function importFile(file: File) {
   const st = useStore.getState()
   const ext = file.name.split('.').pop()!.toLowerCase()
   if (ext === 'json') {
-    const m = JSON.parse(await file.text()) as Model
-    if (!Array.isArray(m.verts)) throw new Error('Not a Polyform project')
-    st.loadModel({ ...emptyModel(), ...m })
+    const m = { ...emptyModel(), ...(JSON.parse(await file.text()) as Model) }
+    if (!Array.isArray(m.verts) || !Array.isArray(m.faces)) throw new Error('Not a Polyform project')
+    if (!m.vbone || !m.vbone.length) m.vbone = m.verts.map(() => -1)
+    validateModel(m)
+    st.loadModel(m)
     return st.notify(`Opened ${file.name}`)
   }
   let obj: THREE.Object3D
@@ -131,7 +133,6 @@ export async function importFile(file: File) {
   else if (ext === 'glb' || ext === 'gltf') obj = (await new GLTFLoader().parseAsync(await file.arrayBuffer(), '')).scene
   else if (/^(png|jpe?g|webp|gif)$/.test(ext)) {
     const url = await new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(file) })
-    st.model.texture = url
     useStore.setState({ textureUrl: url })
     return st.notify('Texture applied')
   } else throw new Error(`Unsupported file type .${ext}`)
@@ -154,15 +155,15 @@ const KEY = 'polyform:autosave'
 export async function restoreAutosave() {
   try {
     const m = await idbGet<Model>(KEY)
-    if (m && Array.isArray(m.verts)) { useStore.getState().loadModel({ ...emptyModel(), ...m }); return true }
+    if (m && Array.isArray(m.verts)) { const mm = { ...emptyModel(), ...m }; validateModel(mm); useStore.getState().loadModel(mm); return true }
   } catch { /* ignore */ }
   return false
 }
 let saveTimer = 0
 export function startAutosave() {
   useStore.subscribe((s, p) => {
-    if (s.version === p.version) return
+    if (s.version === p.version && s.textureUrl === p.textureUrl) return
     clearTimeout(saveTimer)
-    saveTimer = window.setTimeout(() => { idbSet(KEY, useStore.getState().model).catch(() => {}) }, 600)
+    saveTimer = window.setTimeout(() => { idbSet(KEY, { ...useStore.getState().model, texture: useStore.getState().textureUrl ?? undefined }).catch(() => {}) }, 600)
   })
 }
