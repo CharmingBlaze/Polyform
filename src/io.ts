@@ -38,7 +38,12 @@ export function buildExportScene(m: Model) {
     // per-material sampler: clone shares the image, so the exporter still embeds it once
     const src = textures.three(mt.texture)
     const tex = src ? applyFilter(src.clone(), mt.filter) : null
-    const mat = new THREE.MeshStandardMaterial({ color: baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi)), vertexColors: vcm.has(mi), roughness: mt.roughness, metalness: mt.metalness, map: tex })
+    const alpha = !!(tex && textures.hasAlpha(mt.texture))
+    const mat = new THREE.MeshStandardMaterial({
+      color: baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi)),
+      vertexColors: vcm.has(mi), roughness: mt.roughness, metalness: mt.metalness, map: tex,
+      transparent: alpha, depthWrite: !alpha,
+    })
     mat.name = mt.name
     return mat
   })

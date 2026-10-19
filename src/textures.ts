@@ -11,7 +11,7 @@ export function applyFilter(tex: THREE.Texture, filter: 'nearest' | 'linear' | u
 /** A rectangle of pixels saved for undo/redo of a paint stroke. */
 export interface TexPatch { id: string; x: number; y: number; data: ImageData }
 
-interface Entry { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; version: number }
+interface Entry { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; version: number; hasAlpha: boolean }
 
 let seq = 0
 const newId = () => `tex-${Date.now().toString(36)}-${(seq++).toString(36)}`
@@ -34,7 +34,7 @@ class TextureStore {
 
   onChange(fn: (id: string) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
 
-  private put(id: string, canvas: HTMLCanvasElement) {
+  private put(id: string, canvas: HTMLCanvasElement, hasAlpha = false) {
     const old = this.map.get(id)
     old?.tex.dispose()
     const tex = new THREE.CanvasTexture(canvas)
@@ -42,8 +42,28 @@ class TextureStore {
     tex.magFilter = THREE.NearestFilter
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping
     tex.flipY = true
-    this.map.set(id, { canvas, tex, version: 0 })
+    this.map.set(id, { canvas, tex, version: 0, hasAlpha })
     this.touch(id)
+  }
+
+  /** True when any texel has alpha < 255 (eraser, or an imported image with transparency). */
+  hasAlpha(id: string | null | undefined): boolean {
+    return !!(id && this.map.get(id)?.hasAlpha)
+  }
+
+  /** Mark that this texture uses transparency (called after an erase stroke). */
+  markAlpha(id: string) {
+    const e = this.map.get(id)
+    if (e && !e.hasAlpha) { e.hasAlpha = true; this.version++; this.listeners.forEach(fn => fn(id)) }
+  }
+
+  /** Recompute hasAlpha from pixels (imports, undo of erase). */
+  private scanAlpha(id: string) {
+    const e = this.map.get(id)
+    if (!e) return
+    const d = e.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, e.canvas.width, e.canvas.height).data
+    e.hasAlpha = false
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 255) { e.hasAlpha = true; return }
   }
 
   /** New blank texture filled with a color. */
@@ -64,6 +84,7 @@ class TextureStore {
     c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s))
     c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
     this.put(id, c)
+    this.scanAlpha(id)
     return id
   }
 
@@ -77,6 +98,7 @@ class TextureStore {
     c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height)
     bmp.close()
     this.put(id, c)
+    this.scanAlpha(id)
     return id
   }
 
@@ -109,6 +131,8 @@ class TextureStore {
     const g = c.getContext('2d')!
     const prev = g.getImageData(p.x, p.y, p.data.width, p.data.height)
     g.putImageData(p.data, p.x, p.y)
+    // undo/redo of an erase can add or remove transparency
+    this.scanAlpha(p.id)
     this.touch(p.id)
     return { id: p.id, x: p.x, y: p.y, data: prev }
   }

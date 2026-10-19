@@ -243,7 +243,8 @@ class SceneManager {
     const st = useStore.getState()
     const mats = st.model.materials
     const vcm = vcMaterials(st.model)
-    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + [...vcm].join()
+    const alphaKey = mats.map(mt => textures.hasAlpha(mt.texture) ? '1' : '0').join('')
+    const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + alphaKey + '|' + [...vcm].join()
     if (key === this.matKey) return
     this.matKey = key
     const dispose = (m: THREE.Mesh) => (m.material as THREE.Material[]).forEach(x => x.dispose())
@@ -253,8 +254,10 @@ class SceneManager {
       if (own) applyFilter(own, mt.filter)
       // the UV checker previews unmapped materials, but would hide vertex colours
       const map = tex ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
+      const alpha = !!(own && textures.hasAlpha(mt.texture))
       return new THREE.MeshStandardMaterial({
         color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
+        transparent: alpha, depthWrite: !alpha,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       })
     })

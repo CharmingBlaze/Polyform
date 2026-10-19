@@ -153,6 +153,22 @@ await p.click('[data-testid="paint-mirror"]')
   const dil = await S(([t, hex]) => window.__polyformPaint.dilationProbe(t, hex), [tex, yel])
   check('seam dilation: the stroke bleeds 1-3 px past the UV border into unused texture', dil.outside > 0 && dil.maxDist <= 3, JSON.stringify(dil))
 }
+
+// 6b. erase: lowers alpha and turns on material transparency (viewport + export)
+{
+  await p.click('[data-testid="paint-erase"]')
+  await p.locator('[data-testid="paint-size"]').fill('20')
+  await p.locator('[data-testid="paint-opacity"]').fill('1')
+  const Er = await screen(front.ctr)
+  await dabAt(Er)
+  const rgba = (await probe(Er))?.rgba
+  check('erase drops alpha under the brush', rgba && rgba[3] < 30, JSON.stringify(rgba))
+  check('erase marks the texture as having alpha', await S(t => window.__polyformPaint.hasAlpha(t), tex))
+  check('viewport textured material blends alpha after erase', await S(() => window.__polyformPaint.matTransparent(0)))
+  // same hasAlpha flag drives MeshStandardMaterial.transparent in buildExportScene (glTF alphaMode: BLEND)
+  check('export path will blend: hasAlpha is set for the painted texture', await S(t => window.__polyformPaint.hasAlpha(t), tex))
+  await p.click('[data-testid="paint-brush"]')
+}
 await p.screenshot({ path: '/workspace/shot-paint.png' })
 // 7. painted pixels survive autosave + reload, and a saved project file
 {

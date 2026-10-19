@@ -118,11 +118,13 @@ function dilateStroke(t: TexStroke) {
 
 function finish(a: Active, label: string) {
   const patches: TexPatch[] = []
+  const erased = S().paint.mode === 'erase'
   for (const t of a.tex.values()) {
     dilateStroke(t)
     const b = P.cropBefore(t.s)
     if (!b) continue
     patches.push({ id: t.id, x: b.x, y: b.y, data: new ImageData(new Uint8ClampedArray(b.px.data), b.px.width, b.px.height) })
+    if (erased) textures.markAlpha(t.id)
   }
   if (!patches.length) return
   const s = S()
@@ -293,6 +295,12 @@ export const painting = () => !!(cur || vcur)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {
+  hasAlpha: (id: string) => textures.hasAlpha(id),
+  /** Whether the textured viewport material for material `mi` blends alpha. */
+  matTransparent: (mi: number) => {
+    const mats = sceneManager.meshes.textured.material as THREE.MeshStandardMaterial[]
+    return !!mats[mi]?.transparent
+  },
   at(ctx: ViewCtx, clientX: number, clientY: number) {
     const r = ctx.el.getBoundingClientRect(), ray = new THREE.Raycaster()
     ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / ctx.w) * 2 - 1, -((clientY - r.top) / ctx.h) * 2 + 1), ctx.camera)
