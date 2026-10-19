@@ -23,7 +23,12 @@ type Drag =
   | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean }
   | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number }
   | { kind: 'paint' }
+  | { kind: 'press'; x0: number; y0: number; hit: Hit; wasSelected: boolean; add: boolean }
   | XfDrag
+
+/** What a press landed on, in the current mode. */
+type Hit = { type: 'vert' | 'edge' | 'face' | 'object' | 'joint'; i: number }
+const TWEAK_PX = 4
 
 /** A running transform: from the gizmo, a modal G/R/S/E, or a click-drag tweak. */
 interface XfDrag {
@@ -501,7 +506,43 @@ export function Viewport({ pane }: { pane: number }) {
       useStore.getState().setSelection({ verts: sv })
       return
     }
+    // press on an element: select it now, drag past 4 px moves it (one undo step); empty space: marquee
+    const hitEl = !e.altKey && !(e.ctrlKey || e.metaKey) ? pickAny(x, y, st) : null
+    if (hitEl) {
+      const was = isSelected(hitEl, st)
+      if (!was) selectHit(hitEl, e.shiftKey ? 'add' : 'replace')
+      drag.current = { kind: 'press', x0: x, y0: y, hit: hitEl, wasSelected: was, add: e.shiftKey }
+      return
+    }
     drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.ctrlKey || e.metaKey, alt: e.altKey }
+  }
+
+  function pickAny(x: number, y: number, st: ReturnType<typeof useStore.getState>): Hit | null {
+    const animate = st.mode === 'animate'
+    if (st.selectMode === 'joint' || (animate && st.selectMode !== 'object')) { const j = pickJoint(x, y); return j >= 0 ? { type: 'joint', i: j } : null }
+    if (st.selectMode === 'object') { const f = pickFaceScreen(x, y); return f >= 0 ? { type: 'object', i: st.model.faces[f].g } : null }
+    return pickElement(x, y, st)
+  }
+  function isSelected(h: Hit, st: ReturnType<typeof useStore.getState>) {
+    if (h.type === 'vert') return st.selVerts.has(h.i)
+    if (h.type === 'edge') return st.selEdges.has(h.i)
+    if (h.type === 'face') return st.selFaces.has(h.i)
+    if (h.type === 'joint') return st.selBones.has(h.i)
+    return st.model.faces.some((f, fi) => f.g === h.i && st.selFaces.has(fi))
+  }
+  function selectHit(h: Hit, how: 'replace' | 'add' | 'remove') {
+    const st = useStore.getState()
+    const upd = (cur: Set<number>, ids: number[]) => {
+      const s2 = new Set(how === 'replace' ? [] : cur)
+      ids.forEach(i => (how === 'remove' ? s2.delete(i) : s2.add(i)))
+      return s2
+    }
+    if (h.type === 'joint') return useStore.setState({ selBones: upd(st.selBones, [h.i]) })
+    if (h.type === 'vert') return st.setSelection({ verts: upd(st.selVerts, [h.i]) })
+    if (h.type === 'edge') return st.setSelection({ edges: upd(st.selEdges, [h.i]) })
+    if (h.type === 'face') return st.setSelection({ faces: upd(st.selFaces, [h.i]) })
+    const faces = st.model.faces.map((f, fi) => (f.g === h.i ? fi : -1)).filter(fi => fi >= 0)
+    st.setSelection({ faces: upd(st.selFaces, faces) })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -523,7 +564,17 @@ export function Viewport({ pane }: { pane: number }) {
     if (d.kind === 'paint') { paintAt(ray(x, y)); return }
     if (d.kind === 'rect') {
       d.x1 = x; d.y1 = y
-      setRect({ x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) })
+      if (Math.abs(x - d.x0) > TWEAK_PX || Math.abs(y - d.y0) > TWEAK_PX) setRect({ x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) })
+      return
+    }
+    if (d.kind === 'press') {
+      if (Math.hypot(x - d.x0, y - d.y0) <= TWEAK_PX) return
+      // past the threshold: tweak-move the selection (which now contains the pressed element); no marquee
+      const t = beginXf('tweak', 'move', d.x0, d.y0)
+      if (!t) { drag.current = null; return }
+      t.ctrl = e.ctrlKey || e.metaKey
+      activate(t)
+      updateXf(t, x, y)
       return
     }
     if (d.kind === 'xf' && d.src !== 'modal') {
@@ -538,6 +589,12 @@ export function Viewport({ pane }: { pane: number }) {
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current
     if (d?.kind === 'xf') { if (d.src !== 'modal') endXf(d, true); return }
+    if (d?.kind === 'press') {
+      drag.current = null
+      // a click on an already selected element: Shift toggles it off, otherwise it becomes the only selection
+      if (d.wasSelected) selectHit(d.hit, d.add ? 'remove' : 'replace')
+      return
+    }
     drag.current = null
     setRect(null)
     const st = useStore.getState()
