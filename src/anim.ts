@@ -1,8 +1,27 @@
 import * as THREE from 'three'
-import type { Clip, Key, Model, OKey, Vec3, Xform } from './model'
+import type { Clip, Ease, Key, Model, OKey, Vec3, Xform } from './model'
 import { ensureSkin, isBound } from './skin'
 
 const ZERO: Key = { rot: [0, 0, 0], pos: [0, 0, 0] }
+
+/** Warp a 0..1 segment parameter by the outgoing key's easing. */
+export function applyEase(t: number, ease: Ease): number {
+  const x = Math.max(0, Math.min(1, t))
+  switch (ease) {
+    case 'step': return 0
+    case 'easeIn': return x * x
+    case 'easeOut': return 1 - (1 - x) * (1 - x)
+    case 'easeInOut': return x < 0.5 ? 2 * x * x : 1 - ((-2 * x + 2) ** 2) / 2
+    default: return x
+  }
+}
+
+/** Resolve easing for a segment: per-key ease, else clip interp. */
+export function segmentEase(key: { ease?: Ease } | undefined, clip: Clip | undefined): Ease {
+  if (key?.ease) return key.ease
+  return clip?.interp === 'step' ? 'step' : 'linear'
+}
+
 
 /** Accepts a clip, or a model (its first clip). */
 type ClipLike = Clip | Model | undefined
@@ -26,7 +45,7 @@ export function sampleBone(clipLike: ClipLike, bone: number, frame: number): { q
   if (frame >= frames[frames.length - 1]) prev = next = frames[frames.length - 1]
   const a = keys[prev], b = keys[next]
   let t = next === prev ? 0 : (frame - prev) / (next - prev)
-  if (clip.interp === 'step') t = 0
+  t = applyEase(t, segmentEase(a, clip))
   const q = toQ(a).slerp(toQ(b), t)
   const p = new THREE.Vector3(...a.pos).lerp(new THREE.Vector3(...b.pos), t)
   const e = new THREE.Euler().setFromQuaternion(q)
@@ -106,8 +125,8 @@ export function sampleObject(clip: Clip | undefined, g: number, frame: number): 
   if (frame <= frames[0]) prev = next = frames[0]
   if (frame >= frames[frames.length - 1]) prev = next = frames[frames.length - 1]
   let t = next === prev ? 0 : (frame - prev) / (next - prev)
-  if (clip!.interp === 'step') t = 0
   const a = k[prev], b = k[next]
+  t = applyEase(t, segmentEase(a, clip))
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...a.rot)).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(...b.rot)), t)
   const e = new THREE.Euler().setFromQuaternion(q)
   const lerp = (x: Vec3, y: Vec3): Vec3 => [x[0] + (y[0] - x[0]) * t, x[1] + (y[1] - x[1]) * t, x[2] + (y[2] - x[2]) * t]

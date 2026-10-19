@@ -99,9 +99,10 @@ export interface Material {
 }
 export type TexFilter = 'nearest' | 'linear'
 export interface Bone { name: string; parent: number; pos: Vec3 }
-export interface Key { rot: Vec3; pos: Vec3 }
+export type Ease = 'linear' | 'step' | 'easeIn' | 'easeOut' | 'easeInOut'
+export interface Key { rot: Vec3; pos: Vec3; /** Easing of the segment from this key to the next. */ ease?: Ease }
 /** Object key: absolute transform of an (unskinned) object at a frame. */
-export interface OKey { pos: Vec3; rot: Vec3; scale: Vec3 }
+export interface OKey { pos: Vec3; rot: Vec3; scale: Vec3; ease?: Ease }
 export type Interp = 'linear' | 'step'
 export interface Clip {
   name: string

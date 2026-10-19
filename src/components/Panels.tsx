@@ -85,20 +85,35 @@ function KeyInspector({ bone, frame }: { bone: number; frame: number }) {
   useStore(s => s.version)
   const st = useStore.getState()
   const clip = st.curClip()
+  const stored = clip.keys[bone]?.[frame]
   const k = sampleBone(clip, bone, frame).key
-  const isKey = !!clip.keys[bone]?.[frame]
+  const isKey = !!stored
+  const ease = stored?.ease ?? (clip.interp === 'step' ? 'step' : 'linear')
   const setVal = (field: 'rot' | 'pos', axis: number, val: number) => {
     const ci = Math.min(useStore.getState().clip, m.clips.length - 1)
     st.edit(mm => {
       const c = mm.clips[ci]
       const cur = sampleBone(c, bone, frame).key
-      const nk = { rot: [...cur.rot], pos: [...cur.pos] } as typeof cur
+      const prev = c.keys[bone]?.[frame]
+      const nk = { rot: [...cur.rot] as typeof cur.rot, pos: [...cur.pos] as typeof cur.pos, ...(prev?.ease ? { ease: prev.ease } : {}) }
       nk[field][axis] = field === 'rot' ? (val * Math.PI) / 180 : val
       c.keys[bone] = { ...(c.keys[bone] || {}), [frame]: nk }
     }, 'Edit key')
   }
+  const setEase = (ease: import('../model').Ease) => {
+    if (!isKey) return
+    const ci = Math.min(useStore.getState().clip, m.clips.length - 1)
+    st.edit(mm => {
+      const c = mm.clips[ci]
+      const cur = c.keys[bone][frame]
+      const nk = { ...cur, rot: [...cur.rot] as typeof cur.rot, pos: [...cur.pos] as typeof cur.pos }
+      if (ease === 'linear') delete nk.ease
+      else nk.ease = ease
+      c.keys[bone] = { ...c.keys[bone], [frame]: nk }
+    }, 'Key easing')
+  }
   return (
-    <div className="card">
+    <div className="card" data-testid="key-inspector">
       <div className="label">{m.bones[bone].name} · frame {frame} {isKey ? <span className="pill">key</span> : <span className="pill dim">interpolated</span>}</div>
       {(['rot', 'pos'] as const).map(f => (
         <div className="vec" key={f}>
@@ -111,6 +126,15 @@ function KeyInspector({ bone, frame }: { bone: number; frame: number }) {
           ))}
         </div>
       ))}
+      {isKey && (
+        <label className="mini">Ease <select data-testid="key-ease" value={ease} onChange={e => setEase(e.target.value as import('../model').Ease)}>
+          <option value="linear">Linear</option>
+          <option value="step">Step</option>
+          <option value="easeIn">Ease in</option>
+          <option value="easeOut">Ease out</option>
+          <option value="easeInOut">Ease in-out</option>
+        </select></label>
+      )}
     </div>
   )
 }
