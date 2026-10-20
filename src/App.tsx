@@ -9,6 +9,7 @@ import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
 import { addPrimitive } from './model'
 import { sceneManager } from './scene'
+import { clampTimeline } from './prefs'
 
 let booted = false
 
@@ -20,7 +21,9 @@ export default function App() {
   const uvSpace = useStore(s => s.uvSpace)
   const uvSplit = useStore(s => s.uvSplit)
   const uvMax = useStore(s => s.uvMax)
-  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax])
+  const animate = useStore(s => s.mode === 'animate')
+  const timelineH = useStore(s => s.ui.timelineH)
+  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax, animate, timelineH])
   const cols = uvMax === '3d' ? 'minmax(0, 1fr) 14px 0px' : uvMax === 'uv' ? '0px 14px minmax(0, 1fr)' : `minmax(0, ${uvSplit}fr) 14px minmax(0, ${1 - uvSplit}fr)`
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
@@ -42,7 +45,7 @@ export default function App() {
       <HintBar />
       <div className="main">
         <ToolRail />
-        <div className="center">
+        <div className="center" style={{ gridTemplateRows: animate ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
             <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
@@ -54,7 +57,7 @@ export default function App() {
               <div className="uv-pane" data-testid="uv-pane">{uvMax !== '3d' && <UVEditor big />}</div>
             </>}
           </div>
-          <Timeline />
+          {animate && <Timeline />}
         </div>
         <div className="right-col"><DrawPanel /><NumericPanel /><Sidebar /></div>
       </div>

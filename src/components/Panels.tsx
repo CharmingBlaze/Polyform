@@ -9,6 +9,7 @@ import { Outliner } from './Outliner'
 import { DopeSheet } from './DopeSheet'
 import { RefsPanel } from './RefsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
+import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 
 export function Sidebar() {
   const tab = useStore(s => s.sideTab)
@@ -173,6 +174,7 @@ export function Timeline() {
     return () => cancelAnimationFrame(raf)
   }, [playing])
 
+  const compact = useStore(s => clampTimeline(s.ui.timelineH) <= TIMELINE_MIN + 8)
   const clipIdx = useStore(s => s.clip)
   const selFaces = useStore(s => s.selFaces)
   const clip = m.clips[Math.min(clipIdx, m.clips.length - 1)]
@@ -188,7 +190,8 @@ export function Timeline() {
     if (target !== undefined) set({ frame: target })
   }
   return (
-    <div className={`timeline ${mode === 'animate' ? 'active' : ''}`}>
+    <div className={`timeline ${mode === 'animate' ? 'active' : ''} ${compact ? 'compact' : ''}`} data-testid="timeline">
+      <TimelineHandle />
       <div className="tl-controls">
         <button className="icon-btn" data-testid="frame-start" onClick={() => set({ frame: 0 })} data-tip="First frame"><ChevronFirst size={15} /></button>
         <button className="icon-btn" data-testid="key-prev" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
@@ -208,9 +211,34 @@ export function Timeline() {
         <label className="mini">Loop <input type="checkbox" checked={clip.loop} onChange={e => st.edit(mm => (mm.clips[clipIdx].loop = e.target.checked), 'Clip loop')} /></label>
         <label className="mini">Interp <select value={clip.interp} onChange={e => st.edit(mm => (mm.clips[clipIdx].interp = e.target.value as 'linear' | 'step'), 'Interpolation')}><option value="linear">Linear</option><option value="step">Step</option></select></label>
       </div>
-      <DopeSheet n={n} />
+      {!compact && <DopeSheet n={n} />}
     </div>
   )
+}
+
+/** Grip on the timeline's top edge: drag to resize (compact strip … most of the window), double-click toggles compact. */
+function TimelineHandle() {
+  const down = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    const y0 = e.clientY, h0 = clampTimeline(useStore.getState().ui.timelineH)
+    const move = (ev: PointerEvent) => useStore.getState().setUI({ timelineH: clampTimeline(h0 + (y0 - ev.clientY)) })
+    const up = (ev: PointerEvent) => {
+      el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up)
+      try { el.releasePointerCapture(ev.pointerId) } catch { /* already released */ }
+      const h = clampTimeline(useStore.getState().ui.timelineH)
+      if (h > TIMELINE_MIN + 8) useStore.getState().setUI({ timelineLastH: h })
+    }
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up)
+  }
+  const toggle = () => {
+    const { ui, setUI } = useStore.getState()
+    const h = clampTimeline(ui.timelineH)
+    if (h <= TIMELINE_MIN + 8) setUI({ timelineH: clampTimeline(Math.max(ui.timelineLastH, TIMELINE_DEFAULT)) })
+    else setUI({ timelineH: TIMELINE_MIN, timelineLastH: h })
+  }
+  return <div className="tl-handle" data-testid="timeline-handle" role="separator" aria-orientation="horizontal" title="Drag to resize · double-click: compact / last height" onPointerDown={down} onDoubleClick={toggle}><span className="grip" /></div>
 }
 
 /** editable current frame: type a number, Enter / blur applies (clamped), Esc reverts */

@@ -11,7 +11,7 @@
     "lint:errors": "eslint . --quiet",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs shade.mjs incr.mjs palette.mjs ease.mjs polish.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs shade.mjs incr.mjs palette.mjs ease.mjs polish.mjs layout.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
     "test:gizmo": "node tests/e2e/run.mjs gizmo.mjs",
@@ -35,7 +35,8 @@
     "test:incr": "node tests/e2e/run.mjs incr.mjs",
     "test:palette": "node tests/e2e/run.mjs palette.mjs",
     "test:ease": "node tests/e2e/run.mjs ease.mjs",
-    "test:polish": "node tests/e2e/run.mjs polish.mjs"
+    "test:polish": "node tests/e2e/run.mjs polish.mjs",
+    "test:layout": "node tests/e2e/run.mjs layout.mjs"
   },
   "dependencies": {
     "comlink": "4.4.2",

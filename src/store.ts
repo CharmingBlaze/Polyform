@@ -14,6 +14,7 @@ import { topology } from './topology'
 import * as X from './extrude'
 import { applyAtlas, atlasInput } from './unwrap'
 import * as UV from './uvops'
+import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
 import { textures as tex } from './textures'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
@@ -128,6 +129,9 @@ interface State {
   keyClipboard: KeyClip | null
   texRev: number
   toast: string | null
+  /** per-browser layout / pen settings (localStorage) */
+  ui: UIPrefs
+  setUI: (p: Partial<UIPrefs>) => void
 
   set: (p: Partial<State>) => void
   touch: () => void
@@ -379,6 +383,8 @@ export const useStore = create<State>((set, get) => ({
   keyClipboard: null,
   texRev: 0,
   toast: null,
+  ui: loadPrefs(),
+  setUI: p => { const ui = { ...get().ui, ...p }; savePrefs(ui); set({ ui }) },
 
   set: p => set(p as State),
   touch: () => { M.normalizeCorners(get().model); set(s => ({ version: s.version + 1, ...(s.xMirror ? { xMirrorMap: xPairs(s.model, s.xMirrorMap) } : {}) })) },
