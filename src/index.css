@@ -446,8 +446,9 @@ button.danger { color: #ff9a9a; }
 .uv-num input { width: 36px; padding: 2px 3px; font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
 .uv-num input:disabled { opacity: .5; }
 .uv-numbar > button { padding: 2px 6px; font-size: 13px; line-height: 1; }
-.uv-actions .uv-tabs { margin-bottom: 6px; }
-.uv-actions .uv-tabs button { font-size: 11.5px; padding: 3px 10px; }
+.uv-actions .uv-tabs { margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 2px; }
+.uv-actions .uv-tabs button { font-size: 11.5px; padding: 3px 7px; }
+.uv-actions .uv-tool { height: 40px; }
 .uv-editor.big .uv-actions { display: block; }
 /* Image menu dialogs (UV-12) */
 .img-dlg { display: flex; flex-direction: column; gap: 10px; }
@@ -466,12 +467,23 @@ button.danger { color: #ff9a9a; }
 .uv-brush { position: absolute; pointer-events: none; border: 1px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6); box-sizing: border-box; }
 .uv-brush.round { border-radius: 50%; }
 
-/* UV Tools panel (right sidebar, UV workspace): collapsible groups */
-.uv-tools { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.uv-tools-body { padding: 4px 8px 10px; }
-.uv-fold { border-bottom: 1px solid var(--line); }
-.uv-fold-head { display: flex; align-items: center; gap: 4px; width: 100%; border: none; background: transparent; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; padding: 8px 2px 6px; cursor: pointer; text-align: left; }
-.uv-fold-head:hover, .uv-fold.open .uv-fold-head { color: var(--text); }
-.uv-fold .btn-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 8px; }
-.uv-fold .btn-row button { font-size: 12px; padding: 3px 8px; }
-.uv-fold .uv-packopts { gap: 8px; }
+/* UV Tools panel (right sidebar, UV workspace): accordion of uniform icon grids, selection card at the bottom */
+.uv-tools { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+.uv-tools-body { display: flex; flex-direction: column; flex: 1; padding: 6px 10px 10px; gap: 2px; }
+.uv-fold { border-radius: 6px; }
+.uv-fold-head { display: flex; align-items: center; gap: 8px; width: 100%; border: none; border-radius: 6px; background: transparent; color: var(--dim); font-size: 12.5px; font-weight: 600; padding: 9px 8px; cursor: pointer; text-align: left; }
+.uv-fold-head > span { flex: 1; }
+.uv-fold-head:hover { background: var(--panel2); color: var(--text); }
+.uv-fold.open { background: var(--panel2); }
+.uv-fold.open .uv-fold-head { color: var(--text); }
+.uv-fold-body { padding: 2px 8px 10px; }
+.uv-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.uv-tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; height: 46px; padding: 4px 2px; font-size: 11px; line-height: 1.1; border-radius: 6px; cursor: pointer; }
+.uv-tool > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uv-tool.wide { grid-column: span 2; flex-direction: row; gap: 6px; font-size: 12px; }
+.uv-tool.on { border-color: var(--accent); color: var(--text); }
+.uv-fold .uv-packopts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 8px; font-size: 11.5px; color: var(--dim); }
+.uv-selcard { margin-top: auto; display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 11.5px; color: var(--text); }
+.uv-selcard .dim { color: var(--dim); }
+.uv-selcard b { font-weight: 600; }
+.uv-actions .uv-grid { margin-top: 2px; }

@@ -22,24 +22,34 @@ const reset = () => S(() => {
   const st = window.__polyform.getState(); st.selectNone(); st.set({ tool: 'select', snap: false, numericOpen: false, mode: 'model', frame: 0, cursor3d: [0, 0, 0] }); st.setSelectMode('object')
 })
 const area = a => { let s = 0; for (let i = 0; i < a.length; i++) { const p = a[i], q = a[(i + 1) % a.length]; s += p[0] * q[1] - q[0] * p[1] } return s / 2 }
-/** the UV action buttons live on tabs (Project / Adjust / Seams) */
-const UV_TAB = { proj: 'project', auto: 'project', flip: 'adjust', fit: 'adjust', pack: 'adjust', snap: 'adjust', palette: 'adjust', island: 'adjust', seam: 'seams', pin: 'seams', unpin: 'seams', stitch: 'seams' }
-/** UV tool groups: collapsible folds in the UV Tools tab of the right sidebar (tabs in the small editor) */
+/** where each UV action lives: a UV Tools group (accordion in the right sidebar, tabs in the small editor), a
+ *  dropdown in that group (Project ▾ / Align ▾), or only the UV ▾ / right-click menu */
+const TOOLS = {
+  unwrap: ['auto', 'auto-px', 'proj-cross', 'proj-view'], transform: ['xf-rot-cw', 'xf-rot-ccw', 'flip-u', 'flip-v', 'fit', 'maximize'],
+  arrange: ['pack', 'pack-opts', 'straighten', 'dist-u', 'dist-v'], pixels: ['snap', 'density', 'palette-snap'], seams: ['seam-mark', 'seam-clear', 'stitch', 'pin', 'unpin'],
+}
 const openGroup = async tab => {
   const side = p.locator('[data-testid="side-uvtools"]')
   if (await side.count() && !((await side.getAttribute('class')) || '').includes('on')) await side.click()
   const el = p.locator(`[data-testid="uv-tab-${tab}"]`)
-  if ((await el.getAttribute('aria-expanded')) !== 'true') await el.click()
+  if (((await el.getAttribute('aria-expanded')) ?? (await el.getAttribute('aria-selected'))) !== 'true') await el.click()
+}
+const tool = async id => {
+  if (/^proj-(front|top|side|box|cyl|sphere)$/.test(id)) { await openGroup('unwrap'); await p.click('[data-testid="uv-proj-menu"]'); await p.click(`[data-testid="uvm-${id}"]`); return }
+  if (id.startsWith('align-')) { await openGroup('arrange'); await p.click('[data-testid="uv-align-menu"]'); await p.click(`[data-testid="uvm-${id}"]`); return }
+  const g = Object.keys(TOOLS).find(k => TOOLS[k].includes(id))
+  if (!g) { await p.click('[data-testid="uv-uv-menu"]'); await p.click(`[data-testid="uvm-${id}"]`); return } // menu-only ops
+  await openGroup(g); await p.click(`[data-testid="uv-${id}"]`)
 }
 const showImages = async () => { const t = p.locator('[data-testid="side-uv"]'); if (await t.count() && !((await t.getAttribute('class')) || '').includes('on')) await t.click() }
-const uvBtn = async id => { await openGroup(UV_TAB[id.split('-')[0]]); await p.click(`[data-testid="uv-${id}"]`) }
+const uvBtn = tool
 const faces = () => S(() => window.__polyform.getState().model.faces.map(f => f.uv))
 
 // 1. Auto UV
 await reset()
 await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = f.uv.map(() => [0, 0]))), 'zero UVs') })
 await p.click('[data-testid="ws-uv"]')
-await openGroup('project'); await p.click('[data-testid="uv-auto"]') // Auto UV lives in the UV Tools panel (the rail is icons here)
+await tool('auto') // Auto UV lives in the UV Tools panel (the rail is icons here)
 await p.waitForFunction(() => window.__polyform.getState().model.faces.every(f => f.uv.some(u => u[0] || u[1])), null, { timeout: 15000 }).catch(() => {})
 {
   const uv = await faces()

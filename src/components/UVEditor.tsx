@@ -2,7 +2,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scissors, Shrink, SlidersHorizontal, WandSparkles, type LucideIcon } from 'lucide-react'
 import { useHost } from '../portalhost'
 import * as THREE from 'three'
 import { useStore } from '../store'
@@ -24,8 +24,8 @@ type Drag = any
 /** copied face UVs (Copy / Paste UVs), shared by every UV editor */
 let uvClip: U.UVClip | null = null
 
-type ToolGroup = 'project' | 'adjust' | 'align' | 'seams'
-const TOOL_GROUPS: [ToolGroup, string][] = [['project', 'Project'], ['adjust', 'Adjust'], ['align', 'Align'], ['seams', 'Seams & pins']]
+type ToolGroup = 'unwrap' | 'transform' | 'arrange' | 'pixels' | 'seams'
+const TOOL_GROUPS: [ToolGroup, string, LucideIcon][] = [['unwrap', 'Unwrap', WandSparkles], ['transform', 'Transform', Move3d], ['arrange', 'Arrange', LayoutGrid], ['pixels', 'Pixels', Grid2x2], ['seams', 'Seams & pins', Scissors]]
 type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean } | 'sep'
 /** right-click menu of the UV editor: same look as the menu bar; Esc / outside press closes; arrows + Enter work */
 function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuItem[]; close: () => void }) {
@@ -117,9 +117,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [units, setUnits] = useState<'px' | '01'>('px')
   const [packOpen, setPackOpen] = useState(false)
   const packPrefs = useStore(s => s.ui.uvPack)
-  const [tab, setTab] = useState<ToolGroup>('project')
+  const [tab, setTab] = useState<ToolGroup>('unwrap')
+  const [panelMenu, setPanelMenu] = useState<{ kind: 'proj' | 'align'; x: number; y: number } | null>(null)
   const toolsHost = useHost('uv-tools')
-  const toolsOpen = useStore(s => s.ui.uvToolsOpen)
+  const toolsGroup = useStore(s => s.ui.uvToolsGroup)
   /** right-click menu: canvas-local px */
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const brushEl = useRef<HTMLDivElement>(null)
@@ -951,63 +952,86 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     <button data-testid={`uv-${id}`} className={on ? 'on' : ''} title={tip ?? label} onClick={onClick}>{label}</button>
   )
 
-  // tool groups: tabs under the canvas in the small (sidebar) editor; collapsible folds in the UV Tools panel of
-  // the right sidebar in the UV workspace (portalled, so the handlers stay here)
+  // tool groups: an accordion in the UV Tools tab of the right sidebar (UV workspace, portalled so the handlers stay
+  // here); tabs under the canvas in the small editor. Uniform grids of icon + short label; rarer ops live in the UV ▾
+  // and right-click menus (Cycle, Copy / Paste, Island, 180°, Merge, Move here).
+  const T = ({ id, icon: I, label, tip, onClick, on, wide }: { id: string; icon: LucideIcon; label: string; tip: string; onClick: (e: React.MouseEvent) => void; on?: boolean; wide?: boolean }) => (
+    <button data-testid={`uv-${id}`} className={`uv-tool ${on ? 'on' : ''} ${wide ? 'wide' : ''}`} title={tip} onClick={onClick}><I size={14} /><span>{label}</span></button>
+  )
+  const openPanelMenu = (e: React.MouseEvent, kind: 'proj' | 'align') => { const r = e.currentTarget.getBoundingClientRect(); setPanelMenu(panelMenu?.kind === kind ? null : { kind, x: r.left, y: r.bottom + 2 }) }
   const groups: Record<ToolGroup, React.ReactNode> = {
-    project: <div className="btn-row">
-          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
-          <B id="auto-px" label="Auto px" tip="Pixel-true: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
-          <B id="proj-cross" label="Box cross" tip="Box layout (Minecraft cross): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
-          <B id="proj-front" label="Front" onClick={() => project('z')} />
-          <B id="proj-top" label="Top" onClick={() => project('y')} />
-          <B id="proj-side" label="Side" onClick={() => project('x')} />
-          <B id="proj-view" label="View" tip="Project from the last hovered 3D view's camera" onClick={projectFromView} />
-          <B id="proj-box" label="Box" tip="Per face along its main axis, stacked (fitted into 0–1)" onClick={() => project('box')} />
-          <B id="proj-cyl" label="Cylinder" tip="Wrap around the vertical axis; caps go flat into the top strip" onClick={() => project('cyl')} />
-          <B id="proj-sphere" label="Sphere" tip="Longitude / latitude about the selection's centre" onClick={() => project('sphere')} />
-        </div>,
-    adjust: <><div className="btn-row">
-          <B id="flip-u" label="Flip H" onClick={() => op('UV flip', U.flipU)} />
-          <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
-          <B id="rot-180" label="180°" tip="Rotate 180° (⟲ / ⟳ 90° are next to the numbers)" onClick={() => rotOp('180')} />
-          <B id="maximize" label="Maximize" tip="Stretch the selection to fill the whole image" onClick={() => op('UV maximize', U.maximize)} />
-          <B id="fit" label="Fit 0–1" tip="Scale uniformly into the image" onClick={() => op('UV fit', U.fit01)} />
-          <B id="density" label="Density" tip={`Scale each selected island to the project's texel density (${model.props.texelDensity} px per unit, File → Properties)${densNow ? ` · now ${densNow} px/unit` : ''}`} onClick={setDensity} />
-          <B id="cycle" label="Cycle" tip="Turn the texture one corner on each selected face (Shift: the other way)" onClick={e => { const f = opFaces(), rev = e.shiftKey; if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f, rev), 'Cycle UV corners') }} />
-          <B id="copy" label="Copy" tip="Copy the selected faces' UVs · Ctrl+C over the editor" onClick={copyUVs} />
-          <B id="paste" label="Paste" tip="Paste onto each selected face's box · Ctrl+V over the editor" onClick={pasteUVs} />
-          <span className="uv-split"><B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all): same texel density, no overlaps (options: ▾)" onClick={pack} /><B id="pack-opts" label="▾" on={packOpen} tip="Pack options" onClick={() => setPackOpen(o => !o)} /></span>
-          <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
-          <B id="palette-snap" label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
-          <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
-        </div>
-      {packOpen && <div className="btn-row uv-packopts" data-testid="uv-pack-options">
+    unwrap: <div className="uv-grid">
+      <T id="auto" icon={WandSparkles} label="Auto UV" tip="Auto UV: unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
+      <T id="auto-px" icon={Grid3x3} label="Auto px" tip="Auto px: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
+      <T id="proj-cross" icon={Box} label="Box cross" tip="Box cross (Minecraft layout): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
+      <T id="proj-view" icon={Camera} label="From view" tip="Project from the last hovered 3D view's camera" onClick={projectFromView} />
+      <T id="proj-menu" icon={Cylinder} label="Project ▾" on={panelMenu?.kind === 'proj'} tip="Planar (front / top / side), per-face box, cylinder or sphere projection" onClick={e => openPanelMenu(e, 'proj')} />
+    </div>,
+    transform: <div className="uv-grid">
+      <T id="xf-rot-ccw" icon={RotateCcw} label="Rotate ⟲" tip="Rotate 90° counter-clockwise · Shift+Alt+R" onClick={() => rotOp('ccw')} />
+      <T id="xf-rot-cw" icon={RotateCw} label="Rotate ⟳" tip="Rotate 90° clockwise · Shift+R" onClick={() => rotOp('cw')} />
+      <T id="flip-u" icon={FlipHorizontal2} label="Flip H" tip="Flip horizontally" onClick={() => op('UV flip', U.flipU)} />
+      <T id="flip-v" icon={FlipVertical2} label="Flip V" tip="Flip vertically" onClick={() => op('UV flip', U.flipV)} />
+      <T id="fit" icon={Shrink} label="Fit 0–1" tip="Scale uniformly into the image" onClick={() => op('UV fit', U.fit01)} />
+      <T id="maximize" icon={Maximize2} label="Maximize" tip="Stretch the selection to fill the whole image" onClick={() => op('UV maximize', U.maximize)} />
+    </div>,
+    arrange: <><div className="uv-grid">
+      <T id="pack" icon={LayoutGrid} label="Pack" wide tip="Pack the islands of the selected faces (or all): same texel density, no overlaps" onClick={pack} />
+      <T id="pack-opts" icon={SlidersHorizontal} label="Options" on={packOpen} tip="Pack options: gap, whole pixels, rotation, keep density, target" onClick={() => setPackOpen(o => !o)} />
+      <T id="align-menu" icon={AlignStartVertical} label="Align ▾" on={panelMenu?.kind === 'align'} tip="Line the selected UV points up: left, centre, right, top, middle, bottom" onClick={e => openPanelMenu(e, 'align')} />
+      <T id="straighten" icon={Minus} label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
+      <T id="dist-u" icon={AlignHorizontalSpaceAround} label="Space ↔" tip="Distribute the UV points evenly left to right" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'u'))} />
+      <T id="dist-v" icon={AlignVerticalSpaceAround} label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
+    </div>
+      {packOpen && <div className="uv-packopts" data-testid="uv-pack-options">
           <label title="Gap between islands, in image pixels">Gap <input data-testid="uv-pack-pad" type="number" min={0} max={64} value={packPrefs.pad} onChange={e => setPack({ pad: Math.max(0, Math.min(64, Math.round(+e.target.value || 0))) })} /> px</label>
           <label title="Island sizes and positions on whole pixels"><input type="checkbox" data-testid="uv-pack-align" checked={packPrefs.align} onChange={e => setPack({ align: e.target.checked })} /> Pixels</label>
           <label title="Turn tall islands 90° for a tighter fit"><input type="checkbox" data-testid="uv-pack-rotate" checked={packPrefs.rotate} onChange={e => setPack({ rotate: e.target.checked })} /> Rotate</label>
           <label title="Pack at the project's texel density; refuse instead of shrinking"><input type="checkbox" data-testid="uv-pack-keep" checked={packPrefs.keep} onChange={e => setPack({ keep: e.target.checked })} /> Keep density</label>
           <select data-testid="uv-pack-into" value={packPrefs.into} title="Pack into the whole image or the selection's current box" onChange={e => setPack({ into: e.target.value as 'image' | 'sel' })}><option value="image">Into image</option><option value="sel">Into selection box</option></select>
         </div>}</>,
-    align: <div className="btn-row">
-          <B id="align-left" label="⇤" tip="Align left: line the selected UV points up on the left edge" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min'))} />
-          <B id="align-cu" label="↔" tip="Align centre: on the vertical centre line" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'mid'))} />
-          <B id="align-right" label="⇥" tip="Align right" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'max'))} />
-          <B id="align-top" label="⤒" tip="Align top" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'max'))} />
-          <B id="align-cv" label="↕" tip="Align middle: on the horizontal centre line" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'mid'))} />
-          <B id="align-bottom" label="⤓" tip="Align bottom" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'min'))} />
-          <B id="dist-u" label="Space ↔" tip="Distribute the UV points evenly left to right" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'u'))} />
-          <B id="dist-v" label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
-          <B id="straighten" label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
-          <B id="merge" label="Merge" tip="Weld the selected UV points at their centre · Alt+M (Shift+Alt+M: onto the point nearest the cursor)" onClick={() => merge(false, 0, 0)} />
-        </div>,
-    seams: <div className="btn-row">
-          <B id="seam-mark" label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />
-          <B id="seam-clear" label="Clear seam" onClick={() => useStore.getState().markSeams(false)} />
-          <B id="pin" label="Pin" tip="Pinned UVs stay put during projections and Auto UV" onClick={() => useStore.getState().pinUVs(true)} />
-          <B id="unpin" label="Unpin" onClick={() => useStore.getState().pinUVs(false)} />
-          <B id="stitch" label="Stitch" tip="Join the UV islands of the selected faces (or both sides of the selected edges) along their shared edges" onClick={() => useStore.getState().stitchUVs()} />
-          {!big && <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>}
-        </div>,
+    pixels: <div className="uv-grid">
+      <T id="snap" icon={Magnet} label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
+      <T id="density" icon={Ruler} label="Density" tip={`Scale each selected island to the project's texel density (${model.props.texelDensity} px per unit, File → Properties)${densNow ? ` · now ${densNow} px/unit` : ''}`} onClick={setDensity} />
+      <T id="palette-snap" icon={Palette} label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
+    </div>,
+    seams: <div className="uv-grid">
+      <T id="seam-mark" icon={Scissors} label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />
+      <T id="seam-clear" icon={Eraser} label="Clear seam" tip="Remove seams from the selected edges / face outline" onClick={() => useStore.getState().markSeams(false)} />
+      <T id="stitch" icon={Link2} label="Stitch" tip="Join the UV islands of the selected faces (or both sides of the selected edges) along their shared edges" onClick={() => useStore.getState().stitchUVs()} />
+      <T id="pin" icon={Pin} label="Pin" tip="Pinned UVs stay put during projections and Auto UV" onClick={() => useStore.getState().pinUVs(true)} />
+      <T id="unpin" icon={PinOff} label="Unpin" tip="Release pinned UVs" onClick={() => useStore.getState().pinUVs(false)} />
+      {!big && <label className="uv-tool" title="Load an image for this material"><ImageIcon size={14} /><span>Image…</span><input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>}
+    </div>,
+  }
+  const panelItems = (kind: 'proj' | 'align'): UVMenuItem[] => kind === 'proj' ? [
+    { id: 'proj-front', label: 'Planar: front', run: () => project('z') },
+    { id: 'proj-top', label: 'Planar: top', run: () => project('y') },
+    { id: 'proj-side', label: 'Planar: side', run: () => project('x') },
+    'sep',
+    { id: 'proj-box', label: 'Box (per face, stacked)', run: () => project('box') },
+    { id: 'proj-cyl', label: 'Cylinder', run: () => project('cyl') },
+    { id: 'proj-sphere', label: 'Sphere', run: () => project('sphere') },
+  ] : [
+    { id: 'align-left', label: 'Align left', run: () => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min')) },
+    { id: 'align-cu', label: 'Align centre', run: () => op('UV align', (m, ids) => U.align(m, ids, 'u', 'mid')) },
+    { id: 'align-right', label: 'Align right', run: () => op('UV align', (m, ids) => U.align(m, ids, 'u', 'max')) },
+    'sep',
+    { id: 'align-top', label: 'Align top', run: () => op('UV align', (m, ids) => U.align(m, ids, 'v', 'max')) },
+    { id: 'align-cv', label: 'Align middle', run: () => op('UV align', (m, ids) => U.align(m, ids, 'v', 'mid')) },
+    { id: 'align-bottom', label: 'Align bottom', run: () => op('UV align', (m, ids) => U.align(m, ids, 'v', 'min')) },
+  ]
+  /** compact selection card at the bottom of the UV Tools panel */
+  const selCard = () => {
+    const st = useStore.getState(), fs = st.activeFaces().filter(fi => model.faces[fi]?.uv.length)
+    if (!fs.length) return <div className="uv-selcard" data-testid="uv-selcard"><span className="dim">Nothing selected</span><span className="dim">Click a face in the UV editor or a 3D view · L adds its island</span></div>
+    const isl = new Set(U.islands(model, fs).values()).size
+    const bx = U.cornerBox(model, fs.flatMap(fi => model.faces[fi].uv.map((_, c) => fi * 1024 + c)))
+    const W = tw || paintTexSize, Hh = th || paintTexSize
+    return <div className="uv-selcard" data-testid="uv-selcard">
+      <span><b>{fs.length}</b> face{fs.length === 1 ? '' : 's'} · <b>{isl}</b> island{isl === 1 ? '' : 's'}</span>
+      {bx && <span className="dim">{Math.round((bx.maxU - bx.minU) * W)}×{Math.round((bx.maxV - bx.minV) * Hh)} px{densNow ? ` · ${densNow} px/unit` : ''}{fs.some(fi => model.faces[fi].uvShare) ? ' · shared UVs' : ''}</span>}
+    </div>
   }
   /** UV operations: the right-click menu (at the pointer) and the toolbar's UV ▾ menu (at the canvas centre) */
   const opsItems = (cx: number, cy: number): UVMenuItem[] => [
@@ -1105,11 +1129,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         {groups[tab]}
       </div>}
       {big && toolsHost && createPortal(<div className="uv-tools-body">
-        {TOOL_GROUPS.map(([t, label]) => { const open = toolsOpen.includes(t); return <section key={t} className={`uv-fold ${open ? 'open' : ''}`}>
-          <button className="uv-fold-head" role="tab" aria-expanded={open} aria-selected={open} data-testid={`uv-tab-${t}`} onClick={() => useStore.getState().setUI({ uvToolsOpen: open ? toolsOpen.filter(x => x !== t) : [...toolsOpen, t] })}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {label}</button>
-          {open && groups[t]}
+        {TOOL_GROUPS.map(([t, label, I]) => { const open = toolsGroup === t; return <section key={t} className={`uv-fold ${open ? 'open' : ''}`}>
+          <button className="uv-fold-head" aria-expanded={open} data-testid={`uv-tab-${t}`} onClick={() => useStore.getState().setUI({ uvToolsGroup: open ? '' : t })}><I size={14} /><span>{label}</span>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
+          {open && <div className="uv-fold-body">{groups[t]}</div>}
         </section> })}
+        {selCard()}
       </div>, toolsHost)}
+      {panelMenu && <UVMenu x={panelMenu.x} y={panelMenu.y} close={() => setPanelMenu(null)} items={panelItems(panelMenu.kind)} />}
     </div>
   )
 }

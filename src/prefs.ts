@@ -28,15 +28,15 @@ export interface UIPrefs {
   uvSwap: boolean
   /** UV workspace: the tool rail as icons (its own setting, so the other workspaces keep theirs) */
   uvLeftCollapsed: boolean
-  /** UV Tools panel: which groups are open */
-  uvToolsOpen: string[]
+  /** UV Tools panel (accordion): the open group, '' for none */
+  uvToolsGroup: string
 }
 export const UV_VIEW3D_DEFAULT = 0.32
 export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsOpen: ['project', 'adjust'] }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsGroup: 'unwrap' }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -67,7 +67,7 @@ export function loadPrefs(): UIPrefs {
       uvView3D: typeof p.uvView3D === 'number' && Number.isFinite(p.uvView3D) ? clampView3D(p.uvView3D) : UV_VIEW3D_DEFAULT,
       uvSwap: p.uvSwap === true,
       uvLeftCollapsed: bool(p.uvLeftCollapsed, true),
-      uvToolsOpen: Array.isArray(p.uvToolsOpen) ? p.uvToolsOpen.filter((x): x is string => typeof x === 'string').slice(0, 8) : [...DEFAULT_PREFS.uvToolsOpen],
+      uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
     }
   } catch { return { ...DEFAULT_PREFS } }
 }

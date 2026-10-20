@@ -29,6 +29,34 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0] }) }); await p.waitForTimeout(150)
   const nb = await S(() => { const n = document.querySelector('[data-testid="uv-numeric"]'), w = document.querySelector('.uv-pane .uv-canvas'); return n && w ? [n.getBoundingClientRect().toJSON(), w.getBoundingClientRect().toJSON()] : null })
   check(`${tag}: with a selection the compact numbers row shows over the canvas top`, nb && nb[0].height < 34 && nb[0].top >= nb[1].top && nb[0].right <= nb[1].right, JSON.stringify(nb))
+  // the UV Tools panel: uniform 3-column grids of icon + label buttons, ≤8 per group, rare ops only in the menus,
+  // everything fits without scrolling at the default sidebar width (even Arrange with its pack options open)
+  for (const g of ['unwrap', 'transform', 'arrange', 'pixels', 'seams']) {
+    await S(g => window.__polyform.getState().setUI({ uvToolsGroup: g }), g); await p.waitForTimeout(60)
+    if (g === 'arrange') { await p.click('[data-testid="uv-pack-opts"]'); await p.waitForTimeout(60) }
+    const gm = await S(() => {
+      const grid = document.querySelector('.uv-fold.open .uv-grid'), tools = document.querySelector('[data-testid="uv-tools"]')
+      const bs = [...grid.children].map(e => ({ w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height, wide: e.classList.contains('wide'), icon: !!e.querySelector('svg'), label: (e.textContent || '').trim(), tip: e.getAttribute('title') || '', clip: e.querySelector('span').scrollWidth > e.querySelector('span').clientWidth + 1 }))
+      return { cols: getComputedStyle(grid).gridTemplateColumns.split(' ').length, bs, scroll: [tools.scrollHeight, tools.clientHeight], card: !!document.querySelector('[data-testid="uv-selcard"]') }
+    })
+    const ws = gm.bs.filter(x => !x.wide).map(x => x.w)
+    check(`${tag}: ${g}: ≤8 equal-width icon + label buttons in 3 columns, labels not cut off, tooltips`, gm.cols === 3 && gm.bs.length <= 8 && Math.max(...ws) - Math.min(...ws) < 1 && gm.bs.every(x => x.icon && x.label && x.tip && !x.clip && Math.abs(x.h - gm.bs[0].h) < 1), JSON.stringify(gm.bs.map(x => [x.label, Math.round(x.w), x.clip])))
+    check(`${tag}: ${g}: the panel fits without scrolling, selection card at the bottom`, gm.scroll[0] <= gm.scroll[1] + 1 && gm.card, JSON.stringify(gm.scroll))
+    if (g === 'arrange') await p.click('[data-testid="uv-pack-opts"]')
+  }
+  await S(() => window.__polyform.getState().setUI({ uvToolsGroup: 'unwrap' })); await p.waitForTimeout(60)
+  if (W === 1280) {
+    const rare = await S(() => ['cycle', 'copy', 'paste', 'island', 'rot-180', 'merge'].filter(id => document.querySelector(`[data-testid="uv-tools"] [data-testid="uv-${id}"]`)))
+    await S(() => window.__polyform.getState().setUI({ uvToolsGroup: 'transform' })); await p.waitForTimeout(60)
+    const tip = await p.getAttribute('[data-testid="uv-xf-rot-cw"]', 'title')
+    check('rare ops (Cycle, Copy / Paste, Island, 180°, Merge) are not in the panel; tooltips carry shortcuts', rare.length === 0 && /Shift\+R/.test(tip || ''), JSON.stringify([rare, tip]))
+    await p.click('[data-testid="uv-uv-menu"]'); await p.waitForTimeout(60)
+    check('…they stay in the UV ▾ menu', await p.isVisible('[data-testid="uvm-cycle"]') && await p.isVisible('[data-testid="uvm-island"]') && await p.isVisible('[data-testid="uvm-rot-180"]'))
+    await p.keyboard.press('Escape')
+    await S(() => window.__polyform.getState().setUI({ uvToolsGroup: 'unwrap' })); await p.waitForTimeout(60)
+    const card = await p.textContent('[data-testid="uv-selcard"]')
+    check('the selection card shows faces, islands and the pixel size', /1 face · 1 island/.test(card || '') && /\d+×\d+ px/.test(card || ''), card)
+  }
   if (W === 1366) {
     // the rail can be expanded here without changing the other workspaces' rail
     await p.click('[data-testid="rail-expand"]'); await p.waitForTimeout(100)
@@ -44,13 +72,22 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
     check('UV ▾ holds the UV operations; View ▾ turns the checker on (a Checker chip shows to turn it off)', hasRot && await p.isVisible('[data-testid="uv-checker"]'))
     await p.click('[data-testid="uv-checker"]'); await p.waitForTimeout(80)
     check('the chip turns the checker off again', (await p.locator('[data-testid="uv-checker"]').count()) === 0)
-    // collapsible groups remember their state
-    const before = await p.getAttribute('[data-testid="uv-tab-align"]', 'aria-expanded')
-    await p.click('[data-testid="uv-tab-align"]'); await p.waitForTimeout(80)
-    const after = await p.getAttribute('[data-testid="uv-tab-align"]', 'aria-expanded')
-    check('UV Tools groups collapse / expand and are saved', before === 'false' && after === 'true' && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvToolsOpen.includes('align'))) && await p.isVisible('[data-testid="uv-straighten"]'))
-    await p.click('[data-testid="uv-tab-align"]')
+    // accordion: one group open at a time, saved in the prefs; clicking the open header closes it
+    const exp = () => S(() => [...document.querySelectorAll('.uv-fold-head')].map(h => h.getAttribute('aria-expanded') === 'true'))
+    const e0 = await exp()
+    await p.click('[data-testid="uv-tab-arrange"]'); await p.waitForTimeout(80)
+    const e1 = await exp()
+    check('UV Tools accordion: Unwrap open by default; opening Arrange closes it; saved in the prefs', e0.join() === 'true,false,false,false,false' && e1.join() === 'false,false,true,false,false' && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvToolsGroup)) === 'arrange' && await p.isVisible('[data-testid="uv-straighten"]'), JSON.stringify([e0, e1]))
+    await p.click('[data-testid="uv-tab-arrange"]'); await p.waitForTimeout(80)
+    check('clicking the open header closes it (all closed)', (await exp()).every(x => !x) && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvToolsGroup)) === '')
+    await p.click('[data-testid="uv-tab-unwrap"]'); await p.waitForTimeout(80)
+    // dropdowns in the panel
+    await p.click('[data-testid="uv-proj-menu"]'); await p.waitForTimeout(60)
+    const projItems = await p.locator('[data-testid^="uvm-proj-"]').count()
+    await p.keyboard.press('Escape'); await p.waitForTimeout(60)
+    check('Project ▾ lists planar front / top / side, box, cylinder, sphere', projItems === 6, String(projItems))
     await p.screenshot({ path: '/workspace/shot-uv-roomy.png' })
+    await p.screenshot({ path: '/workspace/shot-uv-rightpanel.png' })
   }
   if (W === 1920) await p.screenshot({ path: '/workspace/shot-uv-roomy-1920x1080.png' })
   await p.close()
