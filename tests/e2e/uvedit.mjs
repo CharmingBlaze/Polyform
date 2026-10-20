@@ -676,6 +676,18 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.mouse.click(c0.x, c0.y); await frame()
   check('Fill "object" covers the faces of the clicked object only (5 × 16 texels)', (await red()).length === 80, String((await red()).length))
   await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame()
+  // "Show UVs while painting": the UVs button (Paint tool only) hides the wireframe, and the setting sticks
+  const wire = () => S(() => { const c = document.querySelector('[data-testid="uv-canvas"]'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 127) < 12 && Math.abs(d[i + 1] - 176) < 12 && d[i + 2] > 235) n++; return n })
+  const w0 = await wire()
+  await p.click('[data-testid="uv-paint-uvs"]'); await frame(150)
+  const w1 = await wire()
+  check('UVs toggle (Paint tool): hides the UV wireframe over the image', w0 > 200 && w1 < w0 / 20 && (await p.getAttribute('[data-testid="uv-canvas"]', 'data-uvs')) === 'off', `${w0} → ${w1}`)
+  check('the UVs setting is kept in the UI prefs', await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).paintUVs === false))
+  await S(() => window.__polyform.getState().set({ tool: 'select' })); await frame()
+  check('outside the Paint tool the UVs always show and the button is gone', (await p.getAttribute('[data-testid="uv-canvas"]', 'data-uvs')) === 'on' && (await p.locator('[data-testid="uv-paint-uvs"]').count()) === 0)
+  await S(() => window.__polyform.getState().set({ tool: 'paint' })); await frame()
+  await p.click('[data-testid="uv-paint-uvs"]'); await frame()
+  check('UVs toggle back on', (await p.getAttribute('[data-testid="uv-canvas"]', 'data-uvs')) === 'on')
   // a little pixel art for the screenshot
   await S(() => window.__polyform.getState().setPaint({ mode: 'brush', shape: 'square', size: 1, pixelPerfect: true, color: '#ffd166' }))
   for (const [x0, y0, x1, y1] of [[1, 2, 4, 2], [5, 2, 8, 4], [11, 8, 14, 11], [6, 8, 9, 8]]) { const p0 = await T(x0, y0), p1 = await T(x1, y1); await p.mouse.click(p0.x, p0.y); await p.keyboard.down('Shift'); await p.keyboard.down('Control'); await p.mouse.click(p1.x, p1.y); await p.keyboard.up('Control'); await p.keyboard.up('Shift'); await frame() }

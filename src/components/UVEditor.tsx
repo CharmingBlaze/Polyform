@@ -130,6 +130,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const globalTool = useStore(s => s.tool)
   const uvSync = useStore(s => s.ui.uvSync)
   const snapSetting = useStore(s => s.ui.uvSnap)
+  const paintUVs = useStore(s => s.ui.paintUVs)
+  const hideUVs = globalTool === 'paint' && !paintUVs
   const uvSelState = useStore(s => s.uvSel)
   useEffect(() => { pivot.current = null }, [selFaces, selVerts, selEdges, uvSelState])
   // image of the first selected face's material, else the active material
@@ -221,7 +223,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1; g.strokeRect(originX + 0.5, originY + 0.5, side, side)
     const m = useStore.getState().model
-    const faces = uvFaces(), sel = uvSelection()
+    // Paint tool with "UVs" off: just the image (and the hover outline)
+    const faces = hideUVs ? [] : uvFaces(), sel = uvSelection()
+    cv.current!.dataset.uvs = hideUVs ? 'off' : 'on'
     const st = useStore.getState()
     const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
     g.lineWidth = 1.2
@@ -927,6 +931,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
           <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option>
         </select>
+        {globalTool === 'paint' && <B id="paint-uvs" label="UVs" on={paintUVs} tip="Show the UV wireframe over the image while painting" onClick={() => useStore.getState().setUI({ paintUVs: !paintUVs })} />}
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
       </div>
       <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
