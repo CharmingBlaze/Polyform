@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
-import { clampSide, ICON_W, NARROW_W } from './prefs'
+import { clampSide, ICON_W, NARROW_W, type UIPrefs } from './prefs'
 
 /** Window width, live. */
 export function useWinW() {
@@ -13,14 +13,35 @@ export function useWinW() {
   return w
 }
 
+type St = { uvSpace: boolean; workspace: string; mode: string; ui: UIPrefs }
+/** Which workspace's panel state applies: the UV editor (workspace or Map tab), else the shown workspace. */
+export const panelKey = (s: { uvSpace: boolean; workspace: string; mode: string }) => (s.uvSpace ? 'uv' : s.mode === 'animate' ? 'animate' : s.workspace === 'animate' ? 'model' : s.workspace)
+/** Collapsed to icons: the workspace's explicit choice, else automatically on narrow windows. */
+export function panelCollapsed(s: St, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
+  return s.ui.panels[panelKey(s)]?.[side] ?? winW < NARROW_W
+}
+/** Collapse / expand one side panel for the current workspace (saved in the prefs). */
+export function setPanel(side: 'left' | 'right', on: boolean) {
+  const s = useStore.getState(), k = panelKey(s), cur = s.ui.panels[k] ?? { left: null, right: null }
+  s.setUI({ panels: { ...s.ui.panels, [k]: { ...cur, [side]: on } } })
+}
+export const togglePanel = (side: 'left' | 'right') => setPanel(side, !panelCollapsed(useStore.getState(), side))
+/** Focus mode: both panels to icon strips; again brings both back. */
+export function toggleFocus() {
+  const s = useStore.getState(), k = panelKey(s)
+  const on = !(panelCollapsed(s, 'left') && panelCollapsed(s, 'right'))
+  s.setUI({ panels: { ...s.ui.panels, [k]: { left: on, right: on } } })
+}
+
 /** Effective sidebar state: collapsed to icons (explicit, or automatically on narrow windows) and pixel widths. */
 export function useSides() {
   const winW = useWinW()
   const ui = useStore(s => s.ui)
   const uvSpace = useStore(s => s.uvSpace)
-  // the UV workspace keeps its own rail setting (icons by default: the UV editor needs the room)
-  const leftCollapsed = uvSpace ? ui.uvLeftCollapsed : ui.leftCollapsed ?? winW < NARROW_W
-  const rightCollapsed = ui.rightCollapsed ?? winW < NARROW_W
+  const workspace = useStore(s => s.workspace)
+  const mode = useStore(s => s.mode)
+  const leftCollapsed = panelCollapsed({ ui, uvSpace, workspace, mode }, 'left', winW)
+  const rightCollapsed = panelCollapsed({ ui, uvSpace, workspace, mode }, 'right', winW)
   return {
     leftCollapsed, rightCollapsed,
     leftW: leftCollapsed ? ICON_W : clampSide(ui.leftW, 'left', winW),
@@ -45,12 +66,9 @@ export function sideHandle(side: 'left' | 'right', collapsed: boolean) {
       const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up) }
       el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up)
     },
-    onDoubleClick: () => (side === 'left' ? setLeftCollapsed(!collapsed) : useStore.getState().setUI({ rightCollapsed: !collapsed })),
+    onDoubleClick: () => setPanel(side, !collapsed),
   }
 }
 
-/** Collapse / expand the tool rail; in the UV workspace that is its own setting. */
-export function setLeftCollapsed(on: boolean) {
-  const s = useStore.getState()
-  s.setUI(s.uvSpace ? { uvLeftCollapsed: on } : { leftCollapsed: on })
-}
+/** Collapse / expand the tool rail (per workspace). */
+export const setLeftCollapsed = (on: boolean) => setPanel('left', on)

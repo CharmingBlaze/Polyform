@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Viewport } from './components/Viewport'
 import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
 import { SideIcons, Sidebar, Timeline } from './components/Panels'
-import { sideHandle, useSides } from './useLayout'
+import { panelKey, sideHandle, useSides } from './useLayout'
 import { DialogHost } from './components/Modal'
 import { PropertiesDialog } from './components/Properties'
 import { UVEditor } from './components/UVEditor'
-import { EmptyScene, HintBar } from './components/Workspace'
+import { EmptyScene } from './components/Workspace'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
@@ -25,6 +25,7 @@ export default function App() {
   const uvSplit = useStore(s => s.ui.uvView3D)
   const uvSwap = useStore(s => s.ui.uvSwap)
   const uvMax = useStore(s => s.uvMax)
+  const workspace = useStore(s => s.workspace)
   const animate = useStore(s => s.mode === 'animate')
   const timelineH = useStore(s => s.ui.timelineH)
   const showTimeline = useStore(s => !s.ui.timelineHidden) && animate
@@ -35,6 +36,23 @@ export default function App() {
   const vu = uvMax === 'uv' ? 'minmax(0, 1fr)' : uvMax === '3d' ? '0px' : `minmax(0, ${1 - uvSplit}fr)`
   const cols = uvSwap ? `${vu} 10px ${v3}` : `${v3} 10px ${vu}`
 
+  // collapse / expand slides the columns (~120 ms, none with prefers-reduced-motion); drags resize instantly
+  const [anim, setAnim] = useState(false)
+  // only a toggle within one workspace slides; switching workspaces snaps to that workspace's layout
+  const pk = panelKey({ uvSpace, workspace, mode: animate ? 'animate' : 'model' })
+  const flags = `${pk}:${sides.leftCollapsed}${sides.rightCollapsed}`
+  const [prevFlags, setPrevFlags] = useState(flags)
+  if (prevFlags !== flags) { setPrevFlags(flags); if (prevFlags.split(':')[0] === pk) setAnim(true) }
+  useEffect(() => { if (!anim) return; const t = setTimeout(() => setAnim(false), 180); return () => clearTimeout(t) }, [anim])
+  // the views follow every size change (the slide, the window, the timeline)
+  const viewsRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = viewsRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => sceneManager.invalidate())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   useEffect(() => installShortcuts(() => setPalette(true)), [])
   useEffect(() => {
     if (booted) return
@@ -51,12 +69,11 @@ export default function App() {
       onDragLeave={e => { if (e.currentTarget === e.target) setDragging(false) }}
       onDrop={e => { e.preventDefault(); setDragging(false); [...e.dataTransfer.files].forEach(f => importFile(f).catch(err => useStore.getState().notify(String(err.message || err)))) }}>
       <Header onPalette={() => setPalette(true)} />
-      <HintBar />
-      <div className="main" style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
+      <div className={`main ${anim ? 'anim' : ''}`} data-left={sides.leftCollapsed ? 'icons' : 'open'} data-right={sides.rightCollapsed ? 'icons' : 'open'} style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
         <ToolRail />
         <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''} ${uvSpace && uvSwap ? 'swap' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
-            <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
+            <div ref={viewsRef} className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
               {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
               <EmptyScene />

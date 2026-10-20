@@ -5,6 +5,7 @@ import { PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import * as G from './geom'
 import { isModalActive, overUV } from './interaction'
+import { toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -102,9 +103,13 @@ export const commands: Command[] = [
     if (s.extruding) return
     s.set(s.tool === 'select' ? { tool: s.prevTool } : { tool: 'select', prevTool: s.tool })
   } },
-  { id: 'sel.object', label: 'Object / Edit mode', group: 'Selection', keys: 'Tab', run: () => S().toggleObjectMode() },
-  ...edit('vertex', 1), ...edit('edge', 2), ...edit('face', 3),
-  { id: 'sel.joint', label: 'Joint mode', group: 'Selection', keys: '4', run: () => S().setSelectMode('joint') },
+  { id: 'sel.object', label: 'Object / last edit mode', group: 'Selection', keys: 'Tab', run: () => S().toggleObjectMode() },
+  { id: 'sel.objectMode', label: 'Object mode', group: 'Selection', keys: '1', run: () => S().setSelectMode('object') },
+  ...edit('vertex', 2), ...edit('edge', 3), ...edit('face', 4),
+  { id: 'sel.joint', label: 'Joint mode (Rig / Animate)', group: 'Selection', keys: '5', run: () => S().setSelectMode('joint') },
+  { id: 'view.toolPanel', label: 'Tool panel: show / hide', group: 'View', keys: 'Ctrl+[', run: () => togglePanel('left') },
+  { id: 'view.sidePanel', label: 'Side panel: show / hide', group: 'View', keys: 'Ctrl+]', run: () => togglePanel('right') },
+  { id: 'view.focus', label: 'Focus viewports (hide both panels)', group: 'View', keys: 'Ctrl+\\', run: () => toggleFocus() },
   { id: 'sel.all', label: 'Select all', group: 'Selection', keys: 'A', run: () => S().selectAll() },
   { id: 'sel.all2', label: 'Select all', group: 'Selection', keys: 'Ctrl+A', run: () => S().selectAll() },
   { id: 'sel.none', label: 'Deselect all', group: 'Selection', keys: 'Alt+A', run: () => S().selectNone() },

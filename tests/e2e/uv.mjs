@@ -121,11 +121,11 @@ const st = () => S(() => { const s = window.__polyform.getState(); return { mode
   await p.mouse.move(Math.min(...xs) - 3, Math.min(...ys) - 3); await p.mouse.down(); await p.mouse.move(Math.max(...xs) + 3, Math.max(...ys) + 3, { steps: 4 }); await p.mouse.up(); await frame()
   check('UV marquee selects the enclosed face in 3D', (await st()).faces.includes(3) && !(await st()).faces.includes(4), JSON.stringify(await st()))
   // vertex mode: click on a UV corner selects that point
-  await p.keyboard.press('1'); await frame()
+  await p.keyboard.press('2'); await frame()
   const corner = await S(() => { const f = window.__polyform.getState().model.faces[5]; return { v: f.v[0], at: window.__polyformUV.toClient(...f.uv[0]) } })
   await p.mouse.click(corner.at.x, corner.at.y); await frame()
   check('Vertex mode: clicking a UV corner selects that point in 3D', JSON.stringify((await st()).verts) === JSON.stringify([corner.v]), JSON.stringify(await st()))
-  await p.keyboard.press('3'); await frame()
+  await p.keyboard.press('4'); await frame()
 }
 
 // 4. UV edits update the 3D view live; G modal, Esc cancels, click confirms; drag a selected face
@@ -257,9 +257,9 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   check('Add image: both files land in the Images library', (await p.locator('[data-testid^="img-row-"]').count()) === 2 && (await p.textContent(`[data-testid="img-row-${A}"]`)).includes('red') && (await p.textContent(`[data-testid="img-row-${Bm}"]`)).includes('16×8'))
   check('each image row has a thumbnail', (await p.locator('.images .thumb').evaluateAll(els => els.filter(e => e.src.startsWith('data:image/png')).length)) === 2)
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0, 1, 4, 5] }) })
-  await p.click(`[data-testid="img-row-${A}"]`); await p.click('[data-testid="img-assign"]'); await frame()
+  await p.click(`[data-testid="img-row-${A}"]`, { position: { x: 12, y: 10 } }); await p.click('[data-testid="img-assign"]'); await frame()
   await S(() => window.__polyform.getState().setSelection({ faces: [2, 3] }))
-  await p.click(`[data-testid="img-row-${Bm}"]`); await p.click('[data-testid="img-assign"]'); await frame()
+  await p.click(`[data-testid="img-row-${Bm}"]`, { position: { x: 12, y: 10 } }); await p.click('[data-testid="img-assign"]'); await frame()
   const mats = await S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => (f.mat !== undefined ? f.mat : m.groups[f.g].mat)) })
   check('Assign to selection: faces 0,1,4,5 get red, 2,3 get blue', JSON.stringify(mats) === JSON.stringify([A, A, Bm, Bm, A, A]), JSON.stringify(mats))
   check('rows count the faces using each image', (await p.textContent(`[data-testid="img-uses-${A}"]`)).trim() === '4 f' && (await p.textContent(`[data-testid="img-uses-${Bm}"]`)).trim() === '2 f')

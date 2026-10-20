@@ -977,6 +977,21 @@ export function duplicateFaces(m: Model, faces: number[]): number[] {
   return out
 }
 
+/** Object mode duplicate: each group gets a copy (its own group, same transform and material); returns the new faces. */
+export function duplicateObjects(m: Model, groups: number[]): number[] {
+  const out: number[] = []
+  for (const g of groups) {
+    const src = m.groups[g]
+    if (!src) continue
+    const ng = m.groups.length
+    m.groups.push({ ...JSON.parse(JSON.stringify(src)) as Group, name: `${src.name} copy` })
+    const faces = duplicateFaces(m, m.faces.map((f, i) => (f.g === g ? i : -1)).filter(i => i >= 0))
+    faces.forEach(fi => (m.faces[fi].g = ng))
+    out.push(...faces)
+  }
+  return out
+}
+
 /** Drop repeated corners left after merging vertices; faces with fewer than 3 distinct corners are removed. */
 export function cleanFaces(m: Model) {
   const keep: Face[] = []

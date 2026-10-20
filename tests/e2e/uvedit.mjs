@@ -46,7 +46,7 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
 // ---- UV-2: UV-local selection (the seam bug) + Sync 3D | UV
 {
   const L = await seamLayout()
-  await p.keyboard.press('1'); await frame()
+  await p.keyboard.press('2'); await frame()
   check('Sync defaults to UV', await p.locator('[data-testid="uv-sync-uv"].on').count() === 1)
   const u0 = await uvs()
   const at = await uvC(...u0[L.fs[0]][L.c[0]])
@@ -66,13 +66,13 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
   check('Sync 3D: the same pick covers all 3 corners of the point', (await S(() => window.__polyformUV.sel())).length === 3)
   await p.click('[data-testid="uv-sync-uv"]'); await frame()
   // edge: one face side
-  await p.keyboard.press('2'); await frame()
+  await p.keyboard.press('3'); await frame()
   const e0 = u0[L.fs[2]][L.c[2]], e1 = u0[L.fs[2]][(L.c[2] + 1) % 4]
   const em = await uvC((e0[0] + e1[0]) / 2, (e0[1] + e1[1]) / 2)
   await p.mouse.click(em.x, em.y); await frame()
   const es = await S(() => window.__polyformUV.sel().map(id => Math.floor(id / 1024)))
   check('edge pick takes the picked face side only', es.length === 2 && es.every(f => f === L.fs[2]), JSON.stringify(es))
-  await p.keyboard.press('3'); await frame()
+  await p.keyboard.press('4'); await frame()
 }
 
 // helpers: a real PNG image on the box (through the Images panel), shown in the UV editor

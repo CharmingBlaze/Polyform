@@ -25,7 +25,7 @@ input:focus { border-color: var(--accent); }
 kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); background: #0f1116; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
 .grow { flex: 1; }
 
-.app { display: grid; grid-template-rows: 48px 30px 1fr 26px; height: 100%; }
+.app { display: grid; grid-template-rows: 40px 1fr 24px; height: 100%; }
 .header { display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; letter-spacing: .2px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .logo { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; font-size: 18px; }
@@ -254,13 +254,6 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .brush-cursor { position: absolute; pointer-events: none; border: 1.5px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6); border-radius: 50%; transform: translate(-50%, -50%); z-index: 3; }
 /* workspaces */
 .ws-tabs button { padding: 4px 10px; display: flex; align-items: center; gap: 5px; }
-.hint-bar { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: linear-gradient(90deg, rgba(124,108,240,.13), rgba(124,108,240,.03)); border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.hint-bar .hint-text { overflow: hidden; text-overflow: ellipsis; color: var(--text); }
-.hint-bar kbd { font-size: 10.5px; padding: 0 4px; }
-.hint-act { padding: 2px 10px; font-size: 12px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; }
-.checklist { display: inline-flex; gap: 12px; }
-.chk { display: inline-flex; align-items: center; gap: 4px; }
-.chk.ok { color: #6fd08c; } .chk.opt { color: var(--dim); } .chk.no { color: #ff8a8a; }
 .empty-scene { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 4; }
 .empty-scene .card { pointer-events: auto; background: rgba(22,24,31,.92); border: 1px solid var(--line2, #333a48); border-radius: 12px; padding: 18px 22px; text-align: center; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
 .empty-scene .et { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
@@ -300,7 +293,6 @@ html, body { overflow: hidden; }
 .clips-panel .btn-row { display: flex; gap: 4px; padding: 6px 2px; }
 .clips-panel .btn-row button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 11.5px; padding: 4px; }
 
-.export-how { display: block; color: var(--dim); font-weight: 400; margin-bottom: 4px; }
 aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; border-radius: 4px; }
 
 /* ---- declutter: header … menu, one-line hint / status, ? popover ---- */
@@ -311,7 +303,6 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .menu-item kbd { background: transparent; border: none; }
 .menu-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 10px; color: var(--dim); font-size: 12.5px; }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
-.hint-bar .hint-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .status .counts span { color: inherit; }
 .help-btn { width: 24px; height: 22px; padding: 0; border: none; background: transparent; color: var(--dim); }
@@ -328,9 +319,7 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 
 /* ---- declutter: fewer borders and labels, more air (dark theme kept) ---- */
 .header { border-bottom: none; box-shadow: 0 1px 0 rgba(0,0,0,.35); }
-.hint-bar { background: transparent; border-bottom: none; color: var(--dim); padding: 0 16px; }
-.hint-bar .hint-text { color: #aab2c3; }
-.hint-bar kbd, .status kbd { border: none; background: #ffffff0d; }
+.status kbd { border: none; background: #ffffff0d; }
 .status { border-top: none; gap: 16px; padding: 0 14px; }
 .status .seg { border: none; background: transparent; }
 .seg { border-color: transparent; }
@@ -488,3 +477,56 @@ button.danger { color: #ff9a9a; }
 .uv-selcard b { font-weight: 600; }
 .uv-actions .uv-grid { margin-top: 2px; }
 .uv-optrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; width: 100%; }
+
+/* ---- selection modes in the header; icon gizmo switch ---- */
+.mode-seg button, .gizmo-seg button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; }
+.gizmo-seg button { padding: 4px 7px; }
+.mode-seg button svg { flex: none; }
+@media (max-width: 1366px) {
+  .header { gap: 6px; }
+  .ws-tabs button { padding: 4px 8px; }
+  .mode-seg button { padding: 4px 7px; gap: 4px; }
+}
+/* Rig / Animate add Joints: labels go a little earlier */
+@media (max-width: 1320px) { .mode-seg.n5 .lbl { display: none; } .mode-seg.n5 button { padding: 4px 7px; } }
+@media (max-width: 1240px) {
+  .header { gap: 4px; }
+  .mode-seg .lbl { display: none; }
+  .mode-seg button, .gizmo-seg button { padding: 4px 6px; }
+  .ws-tabs button { padding: 4px 7px; }
+}
+
+/* ---- more room for the views: thin headers, hover-only corner buttons, 1px pane gaps ---- */
+.views { gap: 1px; }
+.vp-title { height: 22px; padding: 0 2px; }
+.vp-title select { font-size: 11px; padding: 0 2px; }
+.vp-btn { width: 22px; height: 18px; }
+.vp-label { top: 4px; left: 4px; }
+.vp-corner { opacity: 0; right: 4px; bottom: 4px; }
+.viewport:hover .vp-corner, .vp-corner:focus-within { opacity: .7; }
+.vp-corner:hover { opacity: 1; }
+
+/* compact rails */
+.rail .tabs { padding: 6px 6px 2px; gap: 3px; }
+.rail .tabs button { padding: 3px 4px; font-size: 11px; }
+.tool-list { padding: 4px 6px 16px; }
+.tool-list h4 { margin: 10px 4px 4px; }
+.tool-btn { padding: 3px 6px; }
+.sidebar .tabs button { padding-left: 7px; padding-right: 7px; }
+.uv-tools-body { padding: 4px 6px 8px; }
+.uv-fold-head { padding: 7px 6px; }
+.uv-fold-body { padding: 2px 6px 8px; }
+.uv-grid { gap: 4px; }
+.uv-tool { height: 40px; font-size: 10.5px; gap: 2px; }
+
+/* side panels: an always-visible collapse chevron; collapse / expand slides (~120 ms) */
+.collapse-btn { opacity: .55; }
+.main.anim { transition: grid-template-columns .12s ease-out; }
+@media (prefers-reduced-motion: reduce) { .main.anim { transition: none; } }
+/* thinner side panel: names keep their room, the counts give way (full text in the tooltip) */
+.row { gap: 6px; padding: 4px 8px; }
+.row .name { flex: 1 0 auto; max-width: 100%; }
+.row .meta { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+/* a narrow tool rail drops the shortcut chips (they stay in the tooltips and ? / F1) so labels keep one line */
+.tool-list { container-type: inline-size; }
+@container (max-width: 150px) { .tool-btn kbd { display: none; } }

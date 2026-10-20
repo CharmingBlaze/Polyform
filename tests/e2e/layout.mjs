@@ -101,7 +101,7 @@ await S(() => window.__polyform.getState().set({ numericOpen: false })); await f
 
 // hint + status: one quiet line each; ? popover keeps the long strings
 const oneLine = sel => p.locator(sel).evaluate(el => el.scrollHeight <= el.clientHeight + 1 && el.getBoundingClientRect().height <= 32)
-check('hint bar is one line', await oneLine('[data-testid="hint-bar"]'))
+check('no hint bar under the header', (await p.locator('[data-testid="hint-bar"]').count()) === 0)
 check('status bar is one line', await oneLine('.status'))
 const shortHint = await p.textContent('[data-testid="hint"]')
 check('status hint is the short first clause', !shortHint.includes(' · '), shortHint)

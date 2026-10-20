@@ -17,9 +17,9 @@ await S(() => window.__polyform.getState().openSample('character')); await frame
 const overflow = () => S(() => {
   const de = document.documentElement, bad = []
   if (de.scrollWidth > innerWidth || de.scrollHeight > innerHeight) bad.push(`page ${de.scrollWidth}x${de.scrollHeight}`)
-  for (const el of document.querySelectorAll('.header, .hint-bar, .status, .rail, .right-col, .center, .tl-controls, .sidebar .tab-body'))
+  for (const el of document.querySelectorAll('.header, .status, .rail, .right-col, .center, .tl-controls, .sidebar .tab-body'))
     if (el.scrollWidth > el.clientWidth + 1) bad.push(`${el.className.split(' ')[0]} +${el.scrollWidth - el.clientWidth}`)
-  for (const id of ['export-glb', 'mb-file', 'mb-help', 'help-btn', 'undo', 'gizmo-scale', 'ws-export'])
+  for (const id of ['export-glb', 'mb-file', 'mb-help', 'help-btn', 'undo', 'gizmo-scale', 'ws-export', 'mode-object', 'mode-face'])
     { const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect(); if (!r || r.right > innerWidth || r.bottom > innerHeight || r.width === 0) bad.push(`${id} off-screen`) }
   return bad
 })
@@ -46,18 +46,18 @@ const r = await p.locator('[data-testid="side-handle"]').boundingBox()
 const side0 = (await p.locator('.right-col').boundingBox()).width
 await p.mouse.move(r.x + 3, r.y + 200); await p.mouse.down(); await p.mouse.move(r.x + 63, r.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
 const side1 = (await p.locator('.right-col').boundingBox()).width
-check('dragging the right column edge narrows it (clamped ≥ 240)', side1 < side0 - 40 && side1 >= 240, `${side0} → ${side1}`)
+check('dragging the right column edge narrows it (clamped ≥ 220)', side1 < side0 - 30 && side1 >= 220, `${side0} → ${side1}`)
 await p.reload(); await boot()
 check('sidebar widths persist', Math.abs((await p.locator('[data-testid="tool-rail"]').boundingBox()).width - rail1) < 2 && Math.abs((await p.locator('.right-col').boundingBox()).width - side1) < 2)
 
 // collapse to icons by hand, expand from an icon
-await p.locator('[data-testid="tool-rail"]').hover(); await p.click('[data-testid="rail-collapse"]'); await frame()
+await p.locator('[data-testid="tool-rail"]').hover(); await p.click('[data-testid="rail-collapse"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('rail collapses to an icon strip with the workspace tabs', (await p.locator('[data-testid="tool-rail"]').boundingBox()).width <= 48 && (await p.locator('[data-testid^="railicon-"]').count()) === 4)
-await p.click('[data-testid="railicon-modify"]'); await frame()
+await p.click('[data-testid="railicon-modify"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('an icon opens its tab and expands the rail', (await S(() => window.__polyform.getState().railTab)) === 'Modify' && (await p.locator('[data-testid="tab-modify"]').isVisible()))
-await p.locator('.sidebar').hover(); await p.click('[data-testid="side-collapse"]'); await frame()
+await p.locator('.sidebar').hover(); await p.click('[data-testid="side-collapse"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('right column collapses to icons', (await p.locator('.right-col').boundingBox()).width <= 48 && await p.locator('[data-testid="sideicon-scene"]').isVisible())
-await p.click('[data-testid="side-expand"]'); await frame()
+await p.click('[data-testid="side-expand"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('…and expands again', await p.locator('[data-testid="outliner"]').isVisible())
 
 // narrow window: both start as icons automatically; still no overflow

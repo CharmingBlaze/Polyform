@@ -1,6 +1,6 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
+import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
 import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands, type Command } from '../commands'
@@ -31,15 +31,57 @@ export function Header({ onPalette }: { onPalette: () => void }) {
         <button className="icon-btn" disabled={!history.canUndo()} onClick={byId['edit.undo'].run} title="Undo  ·  Ctrl+Z" data-testid="undo"><Undo2 size={16} /></button>
         <button className="icon-btn" disabled={!history.canRedo()} onClick={byId['edit.redo'].run} title="Redo  ·  Ctrl+Shift+Z" data-testid="redo"><Redo2 size={16} /></button>
       </div>
-      <div className="seg" data-testid="gizmo-toggle" title="Gizmo type (G / R / S also start a modal transform)">
-        {(['select', 'move', 'rotate', 'scale'] as const).map(t => (
-          <button key={t} className={tool === t ? 'on' : ''} data-testid={`gizmo-${t}`} onClick={() => set({ tool: t })}>{t[0].toUpperCase() + t.slice(1)}</button>
-        ))}
+      <ModeSwitch />
+      <div className="seg gizmo-seg" data-testid="gizmo-toggle">
+        {(['select', 'move', 'rotate', 'scale'] as const).map(t => { const I = GIZMO_ICON[t]; return (
+          <button key={t} className={tool === t ? 'on' : ''} data-testid={`gizmo-${t}`} aria-label={GIZMO_TIP[t]} title={GIZMO_TIP[t]} onClick={() => set({ tool: t })}><I size={15} /></button>
+        ) })}
       </div>
       <span className="grow" />
       <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run} title="Export .glb  ·  Ctrl+E"><Download size={15} /> <span className="lbl">Export .glb</span></button>
       <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void openPicked(f); e.target.value = '' }} />
     </header>
+  )
+}
+
+const GIZMO_ICON = { select: MousePointer2, move: Move, rotate: RotateCw, scale: Scaling } as const
+const GIZMO_TIP = { select: 'Select (no gizmo) · Q toggles', move: 'Move gizmo · G moves by hand', rotate: 'Rotate gizmo · R rotates by hand', scale: 'Scale gizmo · S scales by hand' } as const
+
+/** Selection-mode icons: a cube (object), corner points, one edge, a filled face. */
+function ModeIcon({ m }: { m: 'object' | EditMode }) {
+  const sq = <rect x="3" y="3" width="10" height="10" rx="1" opacity=".45" />
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden>
+      {m === 'object' && <path d="M8 1.6 14 4.8v6.4L8 14.4 2 11.2V4.8zM2 4.8 8 8l6-3.2M8 8v6.4" />}
+      {m === 'vertex' && <>{sq}{[[3, 3], [13, 3], [3, 13], [13, 13]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="1.9" fill="currentColor" stroke="none" />)}</>}
+      {m === 'edge' && <>{sq}<path d="M3 3h10" strokeWidth="2.8" strokeLinecap="round" /></>}
+      {m === 'face' && <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" fillOpacity=".55" />}
+    </svg>
+  )
+}
+const MODE_NAME = { object: 'Object', vertex: 'Vertex', edge: 'Edge', face: 'Face' } as const
+
+/** Header: Object | Vertex | Edge | Face (keys 1–4, Tab = Object ↔ last edit mode); Joints in Rig / Animate (5). */
+export function ModeSwitch() {
+  const selectMode = useStore(s => s.selectMode)
+  const subModes = useStore(s => s.subModes)
+  const ws = shownWorkspace(useStore(s => s.workspace), useStore(s => s.mode))
+  const st = useStore.getState()
+  const joints = ws === 'rig' || ws === 'animate' || selectMode === 'joint'
+  const edit = selectMode !== 'object' && selectMode !== 'joint'
+  return (
+    <div className={`seg mode-seg ${joints ? 'n5' : ''}`} data-testid="mode-switch" role="radiogroup" aria-label="Selection mode">
+      {(['object', 'vertex', 'edge', 'face'] as const).map((m, i) => {
+        const on = m === 'object' ? selectMode === 'object' : edit && subModes.includes(m)
+        const tip = m === 'object' ? 'Object mode · 1 (Tab: Object ↔ last edit mode)' : `${MODE_NAME[m]} mode · ${i + 1} (Shift+${i + 1} or Shift+click combines)`
+        return (
+          <button key={m} className={on ? 'on' : ''} data-testid={`mode-${m}`} role="radio" aria-checked={on} title={tip}
+            onClick={e => (m === 'object' ? st.setSelectMode('object') : st.setSelectMode(m, e.shiftKey))}><ModeIcon m={m} /><span className="lbl">{MODE_NAME[m]}</span></button>
+        )
+      })}
+      {joints && <button className={selectMode === 'joint' ? 'on' : ''} data-testid="mode-joint" role="radio" aria-checked={selectMode === 'joint'} title="Joints mode · 5"
+        onClick={() => st.setSelectMode('joint')}><Bone size={14} /><span className="lbl">Joints</span></button>}
+    </div>
   )
 }
 
@@ -64,7 +106,7 @@ export function ToolRail() {
   const { leftCollapsed } = useSides()
   if (leftCollapsed) return (
     <aside className="rail collapsed" data-testid="tool-rail" data-collapsed="true">
-      <button className="icon-btn" data-testid="rail-expand" title="Show the tool panel" onClick={() => setLeftCollapsed(false)}><ChevronsRight size={16} /></button>
+      <button className="icon-btn" data-testid="rail-expand" title="Expand the tool panel · Ctrl+[" onClick={() => setLeftCollapsed(false)}><ChevronsRight size={16} /></button>
       {tabs.map(t => { const I = TAB_ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`railicon-${TAB_ID[t]}`} title={t}
         onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map'); setLeftCollapsed(false) }}><I size={16} /></button> })}
     </aside>
@@ -73,7 +115,7 @@ export function ToolRail() {
   return (
     <aside className="rail" data-testid="tool-rail">
       <div className="side-handle right" data-testid="rail-handle" {...sideHandle('left', false)} />
-      <button className="icon-btn collapse-btn" data-testid="rail-collapse" title="Icons only" onClick={() => setLeftCollapsed(true)}><ChevronsLeft size={14} /></button>
+      <button className="icon-btn collapse-btn" data-testid="rail-collapse" title="Collapse the tool panel · Ctrl+[" onClick={() => setLeftCollapsed(true)}><ChevronsLeft size={14} /></button>
       <div className={`tabs n${tabs.length}`}>
         {tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>
@@ -329,9 +371,7 @@ function fuzzy(text: string, q: string) {
   return score
 }
 
-const MODE_LABEL: Record<EditMode, string> = { vertex: 'Points', edge: 'Edges', face: 'Polygons' }
-
-/** Bottom bar: LightWave-style Object / Points / Edges / Polygons switch, counts, hints. */
+/** Bottom bar: counts, selection, a short hint for the active tool (the full one in ? / F1). */
 /** The full hint for the active tool (status bar shows its first clause, the ? popover all of it). */
 function toolHint(s: ReturnType<typeof useStore.getState>): string {
   const { xMirror, paint, ik, ikDepth, mode, tool, modalInfo } = s
@@ -368,25 +408,14 @@ export function StatusBar() {
   const se = useStore(s => s.selEdges.size)
   const sf = useStore(s => s.selFaces.size)
   const sb = useStore(s => s.selBones.size)
-  const selectMode = useStore(s => s.selectMode)
-  const subModes = useStore(s => s.subModes)
   const helpOpen = useStore(s => s.helpOpen)
   const modalInfo = useStore(s => s.modalInfo)
   const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
-  const st = useStore.getState()
   const full = useStore(toolHint)
   const short = modalInfo ?? full.split(' · ')[0]
   const nsel = sv + se + sf + sb
   return (
     <footer className="status">
-      <div className="seg small" data-testid="mode-switch">
-        <button className={selectMode === 'object' ? 'on' : ''} data-testid="mode-object" onClick={() => st.setSelectMode('object')} title="Object mode · Tab">Object</button>
-        {(['vertex', 'edge', 'face'] as const).map((sm, i) => (
-          <button key={sm} className={selectMode !== 'object' && selectMode !== 'joint' && subModes.includes(sm) ? 'on' : ''} data-testid={`mode-${sm}`}
-            onClick={e => st.setSelectMode(sm, e.shiftKey)} title={`${MODE_LABEL[sm]} · ${i + 1} (Shift+${i + 1} combines)`}>{MODE_LABEL[sm]}</button>
-        ))}
-        <button className={selectMode === 'joint' ? 'on' : ''} data-testid="mode-joint" onClick={() => st.setSelectMode('joint')} title="Joints · 4">Joints</button>
-      </div>
       <span className="counts muted" title={`${m.groups.length} groups · ${m.bones.length} joints · A selects all`}>
         <span data-testid="count-verts">{m.verts.length} verts</span> · <span data-testid="count-faces">{m.faces.length} faces · {tris} tris</span>
       </span>

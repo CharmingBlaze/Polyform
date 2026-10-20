@@ -620,6 +620,14 @@ export const useStore = create<State>((set, get) => ({
     const op = opById[id]
     if (!op) return
     if (s.mode === 'animate' && op.tab !== 'Create') return s.notify('Switch to Model mode to edit geometry')
+    if (id === 'mul.duplicate' && s.selectMode === 'object') {
+      // Object mode: whole objects, each copy its own object (selected afterwards)
+      const gs = [...new Set([...s.selFaces].map(f => s.model.faces[f]?.g).filter((g): g is number => g !== undefined))]
+      if (!gs.length) return s.notify('Duplicate: select objects first')
+      let made: number[] = []
+      s.edit(m => { made = M.duplicateObjects(m, gs) }, gs.length > 1 ? `Duplicate ${gs.length} objects` : 'Duplicate object')
+      return s.setSelection({ faces: made })
+    }
     const sel = s.opSel()
     const need = op.needs
     if (need === 'faces' && !sel.faces.length) return s.notify(`${op.label}: select faces first`)

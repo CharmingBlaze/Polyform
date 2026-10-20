@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addPrimitive, emptyModel, migrateProject, sharedVerts, unshareVerts, validateModel, duplicateFaces, type Model } from '../src/model'
+import { addPrimitive, emptyModel, migrateProject, sharedVerts, unshareVerts, validateModel, duplicateFaces, duplicateObjects, type Model } from '../src/model'
 import { mergeGroups, separateFaces, createFace } from '../src/geom'
 
 const twoBoxes = () => { const m = emptyModel(); addPrimitive(m, 'box'); addPrimitive(m, 'box', [3, 0, 0]); return m }
@@ -60,5 +60,25 @@ describe('objects never share points', () => {
     const { model } = migrateProject(JSON.parse(JSON.stringify(raw)))
     expect(() => validateModel(model)).not.toThrow()
     expect(sharedVerts(model)).toEqual([])
+  })
+})
+
+describe('duplicateObjects (Object mode Shift+D)', () => {
+  it('copies each group into a new group with the same transform; the source stays', () => {
+    const m = emptyModel()
+    addPrimitive(m, 'box'); addPrimitive(m, 'box')
+    m.groups[1].xf.pos = [2, 0, 0]
+    const nf = m.faces.length, nv = m.verts.length
+    const made = duplicateObjects(m, [1])
+    expect(m.groups.length).toBe(3)
+    expect(m.groups[2].name).toBe(`${m.groups[1].name} copy`)
+    expect(m.groups[2].xf.pos).toEqual([2, 0, 0])
+    expect(made.length).toBe(6)
+    expect(made.every(f => m.faces[f].g === 2)).toBe(true)
+    expect(m.faces.length).toBe(nf + 6)
+    expect(m.verts.length).toBe(nv + 8)
+    // its own transform object (not shared)
+    m.groups[2].xf.pos[0] = 5
+    expect(m.groups[1].xf.pos[0]).toBe(2)
   })
 })

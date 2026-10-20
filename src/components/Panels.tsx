@@ -11,6 +11,7 @@ import { RefsPanel } from './RefsPanel'
 import { setHost } from '../portalhost'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
+import { setPanel } from '../useLayout'
 
 export function Sidebar() {
   const tab = useStore(s => s.sideTab)
@@ -26,7 +27,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className={`tabs n${tabs.length}`}>
-        <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Icons only" onClick={() => useStore.getState().setUI({ rightCollapsed: true })}><ChevronsRight size={14} /></button>
+        <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Collapse the side panel · Ctrl+]" onClick={() => setPanel('right', true)}><ChevronsRight size={14} /></button>
         {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Outliner</button>}
         {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>}
         {tabs.includes('uvtools') && <button className={tab === 'uvtools' ? 'on' : ''} data-testid="side-uvtools" onClick={() => setTab('uvtools')}><Wrench size={14} /> UV Tools</button>}
@@ -68,10 +69,10 @@ export function SideIcons() {
   const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
   const ICON = { scene: Layers, joints: Bone, uv: Image, uvtools: Wrench } as const
   const LABEL = { scene: 'Outliner', joints: 'Joints', uv: 'Images', uvtools: 'UV Tools' } as const
-  const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); useStore.getState().setUI({ rightCollapsed: false }) }
+  const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); setPanel('right', false) }
   return (
     <aside className="side-icons" data-testid="side-icons">
-      <button className="icon-btn" data-testid="side-expand" title="Show the side panel" onClick={() => useStore.getState().setUI({ rightCollapsed: false })}><ChevronsLeft size={16} /></button>
+      <button className="icon-btn" data-testid="side-expand" title="Expand the side panel · Ctrl+]" onClick={() => setPanel('right', false)}><ChevronsLeft size={16} /></button>
       {tabs.map(t => { const I = ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`sideicon-${t}`} title={LABEL[t]} onClick={() => open(t)}><I size={16} /></button> })}
     </aside>
   )

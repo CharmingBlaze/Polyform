@@ -60,7 +60,7 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
   if (W === 1366) {
     // the rail can be expanded here without changing the other workspaces' rail
     await p.click('[data-testid="rail-expand"]'); await p.waitForTimeout(100)
-    const ex = await S(() => ({ uv: window.__polyform.getState().ui.uvLeftCollapsed, other: window.__polyform.getState().ui.leftCollapsed }))
+    const ex = await S(() => ({ uv: window.__polyform.getState().ui.panels.uv.left, other: window.__polyform.getState().ui.panels.model.left }))
     await p.click('[data-testid="rail-collapse"]'); await p.waitForTimeout(100)
     check('expanding the rail in the UV workspace is its own setting', ex.uv === false && ex.other !== false && (await p.getAttribute('[data-testid="tool-rail"]', 'data-collapsed')) === 'true', JSON.stringify(ex))
     // UV ▾ and View ▾ menus

@@ -350,6 +350,8 @@ class SceneManager {
     this.edges = []
     const faceSel = st.mode === 'model' && (st.selectMode === 'object' || st.subModes.includes('face'))
     const edgeSel = st.mode === 'model' && st.selectMode !== 'object' && st.subModes.includes('edge')
+    // Object mode: the selected objects get an orange wire outline
+    const objSel = st.selectMode === 'object'
     this.triFace = []
     this.meshGeo.clearGroups()
     let groupStart = 0, curMat = -1, triCount = 0
@@ -376,6 +378,7 @@ class SceneManager {
         if (!edges.has(k)) {
           edges.add(k); wire.push(...P[a], ...P[b]); this.edges.push(a < b ? [a, b] : [b, a])
           if (edgeSel && st.selEdges.has(k)) selEdge.push(...P[a], ...P[b])
+          else if (objSel && st.selFaces.has(fi)) selEdge.push(...P[a], ...P[b])
         }
       }
     }
@@ -536,11 +539,14 @@ class SceneManager {
     // wire + selected edges
     const wire: number[] = [], selEdge: number[] = []
     const edgeSel = st.mode === 'model' && st.selectMode !== 'object' && st.subModes.includes('edge')
+    // Object mode: the edges of the selected objects (the orange outline)
+    const objEdges = st.selectMode === 'object' && st.selFaces.size ? new Set<number>() : null
+    if (objEdges) st.selFaces.forEach(fi => { const v = m.faces[fi]?.v; if (v) v.forEach((a, i) => { const b = v[(i + 1) % v.length]; objEdges.add(a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a) }) })
     for (const [a, b] of this.edges) {
       wire.push(...P[a], ...P[b])
-      if (edgeSel) {
+      if (edgeSel || objEdges) {
         const k = a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a
-        if (st.selEdges.has(k)) selEdge.push(...P[a], ...P[b])
+        if (edgeSel ? st.selEdges.has(k) : objEdges!.has(k)) selEdge.push(...P[a], ...P[b])
       }
     }
     setAttr(this.wireGeo, 'position', wire, 3)

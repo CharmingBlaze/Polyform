@@ -42,16 +42,8 @@ await S(() => {
 await frame()
 check('key ease UI', await p.locator('[data-testid="key-ease"]').isVisible())
 
-await p.click('[data-testid="ws-paint"]'); await frame()
-const paintHint = await p.textContent('[data-testid="hint-text"]')
-check('paint hint mentions vertex colours for sample', /Vertex colour/i.test(paintHint || ''), paintHint || '')
-
-await p.click('[data-testid="ws-model"]'); await frame()
-const modelHint = await p.textContent('[data-testid="hint-text"]')
-check('model hint uses 1/2/3 not Tab for selection modes', /1.*2.*3/.test(modelHint || '') && !/Tab cycles/i.test(modelHint || ''), modelHint || '')
-
 await p.click('[data-testid="ws-export"]'); await frame()
-check('export how-to in hint bar', await p.locator('[data-testid="export-how"]').isVisible())
+check('no hint bar in any workspace; the mode switch is in the header', (await p.locator('[data-testid="hint-bar"]').count()) === 0 && await p.locator('.header [data-testid="mode-switch"]').isVisible())
 await p.click('[data-testid="tab-export"]'); await frame()
 const blurb = await p.textContent('[data-testid="export-blurb"]')
 check('export tab has how to run + what working looks like', /npm run dev/i.test(blurb || '') && /Ctrl\+E/i.test(blurb || '') && /glTF/i.test(blurb || ''), (blurb || '').slice(0, 120))

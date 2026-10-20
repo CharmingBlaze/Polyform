@@ -26,7 +26,7 @@ export function ClipsPanel({ compact = false }: { compact?: boolean }) {
                   onBlur={e => { if (e.target.value && e.target.value !== c.name) st.edit(mm => (mm.clips[i].name = e.target.value), 'Rename clip'); setEditing(null) }}
                   onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(null) }} />
               : <span className="name" onDoubleClick={e => { e.stopPropagation(); setEditing(i) }}>{c.name}</span>}
-            <span className="meta">{c.frames} f · {keyCount(i)} keys</span>
+            <span className="meta" title={`${c.frames} frames · ${keyCount(i)} keys`}>{c.frames} f · {keyCount(i)} k</span>
           </div>
         ))}
       </div>

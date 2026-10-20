@@ -8,9 +8,8 @@ export interface UIPrefs {
   timelineHidden: boolean
   leftW: number
   rightW: number
-  /** sidebars as icon strips; null = automatic (collapsed below NARROW_W) */
-  leftCollapsed: boolean | null
-  rightCollapsed: boolean | null
+  /** sidebars as icon strips, per workspace; null = automatic (collapsed below NARROW_W) */
+  panels: Record<string, PanelState>
   /** pen pressure scales brush size / strength */
   pressureSize: boolean
   pressureStrength: boolean
@@ -26,13 +25,16 @@ export interface UIPrefs {
   uvView3D: number
   /** UV workspace: 3D preview on the right instead of the left */
   uvSwap: boolean
-  /** UV workspace: the tool rail as icons (its own setting, so the other workspaces keep theirs) */
-  uvLeftCollapsed: boolean
   /** UV Tools panel (accordion): the open group, '' for none */
   uvToolsGroup: string
   /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
   uvUnwrap: UnwrapPrefs
 }
+export interface PanelState { left: boolean | null; right: boolean | null }
+/** the workspaces that keep their own panel state ('uv' is the UV workspace / Map tab) */
+export const PANEL_KEYS = ['model', 'uv', 'paint', 'rig', 'animate', 'export'] as const
+/** the UV workspace starts with the tool rail as icons: the UV editor needs the room */
+export const defaultPanels = (): Record<string, PanelState> => Object.fromEntries(PANEL_KEYS.map(k => [k, { left: k === 'uv' ? true : null, right: null }]))
 export interface UnwrapPrefs {
   method: 'angle' | 'conformal'
   /** gap between islands, UV units (0..1 of the width) */
@@ -53,8 +55,10 @@ export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP }
 const KEY = 'polyform.ui.v1'
+/** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars */
+const PREFS_V = 2
 
 export function loadPrefs(): UIPrefs {
   try {
@@ -64,14 +68,23 @@ export function loadPrefs(): UIPrefs {
     const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
     const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
     const tri = (v: unknown) => (typeof v === 'boolean' ? v : null)
+    const v1 = (p as { v?: unknown }).v !== PREFS_V
     return {
       timelineH: num(p.timelineH, DEFAULT_PREFS.timelineH),
       timelineLastH: num(p.timelineLastH, DEFAULT_PREFS.timelineLastH),
       timelineHidden: p.timelineHidden === true,
-      leftW: num(p.leftW, DEFAULT_PREFS.leftW),
-      rightW: num(p.rightW, DEFAULT_PREFS.rightW),
-      leftCollapsed: tri(p.leftCollapsed),
-      rightCollapsed: tri(p.rightCollapsed),
+      // v1 saved the old default widths with everything else: those move to the new, narrower defaults
+      leftW: v1 && p.leftW === 168 ? DEFAULT_PREFS.leftW : num(p.leftW, DEFAULT_PREFS.leftW),
+      rightW: v1 && p.rightW === 320 ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
+      panels: (() => {
+        const q = (p.panels && typeof p.panels === 'object' ? p.panels : null) as Record<string, Record<string, unknown>> | null
+        const old = p as Record<string, unknown>
+        return Object.fromEntries(PANEL_KEYS.map(k => {
+          if (q) { const e = q[k] && typeof q[k] === 'object' ? q[k] : {}; return [k, { left: k === 'uv' && !('left' in e) ? true : tri(e.left), right: tri(e.right) }] }
+          // v1: one rail / side setting for every workspace, and its own rail setting for UV
+          return [k, { left: k === 'uv' ? bool(old.uvLeftCollapsed, true) : tri(old.leftCollapsed), right: tri(old.rightCollapsed) }]
+        }))
+      })(),
       pressureSize: bool(p.pressureSize, DEFAULT_PREFS.pressureSize),
       pressureStrength: bool(p.pressureStrength, DEFAULT_PREFS.pressureStrength),
       uvSync: p.uvSync === '3d' ? '3d' : 'uv',
@@ -83,7 +96,6 @@ export function loadPrefs(): UIPrefs {
       paintUVs: bool(p.paintUVs, DEFAULT_PREFS.paintUVs),
       uvView3D: typeof p.uvView3D === 'number' && Number.isFinite(p.uvView3D) ? clampView3D(p.uvView3D) : UV_VIEW3D_DEFAULT,
       uvSwap: p.uvSwap === true,
-      uvLeftCollapsed: bool(p.uvLeftCollapsed, true),
       uvUnwrap: (() => {
         const q = (p.uvUnwrap && typeof p.uvUnwrap === 'object' ? p.uvUnwrap : {}) as Record<string, unknown>, d = DEFAULT_UNWRAP
         const rng = (v: unknown, lo: number, hi: number, dv: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dv)
@@ -99,7 +111,7 @@ export function loadPrefs(): UIPrefs {
 }
 
 export function savePrefs(p: UIPrefs) {
-  try { localStorage.setItem(KEY, JSON.stringify(p)) } catch { /* private mode / quota: settings just don't persist */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ...p, v: PREFS_V })) } catch { /* private mode / quota: settings just don't persist */ }
 }
 
 /** Clamp the timeline to a compact strip … most of the window. */
@@ -110,8 +122,8 @@ export function clampTimeline(h: number, winH = typeof window !== 'undefined' ? 
 /** Below this window width both sidebars start as icon strips (laptops keep the views wide). */
 export const NARROW_W = 1180
 export const ICON_W = 44
-/** Sidebar widths: the tool rail 132…280 px, the right column 240…520 px but never more than a third of the window. */
+/** Sidebar widths: the tool rail 128…280 px, the right column 220…520 px but never more than a third of the window. */
 export function clampSide(w: number, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
-  const [lo, hi] = side === 'left' ? [132, 280] : [240, Math.max(240, Math.min(520, winW * 0.32))]
+  const [lo, hi] = side === 'left' ? [128, 280] : [220, Math.max(220, Math.min(520, winW * 0.32))]
   return Math.round(Math.max(lo, Math.min(hi, w)))
 }
