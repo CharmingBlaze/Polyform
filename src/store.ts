@@ -119,6 +119,8 @@ interface State {
   numericOpen: boolean
   /** the ? popover with the full hints and every shortcut */
   helpOpen: boolean
+  /** File → Properties… dialog */
+  propsOpen: boolean
   lastOp: LastOp | null
   /** an interactive extrude is in progress (Esc / right-click cancels the whole thing) */
   extruding: boolean
@@ -381,6 +383,7 @@ export const useStore = create<State>((set, get) => ({
   paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image', paletteCols: 0, paletteRows: 0 },
   numericOpen: false,
   helpOpen: false,
+  propsOpen: false,
   lastOp: null,
   extruding: false,
   gizmoSpace: 'global',

@@ -226,6 +226,7 @@ export const commands: Command[] = [
   { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => void exportAs('glb') },
   { id: 'file.gltf', label: 'Export glTF (.gltf, embedded)', group: 'File', run: () => void exportAs('gltf') },
   { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => void exportAs('obj') },
+  { id: 'file.properties', label: 'Scene properties…', group: 'File', run: () => S().set({ propsOpen: true }) },
   { id: 'file.exit', label: 'Exit', group: 'File', run: () => void exitApp() },
 ]
 

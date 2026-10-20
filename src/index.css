@@ -399,3 +399,18 @@ button.danger { color: #ff9a9a; }
 @media (pointer: coarse) { .mi { min-height: 36px; } .mb-title { min-height: 36px; } }
 /* make room for the menus on laptops: logo only */
 @media (max-width: 1500px) { .brand-name { display: none; } }
+
+/* ---- File → Properties ---- */
+.pp { display: grid; grid-template-columns: 1fr 150px; gap: 16px; }
+.pp-form { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.pp-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 8px; color: var(--dim); }
+.pp-row input, .pp-row select, .pp-row textarea { width: 100%; min-width: 0; color: var(--text); }
+.pp-row textarea { resize: vertical; font: inherit; }
+.pp-row:has(textarea) { align-items: start; }
+.pp-row input[aria-invalid="true"] { border-color: var(--red); }
+.pp-note { margin: -2px 0 0 100px; color: var(--dim); font-size: 11.5px; }
+.pp-stats { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; align-self: start; display: flex; flex-direction: column; gap: 3px; }
+.pp-stats div { display: flex; justify-content: space-between; gap: 8px; }
+.pp-stats dt { color: var(--dim); }
+.pp-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .pp { grid-template-columns: 1fr; } }

@@ -4,6 +4,7 @@ import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawP
 import { SideIcons, Sidebar, Timeline } from './components/Panels'
 import { sideHandle, useSides } from './useLayout'
 import { DialogHost } from './components/Modal'
+import { PropertiesDialog } from './components/Properties'
 import { UVEditor } from './components/UVEditor'
 import { EmptyScene, HintBar } from './components/Workspace'
 import { installShortcuts } from './commands'
@@ -69,6 +70,7 @@ export default function App() {
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />
       <HelpPopover />
+      <PropertiesDialog />
       <DialogHost />
       <Toast />
       <Popup />
