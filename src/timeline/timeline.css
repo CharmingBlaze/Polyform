@@ -1,0 +1,54 @@
+/* Timeline sheet. Square controls, themed scrollbars. The transport bar is not styled here. */
+.tl-root { min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.tl-ruler-slot { flex: none; height: 0; overflow: hidden; }
+.tl-root .dope { flex: 1; min-width: 0; min-height: 0; margin: 0 8px 6px; border-radius: 0; display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; }
+.tl-root .dope-track { min-width: 0; overflow: hidden; }
+.tl-main { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; }
+.tl-root .dope.with-inspector { margin-right: 0; }
+.tl-bar { flex: none; display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 4; }
+.tl-root button, .tl-root input, .tl-root select { border-radius: 0; }
+.tl-bar button { width: 22px; height: 22px; padding: 0; justify-content: center; }
+.tl-speed { width: auto !important; padding: 0 6px !important; font-size: 11px; }
+.tl-root .dope-row { grid-template-columns: 128px minmax(0, 1fr); min-width: 0; min-height: 18px; }
+.tl-root .dope-name { display: flex; align-items: center; min-width: 0; gap: 2px; }
+.tl-root .dope-label { border-radius: 0; height: 18px; padding: 0 4px; min-width: 0; }
+.tl-twisty { width: 16px; height: 16px; padding: 0; flex: none; justify-content: center; background: transparent; border: none; color: var(--dim); }
+.tl-root .dope-row.ch { background: rgba(255,255,255,.015); }
+.tl-swatch { width: 6px; height: 6px; flex: none; }
+.tl-swatch.rot { background: #e08a3c; }
+.tl-swatch.pos { background: var(--accent); }
+.tl-swatch.scl { background: var(--y); }
+.tl-root .dkey.rot { background: #e08a3c; }
+.tl-root .dkey.pos { background: var(--accent); }
+.tl-root .dkey.scl { background: var(--y); }
+.tl-root .dkey.sel { box-shadow: 0 0 0 1px #0f1116, 0 0 0 2px var(--accent); }
+.tl-root .dkey.ghost { opacity: .35; pointer-events: none; }
+.tl-box { position: absolute; border: 1px solid var(--accent); background: rgba(109,139,255,.15); pointer-events: none; z-index: 5; }
+.tl-readout { position: fixed; z-index: 40; padding: 2px 6px; background: var(--panel2); border: 1px solid var(--line2); color: var(--text); font-size: 11px; pointer-events: none; }
+.tl-inspector { flex: 0 0 176px; width: 176px; max-width: 176px; min-width: 0; overflow: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 4px 6px; font-size: 11px; }
+.tl-inspector.pop { position: fixed; z-index: 45; width: 196px; max-width: 196px; flex: none; border: 1px solid var(--line2); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.tl-ins-name { font-size: 11px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-inspector .vec { gap: 2px; margin: 1px 0; min-width: 0; }
+.tl-inspector .vl { width: 22px; font-size: 10px; flex: none; }
+.tl-inspector .num { gap: 1px; font-size: 10px; min-width: 0; }
+.tl-inspector .num input { width: 34px; min-width: 0; padding: 1px 2px; }
+.tl-seg { display: flex; margin-top: 3px; }
+.tl-seg button { flex: 1; height: 20px; padding: 0; justify-content: center; font-size: 10px; border-radius: 0; }
+.tl-root .tl-seg button.on { background: var(--accent); border-color: var(--accent); color: white; }
+.tl-ease-row { display: flex; align-items: center; gap: 4px; margin-top: 3px; color: var(--dim); font-size: 10px; }
+.tl-ease-row select { flex: 1; min-width: 0; height: 20px; padding: 0 2px; }
+.tl-curves-host { flex: 1; min-height: 0; min-width: 0; display: flex; }
+.tl-curves svg { width: 100%; flex: 1; min-height: 48px; background: var(--bg); border: 1px solid var(--line); }
+.tl-curves-name, .tl-curves-key { font-size: 11px; color: var(--dim); }
+.tl-curves-key { display: flex; align-items: center; gap: 4px; margin-top: 3px; }
+.tl-curves-key i { width: 8px; height: 2px; display: inline-block; }
+.tl-curves-key i.x { background: var(--x); } .tl-curves-key i.y { background: var(--y); } .tl-curves-key i.z { background: var(--z); }
+.tl-ease-pop { position: fixed; z-index: 46; width: 196px; padding: 6px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.tl-root .dope, .tl-inspector {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line2) var(--panel);
+}
+.tl-root .dope::-webkit-scrollbar, .tl-inspector::-webkit-scrollbar { width: 10px; height: 10px; }
+.tl-root .dope::-webkit-scrollbar-thumb, .tl-inspector::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 0; }
+.tl-root .dope::-webkit-scrollbar-track, .tl-inspector::-webkit-scrollbar-track { background: var(--panel); }
+.tl-root .dope::-webkit-scrollbar-corner { background: var(--panel); }
