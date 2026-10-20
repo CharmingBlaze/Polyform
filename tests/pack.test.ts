@@ -88,3 +88,72 @@ describe('packing upgrade (UV-11)', () => {
     m.faces.forEach((f, i) => { expect(Math.sign(f.uv[1][0] - f.uv[0][0])).toBe(dirs[i]); expect(U.uvArea(f.uv)).toBeGreaterThan(0) })
   })
 })
+
+describe('MaxRects packer and power-of-two hints (item 7)', () => {
+  const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+  it('places every rect inside the bin, pad apart, no overlaps; null when one does not fit', () => {
+    const r = rng(7)
+    for (let t = 0; t < 20; t++) {
+      const items = Array.from({ length: 15 }, () => ({ w: 2 + Math.floor(r() * 20), h: 2 + Math.floor(r() * 20) }))
+      const pl = U.maxRects(items, 128, 128, 2, true)
+      expect(pl).not.toBeNull()
+      const rects = pl!.map((p, i) => ({ x: p.x, y: p.y, w: p.rot ? items[i].h : items[i].w, h: p.rot ? items[i].w : items[i].h }))
+      for (const a of rects) { expect(a.x).toBeGreaterThanOrEqual(2); expect(a.y).toBeGreaterThanOrEqual(2); expect(a.x + a.w).toBeLessThanOrEqual(126); expect(a.y + a.h).toBeLessThanOrEqual(126) }
+      // padded by 1 on each side (2 px apart) they still never overlap
+      const grown = rects.map(a => ({ x: a.x - 1, y: a.y - 1, w: a.w + 2, h: a.h + 2 }))
+      for (let i = 0; i < grown.length; i++) for (let j = i + 1; j < grown.length; j++) expect(overlap(grown[i], grown[j])).toBe(false)
+    }
+    expect(U.maxRects([{ w: 130, h: 4 }], 128, 128, 0, false)).toBeNull()
+    expect(U.maxRects([{ w: 130, h: 4 }], 128, 256, 0, true)).not.toBeNull() // turned upright
+    expect(U.maxRects([{ w: 64, h: 64 }, { w: 64, h: 64 }, { w: 64, h: 64 }, { w: 64, h: 64 }], 128, 128, 0, false)).not.toBeNull()
+  })
+  it('clearly beats shelves: more area on most random sets, never much less (strips and mixed islands)', () => {
+    const r = rng(11)
+    const shelf = (items: { w: number; h: number }[], RW: number, pad: number) => {
+      let x = pad, y = pad, rowH = 0
+      for (const it of items) {
+        if (x + it.w + pad > RW) { x = pad; y += rowH + pad; rowH = 0 }
+        if (y + it.h + pad > RW || it.w + 2 * pad > RW) return false
+        x += it.w + pad; rowH = Math.max(rowH, it.h)
+      }
+      return true
+    }
+    const mr = (items: { w: number; h: number }[], RW: number, pad: number) => !!U.maxRects(items, RW, RW, pad, false)
+    // the four island orders packIslandsEx tries
+    type I = { w: number; h: number }
+    const orders = (it: I[]) => [[...it].sort((a, b) => b.h - a.h || b.w - a.w), [...it].sort((a, b) => b.w - a.w || b.h - a.h), [...it].sort((a, b) => b.w * b.h - a.w * a.h), [...it].sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h))]
+    const bestScale = (items: { w: number; h: number }[], fit: (l: { w: number; h: number }[]) => boolean) => {
+      let lo = 0, hi = 10
+      for (let i = 0; i < 30; i++) { const s = (lo + hi) / 2; if (orders(items).some(o => fit(o.map(q => ({ w: Math.ceil(q.w * s), h: Math.ceil(q.h * s) }))))) lo = s; else hi = s }
+      return lo
+    }
+    let wins = 0, gain = 0, worse = 0
+    for (let t = 0; t < 20; t++) {
+      const items = Array.from({ length: 16 }, () => (t % 2 ? (r() < 0.5 ? { w: 20 + r() * 60, h: 3 + r() * 8 } : { w: 3 + r() * 8, h: 20 + r() * 60 }) : { w: 2 + r() * 40, h: 2 + r() * 30 }))
+      const a = bestScale(items, l => shelf(l, 128, 2)), b = bestScale(items, l => mr(l, 128, 2) || shelf(l, 128, 2)) // as packIslandsEx: MaxRects, shelves as fallback
+      if (b > a * 1.001) wins++
+      if (b < a * 0.97) worse++
+      gain += (b * b) / (a * a)
+    }
+    expect(worse).toBe(0)
+    expect(wins).toBeGreaterThanOrEqual(14)
+    expect(gain / 20).toBeGreaterThan(1.15) // > 15 % more area on average (packIslandsEx also keeps shelves as a fallback)
+  })
+  it('packIslandsEx with MaxRects: no overlaps, whole pixels, and fills more than before', () => {
+    for (const seed of [1, 2, 3]) {
+      const m = islandsModel(seed, 14)
+      const res = U.packIslandsEx(m, all(m), 0, { pixel: { tw: 128, th: 128 }, padPx: 2 })
+      expect(U.coverage(m, all(m), 128, 128).overlapPx).toBe(0)
+      expect(res.fill).toBeGreaterThan(0.6)
+      for (const f of m.faces) for (const [u, v] of f.uv) { expect(u).toBeGreaterThanOrEqual(-1e-9); expect(u).toBeLessThanOrEqual(1 + 1e-9); expect(v).toBeGreaterThanOrEqual(-1e-9); expect(v).toBeLessThanOrEqual(1 + 1e-9) }
+    }
+  })
+  it('power of two: isPow2, pow2Up and a size suggestion that holds the wanted density', () => {
+    expect([1, 2, 64, 4096].every(U.isPow2)).toBe(true)
+    expect([0, 3, 48, 100, 1.5].some(U.isPow2)).toBe(false)
+    expect(U.pow2Up(48)).toBe(64); expect(U.pow2Up(64)).toBe(64); expect(U.pow2Up(65)).toBe(128); expect(U.pow2Up(9999)).toBe(4096)
+    expect(U.pow2Suggest(64, 64, 1.4)).toEqual({ w: 128, h: 128 })
+    expect(U.pow2Suggest(64, 32, 2.5)).toEqual({ w: 256, h: 128 })
+    expect(U.pow2Suggest(48, 48, 1)).toEqual({ w: 64, h: 64 })
+  })
+})

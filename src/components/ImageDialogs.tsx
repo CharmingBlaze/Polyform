@@ -3,12 +3,13 @@ import { useStore } from '../store'
 import { textures } from '../textures'
 import type { Anchor } from '../imageops'
 import { ModalFrame } from './Modal'
+import { isPow2, pow2Up } from '../uvops'
 
 const SIZES = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
 const clampSize = (n: number) => Math.max(1, Math.min(4096, Math.round(n) || 1))
 
 function SizeFields({ w, h, setW, setH, id }: { w: number; h: number; setW: (n: number) => void; setH: (n: number) => void; id: string }) {
-  return (
+  return (<>
     <div className="img-size">
       <label className="field">Width<input type="number" min={1} max={4096} value={w} data-testid={`${id}-w`} onChange={e => setW(+e.target.value)} /></label>
       <span className="img-x">×</span>
@@ -17,7 +18,8 @@ function SizeFields({ w, h, setW, setH, id }: { w: number; h: number; setW: (n: 
         <option value="">…</option>{SIZES.map(n => <option key={n} value={n}>{n}×{n}</option>)}
       </select></label>
     </div>
-  )
+    {(!isPow2(w) || !isPow2(h)) && <div className="img-pow2" data-testid={`${id}-pow2`} title="Game engines and mipmaps work best with power-of-two sizes">Not a power of two: {pow2Up(w)}×{pow2Up(h)} is the next one</div>}
+  </>)
 }
 
 /** Image → New…: blank (colour or transparent) or a UV template of the selected faces (all when none). */

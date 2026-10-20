@@ -446,6 +446,7 @@ button.danger { color: #ff9a9a; }
 .img-size .field { flex: 1; min-width: 0; }
 .img-size input { width: 100%; }
 .img-x { padding-bottom: 6px; color: var(--dim); }
+.img-pow2 { margin-top: 4px; font-size: 11px; color: #e0b050; }
 .img-row { display: flex; align-items: center; gap: 10px; }
 .img-check { display: flex; align-items: center; gap: 6px; }
 .img-anchor { display: grid; grid-template-columns: repeat(3, 18px); gap: 3px; flex: none; }

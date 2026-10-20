@@ -869,7 +869,11 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     const opts = (m: typeof model): U.PackOpts => ({ pixel: o.align ? { tw: w, th: h } : undefined, aspect: h / w, padPx: o.pad, noRotate: !o.rotate, region, fixed: o.keep ? m.props.texelDensity / w : undefined, keepDensity: o.keep })
     // keep density: try on a copy first, so a refusal leaves no undo step
-    if (o.keep && !U.packIslandsEx(JSON.parse(JSON.stringify(st.model)), faces, o.pad / w, opts(st.model)).fits) { st.notify(`${st.model.props.texelDensity} px/unit does not fit ${region ? 'the selection box' : `the ${w}×${h} image`}: untick Keep density or resize the image`); return }
+    if (o.keep && !U.packIslandsEx(JSON.parse(JSON.stringify(st.model)), faces, o.pad / w, opts(st.model)).fits) {
+      const dens = st.model.props.texelDensity, can = U.packIslandsEx(JSON.parse(JSON.stringify(st.model)), faces, o.pad / w, { ...opts(st.model), keepDensity: false, fixed: undefined })
+      const sug = can.scale > 0 && !region ? U.pow2Suggest(w, h, dens / (can.scale * w)) : null
+      st.notify(`${dens} px/unit does not fit ${region ? 'the selection box' : `the ${w}×${h} image`}: untick Keep density or resize the image${sug ? ` (${sug.w}×${sug.h} should hold it)` : ''}`); return
+    }
     let r: U.PackResult | null = null
     st.edit(m => U.keepPins(m, faces, () => { r = U.packIslandsEx(m, faces, o.pad / w, opts(m)) }), 'Pack islands')
     const res = r as U.PackResult | null
@@ -889,7 +893,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         shrunk = U.packIslandsEx(m, faces, 0, { fixed: dens / w, pixel: { tw: w, th: h }, padPx: st.ui.uvPack.pad, noRotate: true }).shrunk
       }
     }), 'UV auto (pixel)')
-    st.notify(`Auto (pixel): ${dens} px per unit on ${w}×${h}${packed ? (shrunk ? ' · did not fit: packed smaller' : ' · packed') : ''}`)
+    st.notify(`Auto (pixel): ${dens} px per unit on ${w}×${h}${packed ? (shrunk ? ` · did not fit: packed smaller (try Image → Resize, e.g. ${U.pow2Suggest(w, h, 2).w}×${U.pow2Suggest(w, h, 2).h})` : ' · packed') : ''}`)
   }
   /** project with the camera of the hovered (or maximized) 3D pane */
   const projectFromView = () => {
@@ -999,7 +1003,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
         ]} />}
         {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}${U.isPow2(tw) && U.isPow2(th) ? '' : ' (not a power of two)'}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">

@@ -575,6 +575,9 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   const t0 = await texOf(), u0 = JSON.stringify(await uvs())
   await menu('img-resize')
   check('Resize dialog opens with the current size', await p.isVisible('[data-testid="img-resize"]') && (await p.inputValue('[data-testid="img-resize-w"]')) === '32')
+  check('power-of-two size: no hint', (await p.locator('[data-testid="img-resize-pow2"]').count()) === 0)
+  await p.fill('[data-testid="img-resize-w"]', '48'); await frame()
+  check('48 px wide: hint names the next power of two', ((await p.textContent('[data-testid="img-resize-pow2"]')) || '').includes('64×32'), await p.textContent('[data-testid="img-resize-pow2"]').catch(() => ''))
   await p.fill('[data-testid="img-resize-w"]', '64'); await p.fill('[data-testid="img-resize-h"]', '64'); await p.click('[data-testid="img-anchor-00"]'); await p.click('[data-testid="img-resize-ok"]'); await p.mouse.move(5, 5); await frame(300)
   const t1 = await texOf()
   const uv1 = await uvs()
@@ -790,6 +793,21 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.click('[data-testid="uvm-share"]'); await frame(200)
   check('unshared: the overlap is reported again', (await oinfo()).includes('2 faces overlap'))
   await p.selectOption('[data-testid="uv-stretch"]', 'off')
+}
+
+// Pack: Keep density that cannot fit suggests a power-of-two size; the UV hint flags non-power-of-two images
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(16, 16, 'p2')
+  await S(() => { const s = window.__polyform.getState(); s.edit(m => { m.props.texelDensity = 64 }, 'dens'); s.setUI({ uvPack: { ...s.ui.uvPack, keep: true, into: 'image' } }); s.selectNone() }); await frame()
+  const before = await S(() => JSON.stringify(window.__polyform.getState().model.faces.map(f => f.uv)))
+  await uvBtnTab('adjust', 'pack'); await frame(200)
+  const toast = await S(() => window.__polyform.getState().toast ?? '')
+  check('Pack (Keep density) refuses and names a power-of-two size that holds it', /does not fit/.test(String(toast)) && /\d+×\d+ should hold it/.test(String(toast)) && before === await S(() => JSON.stringify(window.__polyform.getState().model.faces.map(f => f.uv))), String(toast))
+  await S(() => { const s = window.__polyform.getState(); s.setUI({ uvPack: { ...s.ui.uvPack, keep: false } }) })
+  check('a 16×16 image: no power-of-two warning in the UV hint', !(await p.textContent('.uv-hint')).includes('not a power of two'))
+  await S(() => { const s = window.__polyform.getState(); s.imageResize(s.activeMat, 24, 16, 'scale') }); await frame(200)
+  check('a 24×16 image: the UV hint says it is not a power of two', (await p.textContent('.uv-hint')).includes('24×16 (not a power of two)'), await p.textContent('.uv-hint'))
 }
 
 const failed = results.filter(r => !r[1])

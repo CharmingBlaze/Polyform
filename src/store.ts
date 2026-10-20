@@ -1083,7 +1083,7 @@ export const useStore = create<State>((set, get) => ({
         if (img) res = UV.packIslandsEx(m, faces, 0, { fixed: dens / img.w, pixel: { tw: img.w, th: img.h }, padPx: get().ui.uvPack.pad })
       }), 'Auto UV')
       const r = res as { shrunk: boolean; scale: number } | null
-      get().notify(`Auto UV: unwrapped ${faces.length} faces` + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit` : ` at ${dens} px/unit`) : ''))
+      get().notify(`Auto UV: unwrapped ${faces.length} faces` + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit (${(q => `${q.w}×${q.h}`)(UV.pow2Suggest(img.w, img.h, dens / (r.scale * img.w)))} would hold it)` : ` at ${dens} px/unit`) : ''))
       return true
     } catch (e) {
       get().notify(String((e as Error).message || e))

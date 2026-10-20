@@ -467,6 +467,62 @@ export function stitch(m: Model, faces: number[], allFaces: number[]): number {
   return moved
 }
 
+// ---------- MaxRects ----------
+/** MaxRects (best short side fit) bin packing into one RW×RH bin. */
+export interface MRItem { w: number; h: number }
+export interface MRPlace { x: number; y: number; rot: boolean }
+type R = { x: number; y: number; w: number; h: number }
+/**
+ * Place every item (in the given order) into a RW×RH bin, `pad` apart and from the edges. Sizes are used as
+ * given (callers round pixel sizes). `rotate` allows 90° turns. Returns the placements, or null if one won't fit.
+ */
+export function maxRects(items: MRItem[], RW: number, RH: number, pad: number, rotate: boolean): MRPlace[] | null {
+  // pad trick: grow each rect by pad on the right/bottom, shrink the bin by pad, offset by pad
+  let free: R[] = [{ x: pad, y: pad, w: RW - pad, h: RH - pad }]
+  const out: MRPlace[] = []
+  const eps = 1e-9
+  for (const it of items) {
+    let best: { x: number; y: number; w: number; h: number; rot: boolean; s1: number; s2: number } | null = null
+    const tryFit = (w: number, h: number, rot: boolean) => {
+      for (const f of free) if (w <= f.w + eps && h <= f.h + eps) {
+        const a = f.w - w, b = f.h - h, s1 = Math.min(a, b), s2 = Math.max(a, b)
+        if (!best || s1 < best.s1 - eps || (Math.abs(s1 - best.s1) <= eps && (s2 < best.s2 - eps || (Math.abs(s2 - best.s2) <= eps && (f.y < best.y - eps || (Math.abs(f.y - best.y) <= eps && f.x < best.x))))))
+          best = { x: f.x, y: f.y, w, h, rot, s1, s2 }
+      }
+    }
+    tryFit(it.w + pad, it.h + pad, false)
+    if (rotate && Math.abs(it.w - it.h) > eps) tryFit(it.h + pad, it.w + pad, true)
+    if (!best) return null
+    const u = best as { x: number; y: number; w: number; h: number; rot: boolean }
+    out.push({ x: u.x, y: u.y, rot: u.rot })
+    // split every free rect the placed one overlaps
+    const next: R[] = []
+    for (const f of free) {
+      if (u.x >= f.x + f.w - eps || u.x + u.w <= f.x + eps || u.y >= f.y + f.h - eps || u.y + u.h <= f.y + eps) { next.push(f); continue }
+      if (u.x > f.x + eps) next.push({ x: f.x, y: f.y, w: u.x - f.x, h: f.h })
+      if (u.x + u.w < f.x + f.w - eps) next.push({ x: u.x + u.w, y: f.y, w: f.x + f.w - u.x - u.w, h: f.h })
+      if (u.y > f.y + eps) next.push({ x: f.x, y: f.y, w: f.w, h: u.y - f.y })
+      if (u.y + u.h < f.y + f.h - eps) next.push({ x: f.x, y: u.y + u.h, w: f.w, h: f.y + f.h - u.y - u.h })
+    }
+    // prune rects contained in others
+    free = next.filter((a, i) => !next.some((b, j) => j !== i && a.x >= b.x - eps && a.y >= b.y - eps && a.x + a.w <= b.x + b.w + eps && a.y + a.h <= b.y + b.h + eps && (j < i || a.x !== b.x || a.y !== b.y || a.w !== b.w || a.h !== b.h)))
+  }
+  return out
+}
+
+// ---------- power of two ----------
+export const isPow2 = (n: number) => Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0
+/** Smallest power of two >= n (max 4096). */
+export const pow2Up = (n: number) => { let p = 1; while (p < n && p < 4096) p *= 2; return p }
+/**
+ * Power-of-two image size that holds the layout at `grow` times the current linear size (grow = wanted density /
+ * density that fits), keeping the image's aspect where possible.
+ */
+export function pow2Suggest(tw: number, th: number, grow: number): { w: number; h: number } {
+  const g = Math.max(1, grow)
+  return { w: pow2Up(Math.ceil(tw * g - 1e-9)), h: pow2Up(Math.ceil(th * g - 1e-9)) }
+}
+
 // ---------- pack ----------
 /** 3D area of a face */
 export const faceArea3D = (m: Model, fi: number) => newell(m.verts, m.faces[fi].v).length() / 2
@@ -510,7 +566,7 @@ export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: Pack
   const isl = islands(m, faces)
   const groups = new Map<number, number[]>()
   for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
-  type Item = { faces: number[]; w: number; h: number; x0: number; y0: number; k: number; rot: boolean; x: number; y: number }
+  type Item = { faces: number[]; w: number; h: number; x0: number; y0: number; k: number; rot: boolean; x: number; y: number; flip: boolean }
   const items: Item[] = []
   for (const fs of groups.values()) {
     const a3 = fs.reduce((a, f) => a + faceArea3D(m, f), 0)
@@ -522,20 +578,30 @@ export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: Pack
     let w = (x1 - x0) * k, h = (y1 - y0) * k * aspect
     const rot = !o.noRotate && h > w * 1.0001
     if (rot) [w, h] = [h, w]
-    items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot, x: 0, y: 0 })
+    items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot, x: 0, y: 0, flip: false })
   }
   if (!items.length) return { islands: 0, scale: 0, shrunk: false, fits: true, fill: 0 }
   const size = (v: number) => (px ? Math.max(1, Math.ceil(v - 1e-9)) : v)
-  const fits = (list: Item[], s: number) => {
+  const shelfFits = (list: Item[], s: number) => {
     let x = pad, y = pad, rowH = 0
     for (const it of list) {
       const w = size(it.w * s), h = size(it.h * s)
       if (w + 2 * pad > RW + 1e-9 || h + 2 * pad > RH + 1e-9) return false
       if (x + w + pad > RW + 1e-9) { x = pad; y += rowH + pad; rowH = 0 }
       if (y + h + pad > RH + 1e-9) return false
-      it.x = x; it.y = y; x += w + pad; rowH = Math.max(rowH, h)
+      it.x = x; it.y = y; it.flip = false; x += w + pad; rowH = Math.max(rowH, h)
     }
     return true
+  }
+  // MaxRects fills 5-20 points more than shelves (see tests/pack.test.ts); shelves stay as the fallback and for
+  // very many islands, where MaxRects' free list gets slow
+  const useMR = items.length <= 400
+  const fits = (list: Item[], s: number) => {
+    if (useMR) {
+      const pl = maxRects(list.map(it => ({ w: size(it.w * s), h: size(it.h * s) })), RW, RH, pad, !o.noRotate)
+      if (pl) { list.forEach((it, i) => { it.x = pl[i].x; it.y = pl[i].y; it.flip = pl[i].rot }); return true }
+    }
+    return shelfFits(list, s)
   }
   const orders: Item[][] = [
     [...items].sort((a, b) => b.h - a.h || b.w - a.w),
@@ -562,10 +628,12 @@ export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: Pack
   for (const it of best!) {
     const s = lo * it.k
     used += size(it.w * lo) * size(it.h * lo)
+    // turned 90° by the upright rule or by MaxRects (both: back upright); h0 = unturned height
+    const rot = it.rot !== it.flip, h0 = it.rot ? it.w : it.h
     for (const f of it.faces) m.faces[f].uv = m.faces[f].uv.map(([u, v]) => {
       const lx = (u - it.x0) * s, ly = (v - it.y0) * s * aspect
       // rotate 90° counter-clockwise (keeps winding): (x, y) -> (H - y, x) with H = original height
-      const q = it.rot ? [it.x + (it.w * lo - ly), it.y + lx] : [it.x + lx, it.y + ly]
+      const q = rot ? [it.x + (h0 * lo - ly), it.y + lx] : [it.x + lx, it.y + ly]
       return [r.minU + (q[0] / RW) * rw, r.minV + (q[1] / RH) * rh] as Vec2
     })
   }
