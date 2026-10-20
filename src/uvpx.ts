@@ -42,3 +42,28 @@ export function fmtPx(px: number) {
 export function pxSize(img: { width: number; height: number } | null | undefined, fallback = 64): [number, number] {
   return img && img.width > 0 && img.height > 0 ? [img.width, img.height] : [fallback, fallback]
 }
+
+/** Snap a move so the anchor corner lands on the grid: returns the snapped delta (each axis on its own texel). */
+export function snapMoveDelta(anchor: Vec2, d: Vec2, tw: number, th: number, sub: number): Vec2 {
+  if (!sub) return d
+  const t = snapUV(anchor[0] + d[0], anchor[1] + d[1], tw, th, sub)
+  return [d[0] ? t[0] - anchor[0] : 0, d[1] ? t[1] - anchor[1] : 0]
+}
+const DEG = Math.PI / 180
+/**
+ * Rotation snapping (radians). Snapped: 15° steps, 1° with `fine`. Free: sticks to multiples of 90° within 6°
+ * unless `free` (Ctrl) asks for no help at all.
+ */
+export function snapAngle(a: number, o: { snap: boolean; fine?: boolean; free?: boolean }): number {
+  if (o.snap) { const st = (o.fine ? 1 : 15) * DEG; return Math.round(a / st) * st }
+  if (o.free) return a
+  const q = Math.round(a / (90 * DEG)) * 90 * DEG
+  return Math.abs(a - q) < 6 * DEG ? q : a
+}
+/** Effective grid: snap setting, inverted by Ctrl, 4× finer with Shift; 0 = free. Needs a real image to snap to. */
+export function gridSub(setting: number, hasImage: boolean, ctrl: boolean, shift: boolean): number {
+  if (!hasImage) return 0
+  const on = setting > 0 !== ctrl
+  if (!on) return 0
+  return (setting || 1) * (shift ? 4 : 1)
+}

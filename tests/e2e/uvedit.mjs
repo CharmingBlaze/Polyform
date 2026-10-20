@@ -75,6 +75,46 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
   await p.keyboard.press('3'); await frame()
 }
 
+// helpers: a real PNG image on the box (through the Images panel), shown in the UV editor
+const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 1, 1); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
+const addImage = async (w, h, name = 'tex') => {
+  const n0 = await S(() => window.__polyform.getState().model.materials.length)
+  await p.setInputFiles('[data-testid="img-add"]', [{ name: `${name}.png`, mimeType: 'image/png', buffer: Buffer.from(await png(w, h, '#6080c0'), 'base64') }])
+  await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n + 1, n0, { timeout: 5000 })
+  await S(n => { const s = window.__polyform.getState(); s.edit(m => { m.groups.forEach(g => (g.mat = n)); m.faces.forEach(f => delete f.mat) }, 'use image'); s.set({ activeMat: n }) }, n0)
+  await frame(200)
+  return n0
+}
+const gridLayout = () => S(() => window.__polyform.getState().edit(m => m.faces.forEach((f, i) => { const ox = (1 + (i % 3) * 5) / 16, oy = (1 + Math.floor(i / 3) * 6) / 16; f.uv = [[ox, oy], [ox + 4 / 16, oy], [ox + 4 / 16, oy + 4 / 16], [ox, oy + 4 / 16]] }), 'grid layout'))
+const centroid = fi => S(fi => { const f = window.__polyform.getState().model.faces[fi]; return [f.uv.reduce((s, q) => s + q[0], 0) / f.uv.length, f.uv.reduce((s, q) => s + q[1], 0) / f.uv.length] }, fi)
+const onGrid = (uv, n) => uv.every(([u, v]) => Math.abs(u * n - Math.round(u * n)) < 1e-6 && Math.abs(v * n - Math.round(v * n)) < 1e-6)
+const selFace = fi => S(fi => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [fi] }) }, fi)
+// modifiers go down after the press (Ctrl / Shift on press mean deselect / add)
+const dragPx = async (from, dx, dy, mods = []) => { await p.mouse.move(from.x, from.y); await p.mouse.down(); for (const k of mods) await p.keyboard.down(k); await p.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 3 }); await p.mouse.move(from.x + dx, from.y + dy, { steps: 3 }); await p.mouse.up(); for (const k of mods) await p.keyboard.up(k); await frame() }
+
+// ---- UV-3: snap to the image's pixel grid while dragging
+await addImage(16, 16)
+{
+  check('Snap defaults to Pixel', (await p.inputValue('[data-testid="uv-snap"]')) === '1')
+  await gridLayout(); await selFace(4)
+  const before = (await uvs())[4]
+  await dragPx(await uvC(...await centroid(4)), 37, -23)
+  const after = (await uvs())[4]
+  check('drag on a 16 px image: every moved corner lands on a multiple of 1/16', onGrid(after, 16) && after[0][0] !== before[0][0], JSON.stringify(after))
+  await p.keyboard.press('Control+z'); await frame()
+  const sd = await side()
+  await dragPx(await uvC(...await centroid(4)), 37, 0, ['Control'])
+  const free = (await uvs())[4]
+  check('Ctrl held: moves freely (by the mouse delta, off the grid)', close(free[0][0] - before[0][0], 37 / sd, 0.004) && !onGrid(free, 16), `${free[0][0] - before[0][0]} vs ${37 / sd}`)
+  await p.keyboard.press('Control+z'); await frame()
+  await p.selectOption('[data-testid="uv-snap"]', '0')
+  await dragPx(await uvC(...await centroid(4)), 37, 0)
+  check('Snap off: free drag', !onGrid((await uvs())[4], 16))
+  await p.keyboard.press('Control+z')
+  check('snap setting persists in the UI prefs', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvSnap)) === 0)
+  await p.selectOption('[data-testid="uv-snap"]', '1'); await frame()
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

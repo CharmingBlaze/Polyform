@@ -16,11 +16,13 @@ export interface UIPrefs {
   pressureStrength: boolean
   /** UV editor selection: 'uv' picks UV vertices / face sides (seams respected); '3d' = the mesh selection */
   uvSync: 'uv' | '3d'
+  /** UV drag snapping: grid cells per texel of the shown image (0 off, 1 pixel, 2 half, 4 quarter) */
+  uvSnap: 0 | 1 | 2 | 4
 }
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv' }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1 }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -42,6 +44,7 @@ export function loadPrefs(): UIPrefs {
       pressureSize: bool(p.pressureSize, DEFAULT_PREFS.pressureSize),
       pressureStrength: bool(p.pressureStrength, DEFAULT_PREFS.pressureStrength),
       uvSync: p.uvSync === '3d' ? '3d' : 'uv',
+      uvSnap: ([0, 1, 2, 4] as const).includes(p.uvSnap as 0) ? p.uvSnap as 0 | 1 | 2 | 4 : 1,
     }
   } catch { return { ...DEFAULT_PREFS } }
 }

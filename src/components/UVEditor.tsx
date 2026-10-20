@@ -7,6 +7,7 @@ import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as UVS from '../uvsel'
+import { gridSub, snapAngle, snapLen, snapMoveDelta } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
@@ -51,6 +52,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const model = useStore(s => s.model)
   const globalTool = useStore(s => s.tool)
   const uvSync = useStore(s => s.ui.uvSync)
+  const snapSetting = useStore(s => s.ui.uvSnap)
   useStore(s => s.uvSel)
   // image of the first selected face's material, else the active material
   const firstSel = [...selFaces].find(f => model.faces[f])
@@ -61,6 +63,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const texId = model.materials[shownMat]?.texture ?? null
   const texImg = texId && !checker ? textures.canvas(texId) : null
   const [, force] = useState(0)
+  const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
   const drag = useRef<Drag>(null)
   const mouse = useRef({ x: 0, y: 0 })
 
@@ -274,16 +277,25 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     ids.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) orig.set(id, [...u] as Vec2) })
     const b = U.cornerBox(m, ids)!
     const cp = toPx(b.c)
+    // move snapping keeps the corner nearest the press point on the grid
+    let anchor: Vec2 = b.c, ad = Infinity
+    orig.forEach(o => { const q = toPx(o), dd = (q.x - x) ** 2 + (q.y - y) ** 2; if (dd < ad) { ad = dd; anchor = o } })
     st.checkpoint(`UV ${kind}`)
-    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c: b.c, cp, modal, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
+    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c: b.c, cp, modal, anchor, w0: b.maxU - b.minU, h0: b.maxV - b.minV, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
     return true
   }
-  const updateXf = (x: number, y: number, ctrl: boolean) => {
+  /** current grid cells per texel (0 = free) for these modifier keys */
+  const grid = (ctrl: boolean, shift: boolean) => gridSub(snapSetting, tw > 0, ctrl, shift)
+  const updateXf = (x: number, y: number, mods: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
     const d = drag.current, st = useStore.getState(), m = st.model
-    const dx = (x - d.x0) / side, dy = -(y - d.y0) / side
-    let ang = -(Math.atan2(y - d.cp.y, x - d.cp.x) - d.a0)
-    if (ctrl) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
-    const f = Math.max(0.001, Math.hypot(x - d.cp.x, y - d.cp.y) / d.r0)
+    const ctrl = !!(mods.ctrlKey || mods.metaKey), shift = !!mods.shiftKey, sub = grid(ctrl, shift)
+    let [dx, dy] = snapMoveDelta(d.anchor, [(x - d.x0) / side, -(y - d.y0) / side], tw, th, sub)
+    if (!sub) { dx = (x - d.x0) / side; dy = -(y - d.y0) / side }
+    const ang = snapAngle(-(Math.atan2(y - d.cp.y, x - d.cp.x) - d.a0), { snap: sub > 0, fine: shift, free: ctrl })
+    let f = Math.max(0.001, Math.hypot(x - d.cp.x, y - d.cp.y) / d.r0)
+    // scale: the box's larger side lands on whole grid cells
+    const big = Math.max(d.w0, d.h0)
+    if (sub && big > 1e-9) f = snapLen(big * f, d.w0 >= d.h0 ? tw : th, sub) / big
     d.orig.forEach((o: Vec2, id: number) => {
       let u: Vec2
       if (d.xf === 'move') u = [o[0] + dx, o[1] + dy]
@@ -403,8 +415,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (d.kind === 'paint') { notePen(e); const [u, v] = toUV(x, y); paintUVAt(u, v); return }
     if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
-    if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e.ctrlKey) } return }
-    if (d.kind === 'xf') updateXf(x, y, e.ctrlKey)
+    if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e) } return }
+    if (d.kind === 'xf') updateXf(x, y, e)
   }
   const up = (e: React.PointerEvent) => {
     if (e.pointerType === 'touch') {
@@ -469,7 +481,6 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const B = ({ id, label, tip, onClick, on }: { id: string; label: string; tip?: string; onClick: () => void; on?: boolean }) => (
     <button data-testid={`uv-${id}`} className={on ? 'on' : ''} title={tip ?? label} onClick={onClick}>{label}</button>
   )
-  const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
 
   return (
     <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
@@ -478,6 +489,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
         </div>
         {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => <B key={t} id={t} on={tool === t} label={t[0].toUpperCase() + t.slice(1)} tip={t === 'select' ? 'Select (click / drag); drag a selected element to move it' : `${t} (or ${t === 'move' ? 'G' : t === 'rotate' ? 'R' : 'S'} while hovering)`} onClick={() => setTool(t)} />)}
+        <select data-testid="uv-snap" value={snapSetting} title={`Snap while dragging to the image's pixel grid${tw ? '' : ' (when an image is shown)'} · Ctrl inverts · Shift = 4× finer`} onChange={e => useStore.getState().setUI({ uvSnap: +e.target.value as 0 | 1 | 2 | 4 })}>
+          <option value={0}>Snap off</option><option value={1}>Snap: pixel</option><option value={2}>Snap: ½ px</option><option value={4}>Snap: ¼ px</option>
+        </select>
         <span className="grow" />
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
