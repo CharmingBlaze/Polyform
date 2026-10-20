@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
+import * as UVS from '../uvsel'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
@@ -19,11 +20,12 @@ export function uvFaces(): number[] {
   const m = useStore.getState().model
   return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
 }
-/** UV corners covered by the 3D selection (the UV selection is the 3D selection). */
+/** Selected UV corners: the UV-local selection (Sync: UV), else the corners the 3D selection covers. */
 export function uvSelection(): Set<number> {
-  const s = useStore.getState()
-  return U.selectedCorners(s.model, s, uvFaces())
+  return new Set(useStore.getState().uvCorners())
 }
+/** UV-local picking applies (Sync: UV, point or edge mode); face and object picks are already face-local. */
+const uvLocal = () => { const s = useStore.getState(); return s.ui.uvSync === 'uv' && s.selectMode !== 'object' && s.selectMode !== 'joint' && !s.subModes.includes('face') }
 
 /**
  * UV editor. Selection is synced with the 3D views: picking here selects points / edges / faces in the current
@@ -48,6 +50,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const activeMat = useStore(s => s.activeMat)
   const model = useStore(s => s.model)
   const globalTool = useStore(s => s.tool)
+  const uvSync = useStore(s => s.ui.uvSync)
+  useStore(s => s.uvSel)
   // image of the first selected face's material, else the active material
   const firstSel = [...selFaces].find(f => model.faces[f])
   const [pick, setPick] = useState<{ mat: number; sel: Set<number> } | null>(null)
@@ -166,10 +170,22 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const loc = (e: { clientX: number; clientY: number }) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 
   // ---------- picking (3D-synced) ----------
-  type Hit = { verts?: number[]; faces?: number[]; edges?: number[] }
+  type Hit = { verts?: number[]; faces?: number[]; edges?: number[]; corners?: number[]; as?: 'verts' | 'edges' }
   const pickAt = (x: number, y: number): Hit | null => {
     const st = useStore.getState(), m = st.model, faces = uvFaces()
     const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
+    if (uvLocal()) {
+      // one UV vertex (this island's copy of the point) or one face side of an edge
+      if (st.subModes.includes('vertex')) {
+        const c = UVS.nearestCorner(m, faces, toPx, x, y, 49)
+        if (c >= 0) return { corners: UVS.uvVertexOf(m, faces, c), as: 'verts' }
+      }
+      if (st.subModes.includes('edge')) {
+        const e = UVS.nearestEdge(m, faces, toPx, x, y, 36)
+        if (e) return { corners: [...UVS.uvVertexOf(m, faces, e[0] * 1024 + e[1]), ...UVS.uvVertexOf(m, faces, e[0] * 1024 + e[2])], as: 'edges' }
+      }
+      return null
+    }
     if (st.subModes.includes('vertex') && st.selectMode !== 'object') {
       let best = -1, bd = 49
       for (const fi of faces) m.faces[fi].uv.forEach((u, i) => { const p = toPx(u), d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = m.faces[fi].v[i] } })
@@ -202,6 +218,15 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const pickRect = (x0: number, y0: number, x1: number, y1: number): Hit => {
     const st = useStore.getState(), m = st.model, faces = uvFaces()
     const inside = (u: Vec2) => { const p = toPx(u); return p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 }
+    if (uvLocal()) {
+      const ids: number[] = []
+      for (const fi of faces) m.faces[fi].uv.forEach((u, i) => inside(u) && ids.push(fi * 1024 + i))
+      if (st.subModes.includes('vertex')) return { corners: ids, as: 'verts' }
+      // edges: keep only corners on a fully enclosed face side
+      const inSet = new Set(ids), keep: number[] = []
+      for (const fi of faces) { const n = m.faces[fi].uv.length; for (let i = 0; i < n; i++) { const a = fi * 1024 + i, b = fi * 1024 + (i + 1) % n; if (inSet.has(a) && inSet.has(b)) keep.push(a, b) } }
+      return { corners: keep, as: 'edges' }
+    }
     if (st.selectMode === 'object' || st.subModes.includes('face')) {
       let hit = faces.filter(fi => m.faces[fi].uv.every(inside))
       if (st.selectMode === 'object') { const gs = new Set(hit.map(f => m.faces[f].g)); hit = m.faces.map((f, i) => (gs.has(f.g) ? i : -1)).filter(i => i >= 0) }
@@ -219,6 +244,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const applyHit = (hit: Hit | null, add: boolean, sub: boolean) => {
     const st = useStore.getState()
     const merge = (cur: Set<number>, ids: number[]) => { const s = new Set(add || sub ? cur : []); ids.forEach(i => (sub ? s.delete(i) : s.add(i))); return s }
+    if (hit?.corners) {
+      const cur = add || sub ? uvSelection() : new Set<number>()
+      hit.corners.forEach(c => (sub ? cur.delete(c) : cur.add(c)))
+      st.setUVSelection(cur, hit.as ?? 'verts')
+      return
+    }
+    if (!hit && uvLocal()) { if (!add && !sub) st.setUVSelection([], st.subModes.includes('edge') && !st.subModes.includes('vertex') ? 'edges' : 'verts'); return }
     if (!hit) { if (!add && !sub) st.setSelection(st.subModes.includes('vertex') && st.selectMode !== 'object' ? { verts: [] } : st.subModes.includes('edge') && st.selectMode !== 'object' ? { edges: [] } : { faces: [] }); return }
     if (hit.faces) st.setSelection({ faces: merge(st.selFaces, hit.faces) })
     else if (hit.edges) st.setSelection({ edges: merge(st.selEdges, hit.edges) })
@@ -227,6 +259,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const hitSelected = (hit: Hit | null) => {
     if (!hit) return false
     const st = useStore.getState()
+    if (hit.corners) { const cur = uvSelection(); return hit.corners.length > 0 && hit.corners.every(c => cur.has(c)) }
     if (hit.faces) return hit.faces.every(f => st.selFaces.has(f))
     if (hit.edges) return hit.edges.every(e => st.selEdges.has(e))
     return !!hit.verts?.every(v => st.selVerts.has(v))
@@ -420,6 +453,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const selectIsland = (hit: Hit | null) => {
     const st = useStore.getState(), faces = uvFaces()
     const seeds = hit?.faces ?? (hit ? [] : [...st.selFaces])
+    hit?.corners?.forEach(c => seeds.push(Math.floor(c / 1024)))
     if (hit?.verts || hit?.edges) {
       const vs = new Set(hit.verts ?? hit.edges!.flatMap(k => [Math.floor(k / 2 ** 26), k % 2 ** 26]))
       faces.forEach(fi => st.model.faces[fi].v.some(v => vs.has(v)) && seeds.push(fi))
@@ -440,6 +474,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   return (
     <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
       <div className="uv-toolbar">
+        <div className="seg" data-testid="uv-sync" title="Selection sync. UV: pick this island's copy of a point or edge (seams stay apart). 3D: picking takes the mesh point in every island">
+          {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
+        </div>
         {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => <B key={t} id={t} on={tool === t} label={t[0].toUpperCase() + t.slice(1)} tip={t === 'select' ? 'Select (click / drag); drag a selected element to move it' : `${t} (or ${t === 'move' ? 'G' : t === 'rotate' ? 'R' : 'S'} while hovering)`} onClick={() => setTool(t)} />)}
         <span className="grow" />
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>

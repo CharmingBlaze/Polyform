@@ -14,11 +14,13 @@ export interface UIPrefs {
   /** pen pressure scales brush size / strength */
   pressureSize: boolean
   pressureStrength: boolean
+  /** UV editor selection: 'uv' picks UV vertices / face sides (seams respected); '3d' = the mesh selection */
+  uvSync: 'uv' | '3d'
 }
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv' }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -39,6 +41,7 @@ export function loadPrefs(): UIPrefs {
       rightCollapsed: tri(p.rightCollapsed),
       pressureSize: bool(p.pressureSize, DEFAULT_PREFS.pressureSize),
       pressureStrength: bool(p.pressureStrength, DEFAULT_PREFS.pressureStrength),
+      uvSync: p.uvSync === '3d' ? '3d' : 'uv',
     }
   } catch { return { ...DEFAULT_PREFS } }
 }

@@ -14,6 +14,7 @@ import { topology } from './topology'
 import * as X from './extrude'
 import { applyAtlas, atlasInput } from './unwrap'
 import * as UV from './uvops'
+import * as UVS from './uvsel'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
 import { textures as tex } from './textures'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
@@ -163,6 +164,10 @@ interface State {
   activeEdges: () => [number, number][]
   opSel: () => OpSel
   setSelection: (r: { verts?: Iterable<number>; faces?: Iterable<number>; edges?: Iterable<number> }) => void
+  /** UV-local corner selection (UV sync mode): valid only while the 3D selection sets it was made with are current */
+  uvSel: { corners: Set<number>; verts: Set<number>; edges: Set<number>; faces: Set<number> } | null
+  /** select exact UV corners; the 3D selection follows (their points, or edges) */
+  setUVSelection: (corners: Iterable<number>, as: 'verts' | 'edges') => void
   selectAll: () => void
   selectNone: () => void
   invertSelection: () => void
@@ -327,6 +332,7 @@ export const useStore = create<State>((set, get) => ({
   panes: DEFAULT_PANES,
   maximized: null,
   uvSpace: false,
+  uvSel: null,
   uvSplit: 0.5,
   uvMax: null,
   setUVSpace: on => {
@@ -934,7 +940,21 @@ export const useStore = create<State>((set, get) => ({
 
   // ------------------------------------------------------------------ materials
   uvFaces: () => { const m = get().model; return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0) },
-  uvCorners: () => { const s = get(); return [...UV.selectedCorners(s.model, s, s.uvFaces())] },
+  uvCorners: () => {
+    const s = get(), u = s.uvSel
+    if (s.ui.uvSync === 'uv' && u && u.verts === s.selVerts && u.edges === s.selEdges && u.faces === s.selFaces) {
+      const vis = new Set(s.uvFaces())
+      return [...u.corners].filter(id => vis.has(M.cornerFace(id)) && s.model.faces[M.cornerFace(id)].uv[M.cornerIdx(id)] !== undefined)
+    }
+    return [...UV.selectedCorners(s.model, s, s.uvFaces())]
+  },
+  setUVSelection: (corners, as) => {
+    const ids = new Set(corners), m = get().model
+    if (as === 'edges') get().setSelection({ edges: UVS.edgesOfCorners(m, ids) })
+    else get().setSelection({ verts: UVS.vertsOfCorners(m, ids) })
+    const s = get()
+    set({ uvSel: { corners: ids, verts: s.selVerts, edges: s.selEdges, faces: s.selFaces } })
+  },
   markSeams: on => {
     const s = get(), m = s.model
     let edges: number[]
