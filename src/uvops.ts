@@ -77,6 +77,128 @@ export function setBox(m: Model, ids: Iterable<number>, nb: { minU: number; minV
   mapCorners(m, list, u => [nb.minU + (w0 > 1e-12 ? ((u[0] - b.minU) / w0) * nb.w : 0), nb.minV + (h0 > 1e-12 ? ((u[1] - b.minV) / h0) * nb.h : 0)])
 }
 
+/** 180° about the bounding-box centre */
+export const rot180 = (m: Model, ids: Iterable<number>) => mapCorners(m, ids, (u, c) => [2 * c[0] - u[0], 2 * c[1] - u[1]])
+/** Stretch the selection's bounding box onto the whole 0..1 square (Blockbench "Maximize"). */
+export function maximize(m: Model, ids: Iterable<number>) { setBox(m, ids, { minU: 0, minV: 0, w: 1, h: 1 }) }
+/** Weld the corners onto one point: `to`, else the bounding-box centre. */
+export function mergeUVs(m: Model, ids: Iterable<number>, to?: Vec2) {
+  const list = [...ids], b = cornerBox(m, list)
+  if (!b) return
+  const p = to ?? b.c
+  mapCorners(m, list, () => [p[0], p[1]])
+}
+export type AlignTo = 'min' | 'mid' | 'max'
+/** Line the corners up on one U (axis 'u') or V (axis 'v'): the box's min, centre or max. */
+export function align(m: Model, ids: Iterable<number>, axis: 'u' | 'v', to: AlignTo) {
+  const list = [...ids], b = cornerBox(m, list)
+  if (!b) return
+  const k = axis === 'u' ? 0 : 1
+  const t = axis === 'u' ? (to === 'min' ? b.minU : to === 'max' ? b.maxU : b.c[0]) : to === 'min' ? b.minV : to === 'max' ? b.maxV : b.c[1]
+  mapCorners(m, list, u => (k === 0 ? [t, u[1]] : [u[0], t]))
+}
+/** Coincident corners grouped as UV points (a welded UV vertex is one point). */
+export function uvPoints(m: Model, ids: Iterable<number>, eps = 1e-9): { p: Vec2; ids: number[] }[] {
+  const out: { p: Vec2; ids: number[] }[] = []
+  for (const id of ids) {
+    const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]
+    if (!u) continue
+    const g = out.find(o => Math.abs(o.p[0] - u[0]) <= eps && Math.abs(o.p[1] - u[1]) <= eps)
+    if (g) g.ids.push(id); else out.push({ p: [u[0], u[1]], ids: [id] })
+  }
+  return out
+}
+/**
+ * Straighten. Three or more UV points: project them onto the line through the two farthest apart. Exactly two:
+ * rotate `island` (default: every corner of the faces they belong to) about their midpoint so that edge becomes
+ * horizontal or vertical, whichever is nearer. Returns false when there is nothing to do.
+ */
+export function straighten(m: Model, ids: Iterable<number>, island?: Iterable<number>): boolean {
+  const list = [...ids], pts = uvPoints(m, list)
+  if (pts.length < 2) return false
+  let a = pts[0], b = pts[1], best = -1
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const d = (pts[i].p[0] - pts[j].p[0]) ** 2 + (pts[i].p[1] - pts[j].p[1]) ** 2
+    if (d > best) { best = d; a = pts[i]; b = pts[j] }
+  }
+  if (best < 1e-24) return false
+  const dx = b.p[0] - a.p[0], dy = b.p[1] - a.p[1]
+  if (pts.length === 2) {
+    const ang = Math.atan2(dy, dx), target = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2), rot = target - ang
+    const piv: Vec2 = [(a.p[0] + b.p[0]) / 2, (a.p[1] + b.p[1]) / 2]
+    const all = new Set<number>(island ?? [...new Set(list.map(cornerFace))].flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c))))
+    list.forEach(id => all.add(id))
+    const orig = new Map<number, Vec2>()
+    all.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) orig.set(id, u) })
+    setCorners(m, rotateAbout(orig, piv, rot))
+    // the two points land exactly on one row / column
+    const k = Math.abs(Math.sin(target)) < 0.5 ? 1 : 0
+    for (const id of [...a.ids, ...b.ids]) { const f = m.faces[cornerFace(id)], u = f.uv[cornerIdx(id)]; f.uv[cornerIdx(id)] = k === 1 ? [u[0], piv[1]] : [piv[0], u[1]] }
+    return true
+  }
+  const L = dx * dx + dy * dy
+  for (const g of pts) {
+    const t = ((g.p[0] - a.p[0]) * dx + (g.p[1] - a.p[1]) * dy) / L
+    const q: Vec2 = [a.p[0] + dx * t, a.p[1] + dy * t]
+    for (const id of g.ids) m.faces[cornerFace(id)].uv[cornerIdx(id)] = [q[0], q[1]]
+  }
+  return true
+}
+/** Space the UV points evenly along U or V between the outermost two (their order kept). */
+export function distribute(m: Model, ids: Iterable<number>, axis: 'u' | 'v'): boolean {
+  const k = axis === 'u' ? 0 : 1, pts = uvPoints(m, ids).sort((x, y) => x.p[k] - y.p[k])
+  if (pts.length < 3) return false
+  const lo = pts[0].p[k], hi = pts[pts.length - 1].p[k]
+  pts.forEach((g, i) => { const t = lo + ((hi - lo) * i) / (pts.length - 1); for (const id of g.ids) m.faces[cornerFace(id)].uv[cornerIdx(id)][k] = t })
+  return true
+}
+/** Shift each face's UVs one corner along (the texture turns on the face); `reverse` goes the other way. */
+export function cycleCorners(m: Model, faces: Iterable<number>, reverse = false) {
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length < 2) continue
+    f.uv = reverse ? [...f.uv.slice(1), f.uv[0]] : [f.uv[f.uv.length - 1], ...f.uv.slice(0, -1)]
+  }
+}
+/** Move the corners so their bounding-box centre lands on `p`. */
+export function moveTo(m: Model, ids: Iterable<number>, p: Vec2) {
+  const list = [...ids], b = cornerBox(m, list)
+  if (!b) return
+  const dx = p[0] - b.c[0], dy = p[1] - b.c[1]
+  mapCorners(m, list, u => [u[0] + dx, u[1] + dy])
+}
+/** Copied face UVs: each relative to its own bounding box, plus that box. */
+export interface UVClip { faces: { rel: Vec2[]; box: { minU: number; minV: number; w: number; h: number } }[] }
+export function copyUV(m: Model, faces: Iterable<number>): UVClip | null {
+  const out: UVClip['faces'] = []
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length !== f.v.length) continue
+    const b = cornerBox(m, f.uv.map((_, c) => cornerId(fi, c)))!
+    const w = b.maxU - b.minU, h = b.maxV - b.minV
+    out.push({ rel: f.uv.map(u => [w > 1e-12 ? (u[0] - b.minU) / w : 0, h > 1e-12 ? (u[1] - b.minV) / h : 0]), box: { minU: b.minU, minV: b.minV, w, h } })
+  }
+  return out.length ? { faces: out } : null
+}
+/**
+ * Paste copied UVs onto faces: target face i takes copied face i (cycling), fitted into the target face's own
+ * bounding box (or the copied box when the target's is flat). Faces with another corner count are skipped.
+ * Returns the number of faces pasted.
+ */
+export function pasteUV(m: Model, faces: Iterable<number>, clip: UVClip): number {
+  let i = 0, n = 0
+  for (const fi of faces) {
+    const f = m.faces[fi], src = clip.faces[i++ % clip.faces.length]
+    if (!f || src.rel.length !== f.v.length) continue
+    const b = f.uv.length === f.v.length ? cornerBox(m, f.uv.map((_, c) => cornerId(fi, c))) : null
+    const flat = !b || b.maxU - b.minU < 1e-9 || b.maxV - b.minV < 1e-9
+    const box = flat ? src.box : { minU: b!.minU, minV: b!.minV, w: b!.maxU - b!.minU, h: b!.maxV - b!.minV }
+    f.uv = src.rel.map(r => [box.minU + r[0] * box.w, box.minV + r[1] * box.h])
+    n++
+  }
+  return n
+}
+
 /** Scale uniformly into 0..1 (bottom-left aligned). */
 export function fit01(m: Model, ids: Iterable<number>) {
   const list = [...ids], b = cornerBox(m, list)

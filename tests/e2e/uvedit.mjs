@@ -118,6 +118,7 @@ await addImage(16, 16)
 // ---- UV-4: selection frame with scale / rotate handles and a pivot
 const box = fi => S(fi => { const f = window.__polyform.getState().model.faces[fi]; const us = f.uv.map(q => q[0]), vs = f.uv.map(q => q[1]); return { minU: Math.min(...us), maxU: Math.max(...us), minV: Math.min(...vs), maxV: Math.max(...vs) } }, fi)
 const H = () => S(() => window.__polyformUV.handles())
+const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}"]`); await p.click(`[data-testid="uv-${id}"]`); await frame() }
 {
   await gridLayout(); await selFace(4); await frame()
   let h = await H()
@@ -255,6 +256,88 @@ const H = () => S(() => window.__polyformUV.handles())
   await gridLayout(); await selFace(4); await frame()
   await p.mouse.move(640, 700); await frame()
   await p.screenshot({ path: '/workspace/shot-uv-handles.png' })
+}
+
+// UV-6: ops pack (right-click menu, shortcuts over the editor, Adjust / Align tabs), frame + zoom readout
+{
+  await gridLayout(); await selFace(4); await frame()
+  const cv = await p.locator('[data-testid="uv-canvas"]').boundingBox()
+  const c4 = await uvC(...await centroid(4))
+  const zoomTxt = () => p.textContent('[data-testid="uv-zoom"]')
+  // right-click opens the menu; Esc closes; a right-drag pans instead
+  await p.mouse.move(c4.x + 30, c4.y + 30); await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame()
+  check('right-click opens the UV menu with the ops and their keys', await p.isVisible('[data-testid="uv-menu"]') && (await p.textContent('[data-testid="uvm-rot-cw"]')).includes('Shift+R') && await p.isVisible('[data-testid="uvm-merge"]') && await p.isVisible('[data-testid="uvm-copy"]'))
+  check('Paste is disabled before anything was copied', (await p.getAttribute('[data-testid="uvm-paste"]', 'aria-disabled')) === 'true')
+  await p.keyboard.press('Escape'); await frame()
+  check('Esc closes the UV menu', !(await p.isVisible('[data-testid="uv-menu"]')))
+  const o0 = await uvC(0, 0)
+  await p.mouse.move(c4.x, c4.y); await p.mouse.down({ button: 'right' }); await p.mouse.move(c4.x + 40, c4.y + 10, { steps: 4 }); await p.mouse.up({ button: 'right' }); await frame()
+  const o1 = await uvC(0, 0)
+  check('right-drag pans and opens no menu', !(await p.isVisible('[data-testid="uv-menu"]')) && close(o1.x - o0.x, 40, 1.5), JSON.stringify([o0, o1]))
+  await p.click('[data-testid="uv-zoom"]'); await frame()
+  // menu: Maximize (one undo step); a pinned corner stays
+  await p.mouse.move(c4.x, c4.y); await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame()
+  await p.click('[data-testid="uvm-maximize"]'); await frame()
+  let b1 = await box(4)
+  check('menu Maximize fills 0..1', [b1.minU, b1.minV, b1.maxU, b1.maxV].join() === '0,0,1,1', JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  check('one Ctrl+Z undoes it', close((await box(4)).minU, 6 / 16))
+  await S(() => window.__polyform.getState().edit(m => { m.faces[4].pin = [0] }, 'pin'))
+  const pin0 = (await uvs())[4][0]
+  await uvBtnTab('adjust', 'maximize')
+  check('Maximize leaves a pinned corner where it was', JSON.stringify((await uvs())[4][0]) === JSON.stringify(pin0))
+  await S(() => window.__polyform.getState().edit(m => { delete m.faces[4].pin }, 'unpin'))
+  // shortcuts over the editor
+  await gridLayout(); await selFace(4); await p.mouse.move(c4.x, c4.y); await frame()
+  await p.keyboard.press('Shift+R'); await frame()
+  let u = (await uvs())[4]
+  check('Shift+R rotates clockwise (bottom-left corner to top-left)', close(u[0][0], 6 / 16) && close(u[0][1], 11 / 16), JSON.stringify(u[0]))
+  await p.keyboard.press('Shift+Alt+R'); await frame()
+  u = (await uvs())[4]
+  check('Shift+Alt+R rotates back', close(u[0][0], 6 / 16) && close(u[0][1], 7 / 16), JSON.stringify(u[0]))
+  await p.keyboard.press('Alt+m'); await frame()
+  u = (await uvs())[4]
+  check('Alt+M merges the selected UVs at their centre', u.every(q => close(q[0], 8 / 16) && close(q[1], 9 / 16)), JSON.stringify(u))
+  await p.keyboard.press('Control+z'); await frame()
+  const tgt = await uvC(3 / 16, 3 / 16)
+  await p.mouse.move(tgt.x, tgt.y); await p.keyboard.press('Alt+u'); await frame()
+  const cc = await centroid(4)
+  check('Alt+U centres the selection on the cursor', close(cc[0], 3 / 16, 1e-3) && close(cc[1], 3 / 16, 1e-3), JSON.stringify(cc))
+  // copy / paste face UVs
+  await gridLayout(); await selFace(4); await frame()
+  await uvBtnTab('adjust', 'cycle')
+  u = (await uvs())[4]
+  check('Cycle turns the UVs one corner along', close(u[1][0], 6 / 16) && close(u[1][1], 7 / 16), JSON.stringify(u))
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('Control+c'); await frame()
+  await selFace(5); await p.mouse.move(c4.x, c4.y); await p.keyboard.press('Control+v'); await frame()
+  const u5 = (await uvs())[5], b5 = await box(5)
+  check('Ctrl+V pastes the copied layout into the target face box', close(u5[0][0], b5.minU) && close(u5[0][1], b5.maxV) && close(b5.minU, 11 / 16), JSON.stringify(u5))
+  // align tab
+  await gridLayout(); await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [3, 4] }) }); await frame()
+  await uvBtnTab('align', 'align-top')
+  u = await uvs()
+  check('Align top: every selected UV on the top line', [...u[3], ...u[4]].every(q => close(q[1], 11 / 16)), JSON.stringify([u[3], u[4]]))
+  await p.keyboard.press('Control+z'); await frame()
+  // F frames the selection, the readout shows the zoom, clicking it shows all
+  await selFace(4); await p.mouse.move(c4.x, c4.y); await p.keyboard.press('f'); await frame()
+  const cvF = await p.locator('[data-testid="uv-canvas"]').boundingBox()
+  const z = parseInt(await zoomTxt())
+  const cF = await uvC(...await centroid(4))
+  check('F frames the selection (zoom readout > 100 %, face centred)', z > 200 && Math.abs(cF.x - (cvF.x + cvF.width / 2)) < 2 && Math.abs(cF.y - (cvF.y + cvF.height / 2)) < 2, `${z} ${JSON.stringify(cF)} ${JSON.stringify(cvF)}`)
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('Home'); await frame()
+  check('Home shows all (100 %)', (await zoomTxt()) === '100%')
+  // the menu by keyboard
+  await gridLayout(); await selFace(4); await frame()
+  await p.mouse.move(c4.x, c4.y); await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame()
+  await p.mouse.move(640, 700) // off the menu (it may open under the pointer when clamped into the editor)
+  await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter'); await frame()
+  u = (await uvs())[4]
+  check('menu by keyboard: ↓ Enter runs the first item (Rotate CW)', !(await p.isVisible('[data-testid="uv-menu"]')) && close(u[0][1], 11 / 16), JSON.stringify(u[0]))
+  await gridLayout(); await selFace(4); await frame()
+  await p.mouse.move(c4.x + 20, c4.y + 20); await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame()
+  await p.mouse.move(640, 700); await frame()
+  await p.screenshot({ path: '/workspace/shot-uv-menu.png' })
+  await p.keyboard.press('Escape')
 }
 
 const failed = results.filter(r => !r[1])

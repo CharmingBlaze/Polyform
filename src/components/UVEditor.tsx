@@ -14,6 +14,42 @@ import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } fro
 type Xf = 'move' | 'rotate' | 'scale'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Drag = any
+/** copied face UVs (Copy / Paste UVs), shared by every UV editor */
+let uvClip: U.UVClip | null = null
+
+type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean } | 'sep'
+/** right-click menu of the UV editor: same look as the menu bar; Esc / outside press closes; arrows + Enter work */
+function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuItem[]; close: () => void }) {
+  const el = useRef<HTMLDivElement>(null)
+  const [act, setAct] = useState(-1)
+  const [pos, setPos] = useState({ x, y })
+  useEffect(() => {
+    const r = el.current!.getBoundingClientRect()
+    setPos({ x: Math.max(2, Math.min(x, innerWidth - r.width - 2)), y: Math.max(2, Math.min(y, innerHeight - r.height - 2)) })
+    el.current!.focus()
+    const off = (e: PointerEvent) => { if (!el.current?.contains(e.target as Node)) close() }
+    window.addEventListener('pointerdown', off, true)
+    return () => window.removeEventListener('pointerdown', off, true)
+  }, [x, y]) // eslint-disable-line react-hooks/exhaustive-deps
+  const live = items.map((it, i) => (it !== 'sep' && it.enabled !== false ? i : -1)).filter(i => i >= 0)
+  const run = (it: UVMenuItem) => { if (it === 'sep' || it.enabled === false) return; close(); it.run() }
+  const key = (e: React.KeyboardEvent) => {
+    e.stopPropagation()
+    if (e.key === 'Escape') { e.preventDefault(); close() }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const k = live.indexOf(act), n = live.length; setAct(live[k < 0 ? (e.key === 'ArrowDown' ? 0 : n - 1) : (k + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]) }
+    else if (e.key === 'Enter' && act >= 0) { e.preventDefault(); run(items[act]) }
+  }
+  return (
+    <div ref={el} className="mb-panel uv-menu" role="menu" tabIndex={-1} data-menu-open="true" data-testid="uv-menu" style={{ left: pos.x, top: pos.y, maxHeight: innerHeight - 4 }} onKeyDown={key} onContextMenu={e => e.preventDefault()}>
+      {items.map((it, i) => it === 'sep' ? <div key={i} className="mi-sep" /> : (
+        <div key={it.id} role="menuitem" aria-disabled={it.enabled === false || undefined} data-testid={`uvm-${it.id}`} className={`mi ${act === i ? 'active' : ''} ${it.enabled === false ? 'disabled' : ''}`}
+          onPointerEnter={() => setAct(i)} onPointerLeave={() => setAct(-1)} onClick={() => run(it)}>
+          <span /><span>{it.label}</span><span className="mi-keys">{it.keys ?? ''}</span><span />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 /** Faces the UV editor shows and picks: every visible face. */
 export function uvFaces(): number[] {
@@ -70,7 +106,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [checker, setChecker] = useState(false)
   const [heat, setHeat] = useState<'off' | U.StretchKind>('off')
   const [units, setUnits] = useState<'px' | '01'>('px')
-  const [tab, setTab] = useState<'project' | 'adjust' | 'seams'>('project')
+  const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
+  /** right-click menu: canvas-local px */
+  const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const paintTexSize = useStore(s => s.paint.texSize)
   const version = useStore(s => s.version)
   const selFaces = useStore(s => s.selFaces)
@@ -424,10 +462,11 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       const code = (e as CustomEvent<string>).detail, x = interaction.pointer.x - r.left, y = interaction.pointer.y - r.top
       mouse.current = { x, y }
       if (drag.current) return
-      if (code === 'KeyG') beginXf('move', x, y, true)
-      else if (code === 'KeyR') beginXf('rotate', x, y, true)
-      else if (code === 'KeyS') beginXf('scale', x, y, true)
-      else if (code === 'KeyL') selectIsland(pickAt(x, y))
+      if (code === 'G') beginXf('move', x, y, true)
+      else if (code === 'R') beginXf('rotate', x, y, true)
+      else if (code === 'S') beginXf('scale', x, y, true)
+      else if (code === 'L') selectIsland(pickAt(x, y))
+      else runKey(code, x, y)
       force(n => n + 1)
     }
     const onKey = (e: KeyboardEvent) => {
@@ -466,7 +505,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const penPaint = globalTool === 'paint' && penErases(e)
     const btn = penPaint ? 0 : e.button
     if (drag.current?.modal) { endXf(btn !== 0); return }
-    if (btn === 1 || btn === 2) { drag.current = { kind: 'pan', x, y }; return }
+    if (btn === 1 || btn === 2) { setCtx(null); drag.current = { kind: 'pan', x, y, x0: x, y0: y, menu: btn === 2 && e.pointerType !== 'touch' }; return }
     // Paint tool (Paint workspace): stamp into the shown image at this UV
     if (globalTool === 'paint' && btn === 0) {
       const [u, v] = toUV(x, y)
@@ -534,7 +573,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       force(n => n + 1); return
     }
     if (d.kind === 'paint') { notePen(e); const [u, v] = toUV(x, y); paintUVAt(u, v); return }
-    if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
+    if (d.kind === 'pan') { const dx = x - d.x, dy = y - d.y; setView(v => ({ ...v, ox: v.ox + dx, oy: v.oy + dy })); d.x = x; d.y = y; return } // deltas read now: the updater runs later
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
     if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e) } return }
     if (d.kind === 'xf') updateXf(x, y, e)
@@ -549,6 +588,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (d.kind === 'paint') { drag.current = null; paintUVEnd(); input.erase = false; force(n => n + 1); return }
     if (d.kind === 'xf') return endXf(false)
     drag.current = null
+    // right-click without a drag: the UV menu (a right-drag pans)
+    if (d.kind === 'pan' && d.menu && Math.hypot(d.x - d.x0, d.y - d.y0) < 5) { const { x, y } = loc(e); openMenu(x, y); return }
     // a plain click on an already selected element selects only it
     if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
     if (d.kind !== 'rect') { force(n => n + 1); return }
@@ -577,7 +618,65 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   // ---------- ops ----------
   const targetFaces = () => { const st = useStore.getState(); const f = st.activeFaces(); return f.length ? f : uvFaces() }
   const targetCorners = () => { const s = uvSelection(); return s.size ? [...s] : targetFaces().flatMap(fi => useStore.getState().model.faces[fi].uv.map((_, i) => fi * 1024 + i)) }
-  const op = (label: string, fn: (m: typeof model, ids: number[]) => void) => { const ids = targetCorners(); if (!ids.length) return; useStore.getState().edit(m => fn(m, ids), label) }
+  /** run a UV op on the selected corners (or every corner of the target faces) as one undo step; pins stay */
+  const op = (label: string, fn: (m: typeof model, ids: number[]) => unknown) => {
+    const ids = targetCorners()
+    if (!ids.length) return
+    useStore.getState().edit(m => U.keepPins(m, [...new Set(ids.map(cornerFace))], () => { fn(m, ids) }), label)
+  }
+  /** faces whose UVs copy / paste / cycle: the selected ones (whole faces), else every face under the selected corners */
+  const opFaces = () => { const f = useStore.getState().activeFaces().filter(fi => model.faces[fi]?.uv.length); return f.length ? f : [...new Set([...uvSelection()].map(cornerFace))] }
+  const copyUVs = () => {
+    const st = useStore.getState(), c = U.copyUV(st.model, opFaces())
+    if (!c) { st.notify('Select faces to copy their UVs'); return }
+    uvClip = c; st.notify(`Copied the UVs of ${c.faces.length} face${c.faces.length > 1 ? 's' : ''}`)
+  }
+  const pasteUVs = () => {
+    const st = useStore.getState(), faces = opFaces(), clip = uvClip
+    if (!clip) { st.notify('Copy face UVs first (Ctrl+C over the UV editor)'); return }
+    if (!faces.length) { st.notify('Select faces to paste onto'); return }
+    let n = 0
+    st.edit(m => U.keepPins(m, faces, () => { n = U.pasteUV(m, faces, clip) }), 'Paste UVs')
+    if (n < faces.length) st.notify(n ? `Pasted onto ${n} of ${faces.length} faces (corner counts differ)` : 'Nothing pasted: corner counts differ')
+  }
+  const merge = (atCursor: boolean, x: number, y: number) => op('Merge UVs', (m, ids) => {
+    let to: Vec2 | undefined
+    if (atCursor) { // onto the selected corner nearest the pointer
+      let best = Infinity
+      for (const id of ids) { const u = m.faces[cornerFace(id)].uv[cornerIdx(id)], q = toPx(u), d = (q.x - x) ** 2 + (q.y - y) ** 2; if (d < best) { best = d; to = [u[0], u[1]] } }
+    }
+    U.mergeUVs(m, ids, to)
+  })
+  const straighten = () => {
+    const ids = targetCorners(), st = useStore.getState()
+    const pts = U.uvPoints(st.model, ids)
+    if (pts.length < 2) { st.notify('Straighten: select 2 or more UV points'); return }
+    // two points: the island turns with them
+    const isl = pts.length === 2 ? U.islandFaces(st.model, [...new Set(ids.map(cornerFace))], uvFaces()).flatMap(fi => st.model.faces[fi].uv.map((_, c) => fi * 1024 + c)) : undefined
+    useStore.getState().edit(m => U.keepPins(m, [...new Set((isl ?? ids).map(cornerFace))], () => { U.straighten(m, ids, isl) }), 'Straighten UVs')
+  }
+  /** fit the view on the selection (or on 0..1 when nothing is selected) */
+  const frameSel = (all = false) => {
+    const ids = all ? [] : [...uvSelection()], b = ids.length ? U.cornerBox(useStore.getState().model, ids) : null
+    if (!b) { setView({ zoom: 1, ox: 0, oy: 0 }); return }
+    const base = Math.min(size.w, size.h) * 0.88, bw = Math.max(b.maxU - b.minU, 1 / 64), bh = Math.max(b.maxV - b.minV, 1 / 64)
+    const zoom = THREE.MathUtils.clamp(Math.min((size.w * 0.7) / (bw * base), (size.h * 0.7) / (bh * base)), 0.2, 40), sd = base * zoom
+    setView({ zoom, ox: sd * (0.5 - b.c[0]), oy: sd * (b.c[1] - 0.5) })
+  }
+  const rotOp = (k: 'cw' | 'ccw' | '180') => op('UV rotate', k === 'cw' ? U.rotCW : k === 'ccw' ? U.rot90 : U.rot180)
+  const moveToCursor = (x: number, y: number) => op('UV move to cursor', (m, ids) => U.moveTo(m, ids, toUV(x, y)))
+  const runKey = (k: string, x: number, y: number) => {
+    if (k === 'F') frameSel()
+    else if (k === 'Home') frameSel(true)
+    else if (k === 'Shift+R') rotOp('cw')
+    else if (k === 'Shift+Alt+R') rotOp('ccw')
+    else if (k === 'Alt+M') merge(false, x, y)
+    else if (k === 'Shift+Alt+M') merge(true, x, y)
+    else if (k === 'Alt+U') moveToCursor(x, y)
+    else if (k === 'Ctrl+C') copyUVs()
+    else if (k === 'Ctrl+V') pasteUVs()
+  }
+  const openMenu = (x: number, y: number) => { if (globalTool !== 'paint') setCtx({ x, y }) }
   const project = (axis: U.UVAxis | 'cyl' | 'sphere') => {
     const faces = targetFaces()
     if (!faces.length) return
@@ -599,7 +698,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const loadTexture = (file: File) => {
     importImage(file).then(id => useStore.getState().setMaterialTexture(shownMat, id)).catch(err => useStore.getState().notify(String(err.message || err)))
   }
-  const B = ({ id, label, tip, onClick, on }: { id: string; label: string; tip?: string; onClick: () => void; on?: boolean }) => (
+  const B = ({ id, label, tip, onClick, on }: { id: string; label: string; tip?: string; onClick: (e: React.MouseEvent) => void; on?: boolean }) => (
     <button data-testid={`uv-${id}`} className={on ? 'on' : ''} title={tip ?? label} onClick={onClick}>{label}</button>
   )
 
@@ -624,11 +723,31 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
-        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · wheel zoom · right-drag pan'}</div>
+        <button className="uv-zoom ghost small" data-testid="uv-zoom" title="Zoom · click: show all (Home) · F frames the selection" onClick={() => frameSel(true)}>{Math.round(view.zoom * 100)}%</button>
+        {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={[
+          { id: 'rot-cw', label: 'Rotate 90° CW', keys: 'Shift+R', run: () => rotOp('cw') },
+          { id: 'rot-ccw', label: 'Rotate 90° CCW', keys: 'Shift+Alt+R', run: () => rotOp('ccw') },
+          { id: 'rot-180', label: 'Rotate 180°', run: () => rotOp('180') },
+          { id: 'flip-u', label: 'Flip horizontal', run: () => op('UV flip', U.flipU) },
+          { id: 'flip-v', label: 'Flip vertical', run: () => op('UV flip', U.flipV) },
+          'sep',
+          { id: 'maximize', label: 'Maximize', run: () => op('UV maximize', U.maximize) },
+          { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, ctx.x, ctx.y) },
+          { id: 'straighten', label: 'Straighten', run: straighten },
+          { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(ctx.x, ctx.y) },
+          { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
+          'sep',
+          { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },
+          { id: 'paste', label: 'Paste UVs', keys: 'Ctrl+V', run: pasteUVs, enabled: !!uvClip },
+          'sep',
+          { id: 'island', label: 'Select island', keys: 'L', run: () => selectIsland(pickAt(ctx.x, ctx.y)) },
+          { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
+        ]} />}
+        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">
-          {(['project', 'adjust', 'seams'] as const).map(t => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{t === 'project' ? 'Project' : t === 'adjust' ? 'Adjust' : 'Seams'}</button>)}
+          {(['project', 'adjust', 'align', 'seams'] as const).map(t => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
         </div>
         {tab === 'project' && <div className="btn-row">
           <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
@@ -642,11 +761,28 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         {tab === 'adjust' && <div className="btn-row">
           <B id="flip-u" label="Flip H" onClick={() => op('UV flip', U.flipU)} />
           <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
-          <B id="fit" label="Fit 0–1" onClick={() => op('UV fit', U.fit01)} />
+          <B id="rot-180" label="180°" tip="Rotate 180° (⟲ / ⟳ 90° are next to the numbers)" onClick={() => rotOp('180')} />
+          <B id="maximize" label="Maximize" tip="Stretch the selection to fill the whole image" onClick={() => op('UV maximize', U.maximize)} />
+          <B id="fit" label="Fit 0–1" tip="Scale uniformly into the image" onClick={() => op('UV fit', U.fit01)} />
+          <B id="cycle" label="Cycle" tip="Turn the texture one corner on each selected face (Shift: the other way)" onClick={e => { const f = opFaces(), rev = e.shiftKey; if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f, rev), 'Cycle UV corners') }} />
+          <B id="copy" label="Copy" tip="Copy the selected faces' UVs · Ctrl+C over the editor" onClick={copyUVs} />
+          <B id="paste" label="Paste" tip="Paste onto each selected face's box · Ctrl+V over the editor" onClick={pasteUVs} />
           <B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all) into 0–1: same texel density, no overlaps" onClick={() => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.packIslands(m, faces), 'Pack islands') }} />
           <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
           <B id="palette-snap" label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
+        </div>}
+        {tab === 'align' && <div className="btn-row">
+          <B id="align-left" label="⇤" tip="Align left: line the selected UV points up on the left edge" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min'))} />
+          <B id="align-cu" label="↔" tip="Align centre: on the vertical centre line" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'mid'))} />
+          <B id="align-right" label="⇥" tip="Align right" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'max'))} />
+          <B id="align-top" label="⤒" tip="Align top" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'max'))} />
+          <B id="align-cv" label="↕" tip="Align middle: on the horizontal centre line" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'mid'))} />
+          <B id="align-bottom" label="⤓" tip="Align bottom" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'v', 'min'))} />
+          <B id="dist-u" label="Space ↔" tip="Distribute the UV points evenly left to right" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'u'))} />
+          <B id="dist-v" label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
+          <B id="straighten" label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
+          <B id="merge" label="Merge" tip="Weld the selected UV points at their centre · Alt+M (Shift+Alt+M: onto the point nearest the cursor)" onClick={() => merge(false, 0, 0)} />
         </div>}
         {tab === 'seams' && <div className="btn-row">
           <B id="seam-mark" label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />

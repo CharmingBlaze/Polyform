@@ -251,6 +251,11 @@ export function comboOf(e: KeyboardEvent) {
   return parts.join('+')
 }
 
+/** keys the UV editor takes while the pointer is over it (modal G / R / S, island, frame, UV ops) */
+export const UV_KEYS = ['G', 'R', 'S', 'L', 'F', 'Home', 'Shift+R', 'Shift+Alt+R', 'Alt+M', 'Shift+Alt+M', 'Alt+U']
+/** UV copy / paste over the editor, except in Animate where Ctrl+C / V copy keys */
+export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
+
 export function installShortcuts(openPalette: () => void) {
   const map = new Map<string, Command>()
   commands.forEach(c => c.keys && !map.has(c.keys.toUpperCase()) && map.set(c.keys.toUpperCase(), c))
@@ -261,7 +266,7 @@ export function installShortcuts(openPalette: () => void) {
     if (document.querySelector('[data-modal-open], [data-menu-open]')) return // dialogs and open menus own the keyboard
     const combo = comboOf(e)
     if (!combo) return
-    if (['G', 'R', 'S', 'L'].includes(combo) && overUV()) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: e.code })); return }
+    if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && S().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
     if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }
     const c = map.get(combo.toUpperCase())
