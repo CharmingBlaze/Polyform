@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle, MoreHorizontal, SlidersHorizontal, HelpCircle } from 'lucide-react'
+import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle, MoreHorizontal, SlidersHorizontal, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
+import { sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode, type Layout } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
@@ -14,6 +15,7 @@ import { ClipsPanel } from './ClipsPanel'
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
 export type Tab = typeof TABS[number]
+const TAB_ICON: Record<Tab, typeof Brush> = { Create: SquarePlus, Modify: Move3d, Multiply: Copy, Construct: Hammer, Map: Grid3x3, Paint: Brush, Setup: Bone, Animate: Clapperboard, Export: Download }
 
 export function Header({ onPalette }: { onPalette: () => void }) {
   useStore(s => s.histRev)
@@ -105,9 +107,19 @@ export function ToolRail() {
   const ikDepth = useStore(s => s.ikDepth)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
+  const { leftCollapsed } = useSides()
+  if (leftCollapsed) return (
+    <aside className="rail collapsed" data-testid="tool-rail" data-collapsed="true">
+      <button className="icon-btn" data-testid="rail-expand" title="Show the tool panel" onClick={() => useStore.getState().setUI({ leftCollapsed: false })}><ChevronsRight size={16} /></button>
+      {tabs.map(t => { const I = TAB_ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`railicon-${TAB_ID[t]}`} title={t}
+        onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map'); useStore.getState().setUI({ leftCollapsed: false }) }}><I size={16} /></button> })}
+    </aside>
+  )
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
   return (
     <aside className="rail" data-testid="tool-rail">
+      <div className="side-handle right" data-testid="rail-handle" {...sideHandle('left', false)} />
+      <button className="icon-btn collapse-btn" data-testid="rail-collapse" title="Icons only" onClick={() => useStore.getState().setUI({ leftCollapsed: true })}><ChevronsLeft size={14} /></button>
       <div className={`tabs n${tabs.length}`}>
         {tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>

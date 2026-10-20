@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useStore, type SideTab, type Workspace } from '../store'
 import { faceMat } from '../model'
 import { textures } from '../textures'
@@ -25,6 +25,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className={`tabs n${tabs.length}`}>
+        <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Icons only" onClick={() => useStore.getState().setUI({ rightCollapsed: true })}><ChevronsRight size={14} /></button>
         {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Outliner</button>}
         {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>}
         {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>}
@@ -51,6 +52,24 @@ function RefsFold() {
       </div>
       {shown && <RefsPanel />}
     </div>
+  )
+}
+
+/** Right column as an icon strip (narrow windows or collapsed by hand): a click opens that section. */
+export function SideIcons() {
+  const tab = useStore(s => s.sideTab)
+  const workspace = useStore(s => s.workspace)
+  const tool = useStore(s => s.tool)
+  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [])
+  const tabs = SIDE_ORDER.filter(t => want.includes(t) || t === tab)
+  const ICON = { scene: Layers, joints: Bone, uv: Image } as const
+  const LABEL = { scene: 'Outliner', joints: 'Joints', uv: 'Images' } as const
+  const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); useStore.getState().setUI({ rightCollapsed: false }) }
+  return (
+    <aside className="side-icons" data-testid="side-icons">
+      <button className="icon-btn" data-testid="side-expand" title="Show the side panel" onClick={() => useStore.getState().setUI({ rightCollapsed: false })}><ChevronsLeft size={16} /></button>
+      {tabs.map(t => { const I = ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`sideicon-${t}`} title={LABEL[t]} onClick={() => open(t)}><I size={16} /></button> })}
+    </aside>
   )
 }
 

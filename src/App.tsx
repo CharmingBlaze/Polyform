@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Viewport } from './components/Viewport'
 import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
-import { Sidebar, Timeline } from './components/Panels'
+import { SideIcons, Sidebar, Timeline } from './components/Panels'
+import { sideHandle, useSides } from './useLayout'
 import { UVEditor } from './components/UVEditor'
 import { EmptyScene, HintBar } from './components/Workspace'
 import { installShortcuts } from './commands'
@@ -23,7 +24,8 @@ export default function App() {
   const uvMax = useStore(s => s.uvMax)
   const animate = useStore(s => s.mode === 'animate')
   const timelineH = useStore(s => s.ui.timelineH)
-  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax, animate, timelineH])
+  const sides = useSides()
+  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax, animate, timelineH, sides.leftW, sides.rightW])
   const cols = uvMax === '3d' ? 'minmax(0, 1fr) 14px 0px' : uvMax === 'uv' ? '0px 14px minmax(0, 1fr)' : `minmax(0, ${uvSplit}fr) 14px minmax(0, ${1 - uvSplit}fr)`
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
@@ -43,7 +45,7 @@ export default function App() {
       onDrop={e => { e.preventDefault(); setDragging(false); [...e.dataTransfer.files].forEach(f => importFile(f).catch(err => useStore.getState().notify(String(err.message || err)))) }}>
       <Header onPalette={() => setPalette(true)} />
       <HintBar />
-      <div className="main">
+      <div className="main" style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
         <ToolRail />
         <div className="center" style={{ gridTemplateRows: animate ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
@@ -59,7 +61,8 @@ export default function App() {
           </div>
           {animate && <Timeline />}
         </div>
-        <div className="right-col"><DrawPanel /><NumericPanel /><Sidebar /></div>
+        {sides.rightCollapsed ? <div className="right-col collapsed" data-collapsed="true"><SideIcons /></div>
+          : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><DrawPanel /><NumericPanel /><Sidebar /></div>}
       </div>
       <StatusBar />
       <Palette open={palette} onClose={() => setPalette(false)} />

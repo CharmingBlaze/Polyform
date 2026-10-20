@@ -54,7 +54,7 @@ const hr = (await p.locator('[data-testid="timeline"]').boundingBox()).height
 check('height persists across reloads', Math.abs(hr - hMax) < 4, `${hr} vs ${hMax}`)
 
 // rail shows only the relevant tabs per workspace
-const railTabs = () => p.locator('[data-testid="tool-rail"] .tabs button').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(4)).join())
+const railTabs = () => p.locator('[data-testid="tool-rail"] .tabs button:not(.collapse-btn)').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(4)).join())
 const RAILS = { model: 'create,modify,multiply,construct', uv: 'uv', paint: 'paint', rig: 'rig,paint', animate: 'animate', export: 'export' }
 for (const [ws, want] of Object.entries(RAILS)) {
   await p.click(`[data-testid="ws-${ws}"]`); await frame()
@@ -66,7 +66,7 @@ await S(() => window.__polyform.getState().set({ railTab: 'Setup' })); await fra
 check('a command jumping to another tab keeps it visible', (await railTabs()) === 'create,modify,multiply,construct,rig')
 
 // sidebar sections per workspace
-const sideTabs = () => p.locator('.sidebar .tabs button').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
+const sideTabs = () => p.locator('.sidebar .tabs button:not(.collapse-btn)').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
 const SIDES = { model: 'scene', uv: 'scene,uv', paint: 'scene,uv', rig: 'scene,joints', animate: 'scene,joints', export: 'scene' }
 for (const [ws, want] of Object.entries(SIDES)) {
   await p.click(`[data-testid="ws-${ws}"]`); await frame()
