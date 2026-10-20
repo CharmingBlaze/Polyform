@@ -299,6 +299,41 @@ class TextureStore {
     return true
   }
 
+  layerCanvas(id: string, layerId: string) {
+    return this.map.get(id)?.layers.find(l => l.id === layerId)?.canvas ?? null
+  }
+
+  /** A copy of the active layer, inserted above it. */
+  duplicateLayer(id: string): string | null {
+    const e = this.map.get(id)
+    if (!e || e.layers.length >= 16) return null
+    const src = e.layers[e.active]
+    if (!src) return null
+    const L = blankLayer(e.canvas.width, e.canvas.height, `${src.name} copy`.slice(0, 40))
+    L.opacity = src.opacity; L.blend = src.blend; L.visible = src.visible
+    ctx2(L.canvas).drawImage(src.canvas, 0, 0)
+    e.layers.splice(e.active + 1, 0, L)
+    e.active = e.layers.indexOf(L)
+    this.recomposite(e, null)
+    this.touch(id)
+    return L.id
+  }
+
+  /** Move a layer to an absolute stack index (0 = bottom). */
+  placeLayer(id: string, layerId: string, to: number) {
+    const e = this.map.get(id)
+    if (!e) return false
+    const i = e.layers.findIndex(l => l.id === layerId)
+    const j = Math.max(0, Math.min(e.layers.length - 1, to))
+    if (i < 0 || i === j) return false
+    const [L] = e.layers.splice(i, 1)
+    e.layers.splice(j, 0, L)
+    e.active = j
+    this.recomposite(e, null)
+    this.touch(id)
+    return true
+  }
+
   /** dir +1 moves the layer toward the top of the stack. */
   moveLayer(id: string, layerId: string, dir: 1 | -1) {
     const e = this.map.get(id)

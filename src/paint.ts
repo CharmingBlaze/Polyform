@@ -7,6 +7,7 @@ import { cornerColor, faceMat, newell, type Model, type Skin } from './model'
 import { shadeRamp, shadeTexels } from './layers'
 import * as P from './paintcore'
 import { focusPaintTex } from './paintlayers'
+import { mirrorPoints, shapeSamples, type ShapeKind } from './paintshape'
 import { sceneManager } from './scene'
 import { bary2, combineMask, getMask, lassoMask, maskFor, moveMasked, pointInPoly, rectMask, setMask, texelScreenMask, wandMask, type SelOp } from './selection'
 import { history, useStore } from './store'
@@ -58,6 +59,11 @@ interface SelG {
 }
 let shadeG: ShadeG | null = null
 let selG: SelG | null = null
+interface ShapeG { kind: ShapeKind; space: 'uv' | 'screen'; a: [number, number]; b: [number, number]; mat?: number; side?: number; rayAt?: Active['rayAt']; ctx?: ViewCtx }
+let shapeG: ShapeG | null = null
+/** Shift constrains a line to 15°. Ctrl+Shift leaves the angle free. Set by the view that owns the pointer. */
+let shapeShift = false, shapeFree = false
+export function noteShapeMods(shift: boolean, free: boolean) { shapeShift = shift; shapeFree = free }
 
 const S = () => useStore.getState()
 
@@ -105,11 +111,22 @@ function hitOf(r: THREE.Raycaster): Hit | null {
   return { fi, uv: [h.uv.x, h.uv.y], point: h.point.clone(), normal: h.face.normal.clone().transformDirection(sceneManager.pickMesh.matrixWorld) }
 }
 
-/** The surface point mirrored across X = 0 (a short ray back onto the mirrored point along its mirrored normal). */
-function mirrorHit(h: Hit): Hit | null {
-  const p = new THREE.Vector3(-h.point.x, h.point.y, h.point.z), n = new THREE.Vector3(-h.normal.x, h.normal.y, h.normal.z).normalize()
+/** The surface point mirrored across X = 0, Y = 0, or both (a short ray back along the mirrored normal). */
+function mirrorHitFlip(h: Hit, flipX: boolean, flipY: boolean): Hit | null {
+  if (!flipX && !flipY) return null
+  const p = h.point.clone(), n = h.normal.clone()
+  if (flipX) { p.x = -p.x; n.x = -n.x }
+  if (flipY) { p.y = -p.y; n.y = -n.y }
+  n.normalize()
   const off = 0.02, r = new THREE.Raycaster(p.clone().addScaledVector(n, off), n.clone().negate(), 0, off * 3)
   return hitOf(r)
+}
+/** Extra stamps for Mirror X / Mirror Y. Each twin keeps its own pixel-perfect run. */
+function paintMirrors(h: Hit, fn: (mh: Hit, channel: string) => void) {
+  const p = S().paint
+  if (p.mirror) { const mh = mirrorHitFlip(h, true, false); if (mh) fn(mh, 'mirror') }
+  if (p.mirrorY) { const mh = mirrorHitFlip(h, false, true); if (mh) fn(mh, 'mirrorY') }
+  if (p.mirror && p.mirrorY) { const mh = mirrorHitFlip(h, true, true); if (mh) fn(mh, 'mirrorXY') }
 }
 
 /** Image id of a face's material, if it has one. */
@@ -184,7 +201,7 @@ function stampScreen(a: Active, x: number, y: number) {
   const worldR = p.size * worldPerPx(a.ctx, h.point)
   if (a.ctx?.el) lastStamp3D = { el: a.ctx.el, x, y }
   dabAt(a, h, worldR)
-  if (p.mirror) { const mh = mirrorHit(h); if (mh) dabAt(a, mh, worldR, 'mirror') }
+  paintMirrors(h, (mh, ch) => dabAt(a, mh, worldR, ch))
 }
 
 /** Pixel polygon of a face in its image. */
@@ -316,7 +333,7 @@ function vstamp(st: VStroke, x: number, y: number) {
   if (!h) return
   const p = PS(), worldR = p.size * worldPerPx(st.ctx, h.point)
   vdab(st, h, worldR)
-  if (p.mirror) { const mh = mirrorHit(h); if (mh) vdab(st, mh, worldR) }
+  paintMirrors(h, mh => vdab(st, mh, worldR))
   S().touch()
 }
 
@@ -324,14 +341,18 @@ function vstamp(st: VStroke, x: number, y: number) {
 function fillFaces(h: Hit): number[] {
   const s = S(), sel = s.mode === 'model' && s.selFaces.has(h.fi) ? [...s.selFaces] : [h.fi]
   const faces = new Set(sel)
-  if (PS().mirror) for (const fi of sel) {
+  const flips: [boolean, boolean][] = []
+  if (s.paint.mirror) flips.push([true, false])
+  if (s.paint.mirrorY) flips.push([false, true])
+  if (s.paint.mirror && s.paint.mirrorY) flips.push([true, true])
+  if (flips.length) for (const fi of sel) {
     const f = s.model.faces[fi], P3 = sceneManager.posed
     if (!f || !P3.length) continue
     const c = new THREE.Vector3()
     f.v.forEach(v => c.add(new THREE.Vector3(...P3[v])))
     c.divideScalar(f.v.length)
-    const mh = mirrorHit({ fi, uv: [0, 0], point: c, normal: newell(P3, f.v).normalize() })
-    if (mh) faces.add(mh.fi)
+    const base: Hit = { fi, uv: [0, 0], point: c, normal: newell(P3, f.v).normalize() }
+    for (const [fx, fy] of flips) { const mh = mirrorHitFlip(base, fx, fy); if (mh) faces.add(mh.fi) }
   }
   return [...faces]
 }
@@ -379,7 +400,18 @@ function uvContains(uv: [number, number][], u: number, v: number) {
   return inside
 }
 
-function stampUV(a: UVActive, u: number, v: number) {
+/** Image-centre mirrors for the texture canvas and the UV editor. 3D painting mirrors across the mesh instead. */
+function uvMirrors(u: number, v: number): { u: number; v: number; channel: string }[] {
+  const p = S().paint
+  const out: { u: number; v: number; channel: string }[] = []
+  const diff = (a: number, b: number) => Math.abs(a - b) > 1e-4
+  if (p.mirror && diff(u, 1 - u)) out.push({ u: 1 - u, v, channel: 'mx' })
+  if (p.mirrorY && diff(v, 1 - v)) out.push({ u, v: 1 - v, channel: 'my' })
+  if (p.mirror && p.mirrorY && (diff(u, 1 - u) || diff(v, 1 - v))) out.push({ u: 1 - u, v: 1 - v, channel: 'mxy' })
+  return out
+}
+
+function dabUV(a: UVActive, u: number, v: number, channel = 'main') {
   const id = ensureMatTexture(a.mat)
   if (!id) return
   const t = strokeFor({ rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: a.tex }, id)
@@ -388,8 +420,13 @@ function stampUV(a: UVActive, u: number, v: number) {
   const [x, y] = P.uvToPx(u, v, w, h)
   const p = PS()
   const r = Math.max(0.5, (p.size / Math.max(1, a.side)) * w)
+  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity, texelWidth(r) * 2 + 2, channel) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
+}
+
+function stampUV(a: UVActive, u: number, v: number) {
+  dabUV(a, u, v)
   lastStampUV = { mat: a.mat, u, v }
-  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
+  for (const m of uvMirrors(u, v)) dabUV(a, m.u, m.v, m.channel)
 }
 
 /** Outline of the brush at UV (u, v) in the UV editor, in image pixels: a circle, or the texels a texel brush covers. */
@@ -404,8 +441,9 @@ export function uvBrushOutline(mat: number, u: number, v: number, sidePx: number
 
 /** Start a paint stroke in the UV editor at UV (u, v). `sidePx` = on-screen size of the 0–1 UV square. */
 export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false, line?: { free: boolean }): boolean {
-  cur = null; vcur = null; uvcur = null; shadeG = null; selG = null
+  cur = null; vcur = null; uvcur = null; shadeG = null; selG = null; shapeG = null
   const s = S(), mode = pickMod ? 'pick' : PS().mode
+  if (mode === 'line' || mode === 'rect' || mode === 'ellipse') return shapeStartUV(mat, u, v, sidePx, mode)
   if (PS().target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
   if (PS().target === 'weight') { s.notify('Weight painting is done in the 3D view'); return false }
   if (mode === 'shade' || mode === 'marquee' || mode === 'lasso' || mode === 'wand' || mode === 'move') return imageGestureUV(mat, u, v, sidePx, mode, line)
@@ -458,6 +496,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
 
 /** Continue a UV-editor stroke. */
 export function paintUVAt(u: number, v: number) {
+  if (shapeG?.space === 'uv') { shapeToUV(u, v); return }
   if (selG?.space === 'uv') { selPointerUV(u, v); return }
   if (shadeG?.uv && !shadeG.lineOnly) { shadePointerUV(u, v); return }
   const a = uvcur
@@ -476,6 +515,7 @@ export function paintUVAt(u: number, v: number) {
 }
 
 export function paintUVEnd() {
+  if (shapeG?.space === 'uv') { endShape(); return }
   if (shadeG?.uv) { endShade(); return }
   if (selG?.space === 'uv') { endSel(); return }
   const a = uvcur
@@ -551,14 +591,18 @@ function weightStamp(st: WStroke, x: number, y: number) {
   if (!h) return
   const p = PS(), worldR = p.size * worldPerPx(st.ctx, h.point)
   weightDab(st, h, worldR)
-  if (p.mirror) { const mh = mirrorHit(h); if (mh) weightDab(st, mh, worldR) }
+  paintMirrors(h, mh => weightDab(st, mh, worldR))
   S().touch()
 }
 
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false, line?: { free: boolean }): boolean {
-  cur = null; vcur = null; uvcur = null; wcur = null; shadeG = null; selG = null
+  cur = null; vcur = null; uvcur = null; wcur = null; shadeG = null; selG = null; shapeG = null
   const mode0 = pickMod ? 'pick' : PS().mode
+  if (mode0 === 'line' || mode0 === 'rect' || mode0 === 'ellipse') {
+    if (PS().target !== 'image') { S().notify('Shapes paint on the image'); return false }
+    return shapeStartScreen(x, y, rayAt, ctx, mode0)
+  }
   if (PS().target === 'image' && (mode0 === 'shade' || mode0 === 'marquee' || mode0 === 'lasso' || mode0 === 'wand' || mode0 === 'move')) return imageGesture3D(x, y, rayAt, ctx, mode0, line)
   if (line && PS().target === 'image' && (mode0 === 'brush' || mode0 === 'erase') && lastStamp3D && lastStamp3D.el === ctx?.el) {
     // Shift+click: a straight line on screen from the last stamp in this view, snapped to 15° (Ctrl+Shift: any angle)
@@ -596,6 +640,7 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 
 /** Pointer move during a stroke: stamp along the screen path every size/4 px so fast strokes have no gaps. */
 export function paintAt(x: number, y: number) {
+  if (shapeG?.space === 'screen') { shapeToScreen(x, y); return }
   if (selG?.space === 'screen') { selPointerScreen(x, y); return }
   if (shadeG?.screen && !shadeG.lineOnly) { shadePointerScreen(x, y); return }
   const a = cur ?? vcur ?? wcur
@@ -613,6 +658,7 @@ export function paintAt(x: number, y: number) {
 }
 
 export function paintStrokeEnd() {
+  if (shapeG?.space === 'screen') { endShape(); return }
   if (shadeG?.screen) { endShade(); return }
   if (selG?.space === 'screen') { endSel(); return }
   if (uvcur) { paintUVEnd(); return }
@@ -621,6 +667,107 @@ export function paintStrokeEnd() {
   if (a) finish(a, PS().mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
   if (v) { if (v.changed) S().commit(); else S().cancelEdit() }
   if (w) { if (w.changed) S().commit(); else S().cancelEdit() }
+}
+
+// ---------- line, rectangle, ellipse (one undo on pointer-up) ----------
+function emitShape() {
+  const g = shapeG
+  window.dispatchEvent(new CustomEvent('paint-shape', { detail: g ? { kind: g.kind, space: g.space, a: [...g.a], b: [...g.b], el: g.ctx?.el ?? null } : null }))
+}
+const shapeName = (k: ShapeKind) => k === 'line' ? 'Line' : k === 'rect' ? 'Rectangle' : 'Ellipse'
+
+function shapeStartUV(mat: number, u: number, v: number, sidePx: number, kind: ShapeKind): boolean {
+  shapeG = { kind, space: 'uv', a: [u, v], b: [u, v], mat, side: sidePx }
+  emitShape()
+  return true
+}
+function shapeStartScreen(x: number, y: number, rayAt: Active['rayAt'], ctx: ViewCtx, kind: ShapeKind): boolean {
+  shapeG = { kind, space: 'screen', a: [x, y], b: [x, y], rayAt, ctx }
+  emitShape()
+  return true
+}
+function shapeToUV(u: number, v: number) {
+  const g = shapeG
+  if (!g) return
+  if (g.kind === 'line' && shapeShift && !shapeFree && g.mat !== undefined) {
+    const id = S().model.materials[g.mat]?.texture
+    const c = id ? textures.canvas(id) : null
+    if (c) {
+      const [x0, y0] = P.uvToPx(g.a[0], g.a[1], c.width, c.height)
+      const [x1, y1] = P.uvToPx(u, v, c.width, c.height)
+      const [sx, sy] = P.snapSegment(x0, y0, x1, y1, 15)
+      g.b = [sx / c.width, 1 - sy / c.height]
+      emitShape()
+      return
+    }
+  }
+  g.b = [u, v]
+  emitShape()
+}
+function shapeToScreen(x: number, y: number) {
+  const g = shapeG
+  if (!g) return
+  g.b = g.kind === 'line' && shapeShift && !shapeFree ? P.snapSegment(g.a[0], g.a[1], x, y, 15) : [x, y]
+  emitShape()
+}
+
+function stampShapeSamples(t: TexStroke, pts: [number, number][], r: number, filled: boolean): P.Rect | null {
+  const p = PS()
+  if (!filled && !texelMode()) {
+    let rect: P.Rect | null = null
+    for (const [x, y] of pts) rect = P.unionRect(rect, P.dab(t.s, x, y, r, p.opacity, p.hardness))
+    return rect
+  }
+  const n = filled ? 1 : texelWidth(r), round = !filled && p.shape === 'round'
+  const seen = new Set<number>(), list: [number, number][] = [], w = t.img.width
+  for (const [x, y] of pts) {
+    const [ox, oy] = P.texelOrigin(x, y, n)
+    for (const q of P.brushTexels(ox, oy, n, round)) {
+      const k = q[1] * w + q[0]
+      if (seen.has(k)) continue
+      seen.add(k)
+      list.push(q)
+    }
+  }
+  return P.dabTexels(t.s, list, p.opacity)
+}
+
+function endShape() {
+  const g = shapeG
+  shapeG = null
+  emitShape()
+  if (!g) return
+  if (g.space === 'uv' && g.mat !== undefined) commitShapeUV(g)
+  else if (g.space === 'screen' && g.rayAt && g.ctx) commitShapeScreen(g)
+}
+
+function commitShapeUV(g: ShapeG) {
+  const id = ensureMatTexture(g.mat!)
+  if (!id) return
+  const c = textures.canvas(id)!
+  const [x0, y0] = P.uvToPx(g.a[0], g.a[1], c.width, c.height)
+  const [x1, y1] = P.uvToPx(g.b[0], g.b[1], c.width, c.height)
+  const p = PS(), filled = p.shapeFill && g.kind !== 'line'
+  const r = Math.max(0.5, (p.size / Math.max(1, g.side ?? c.width)) * c.width)
+  let pts = shapeSamples(g.kind, x0, y0, x1, y1, filled, filled ? 1 : Math.max(1, r * 0.45))
+  pts = mirrorPoints(pts, c.width, c.height, p.mirror, p.mirrorY)
+  const host: UVActive = { mat: g.mat!, lastUV: g.a, tex: new Map(), side: g.side ?? c.width }
+  const t = strokeFor({ rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: host.tex }, id)
+  if (!t) return
+  flush(t, stampShapeSamples(t, pts, r, filled))
+  finish({ rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: host.tex }, shapeName(g.kind))
+}
+
+function commitShapeScreen(g: ShapeG) {
+  const p = PS(), filled = p.shapeFill && g.kind !== 'line'
+  const pts = shapeSamples(g.kind, g.a[0], g.a[1], g.b[0], g.b[1], filled, Math.max(1, p.size / (filled ? 3 : 4)))
+  const a: Active = { rayAt: g.rayAt!, ctx: g.ctx!, last: g.a, tex: new Map() }
+  for (const [x, y] of pts) {
+    const h = hitOf(a.rayAt(x, y))
+    if (h) ensureTexture(h.fi)
+    stampScreen(a, x, y)
+  }
+  finish(a, shapeName(g.kind))
 }
 
 // ---------- shade, select, move (image target, UV editor and the 3D view) ----------
@@ -783,7 +930,12 @@ function shadeStampUV(g: ShadeG, u: number, v: number) {
   if (!t) return
   const [x, y] = P.uvToPx(u, v, t.img.width, t.img.height)
   lastStampUV = { mat: g.uv.mat, u, v }
-  shadeDab(t, x, y, Math.max(0.5, (PS().size / Math.max(1, g.uv.side)) * t.img.width))
+  const r = Math.max(0.5, (PS().size / Math.max(1, g.uv.side)) * t.img.width)
+  shadeDab(t, x, y, r)
+  for (const m of uvMirrors(u, v)) {
+    const [mx, my] = P.uvToPx(m.u, m.v, t.img.width, t.img.height)
+    shadeDab(t, mx, my, r, m.channel)
+  }
 }
 
 function shadePointerUV(u: number, v: number) {
@@ -816,7 +968,7 @@ function shadeStampScreen(g: ShadeG, x: number, y: number) {
   const worldR = PS().size * worldPerPx(g.screen.ctx, h.point)
   if (g.screen.ctx?.el) lastStamp3D = { el: g.screen.ctx.el, x, y }
   shadeDabAt(g, h, worldR)
-  if (S().paint.mirror) { const mh = mirrorHit(h); if (mh) shadeDabAt(g, mh, worldR, 'mirror') }
+  paintMirrors(h, (mh, ch) => shadeDabAt(g, mh, worldR, ch))
 }
 
 function shadePointerScreen(x: number, y: number) {
@@ -969,7 +1121,7 @@ function imageGesture3D(x: number, y: number, rayAt: Active['rayAt'], ctx: ViewC
   return true
 }
 
-export const painting = () => !!(cur || vcur || uvcur || wcur || shadeG || selG)
+export const painting = () => !!(cur || vcur || uvcur || wcur || shadeG || selG || shapeG)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {

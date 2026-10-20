@@ -34,6 +34,22 @@ export function deletePaintLayer(id: string, layerId: string) {
   pushStack(id, before, 'Delete layer')
 }
 
+export function duplicatePaintLayer(id: string) {
+  const before = textures.captureStack(id, true)
+  if (!before) return
+  const lid = textures.duplicateLayer(id)
+  if (!lid) { useStore.getState().notify(textures.layerCount(id) >= 16 ? '16 layers is the limit' : 'No image to duplicate'); return }
+  focusPaintTex(id)
+  pushStack(id, before, 'Duplicate layer')
+}
+
+export function placePaintLayer(id: string, layerId: string, to: number) {
+  const before = textures.captureStack(id, false)
+  if (!before || !textures.placeLayer(id, layerId, to)) return
+  focusPaintTex(id)
+  pushStack(id, before, 'Reorder layer')
+}
+
 export function movePaintLayer(id: string, layerId: string, dir: 1 | -1) {
   const before = textures.captureStack(id, false)
   if (!before || !textures.moveLayer(id, layerId, dir)) return
@@ -158,6 +174,7 @@ export const invertPaintSelectionHere = () => withTex(invertPaintSelection)
 export const deleteActivePaintLayer = () => withTex(id => { const lid = activeId(id); if (lid) deletePaintLayer(id, lid) })
 export const mergeActivePaintLayer = () => withTex(id => { const lid = activeId(id); if (lid) mergePaintLayer(id, lid) })
 export const moveActivePaintLayer = (dir: 1 | -1) => withTex(id => { const lid = activeId(id); if (lid) movePaintLayer(id, lid, dir) })
+export const duplicateActivePaintLayer = () => withTex(duplicatePaintLayer)
 export const toggleActivePaintLayer = () => withTex(id => { const lid = activeId(id); if (lid) togglePaintLayer(id, lid) })
 
 /** One step through the short blend list. The bottom layer still shows its own pixels until something is under it. */
