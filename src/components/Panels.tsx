@@ -227,7 +227,7 @@ export function Timeline() {
     if (target !== undefined) set({ frame: target })
   }
   return (
-    <div className={`timeline ${mode === 'animate' ? 'active' : ''} ${compact ? 'compact' : ''}`} data-testid="timeline">
+    <div className={`timeline ${mode === 'animate' ? 'active' : ''} ${compact ? 'compact' : ''}`} data-testid="timeline" data-key-scope="timeline">
       <TimelineHandle />
       <div className="tl-controls">
         <button className="icon-btn" data-testid="frame-start" onClick={() => set({ frame: 0 })} data-tip="First frame"><ChevronFirst size={15} /></button>

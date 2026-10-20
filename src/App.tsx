@@ -9,7 +9,8 @@ import { UVEditor } from './components/UVEditor'
 import { PaintCanvas, PaintDivider } from './components/PaintCanvas'
 import { usePaintView } from './paintview'
 import { EmptyScene } from './components/Workspace'
-import { installShortcuts } from './commands'
+import { installShortcuts, openKeymapDialog } from './keymap'
+import { KeymapDialog } from './components/KeymapDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
@@ -63,6 +64,7 @@ export default function App() {
     return () => ro.disconnect()
   }, [])
   useEffect(() => installShortcuts(() => setPalette(true)), [])
+  useEffect(() => { window.addEventListener('open-keymap', openKeymapDialog); return () => window.removeEventListener('open-keymap', openKeymapDialog) }, [])
   useEffect(() => {
     if (booted) return
     booted = true
@@ -103,6 +105,7 @@ export default function App() {
       </div>
       <StatusBar />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
+      <KeymapDialog />
       <HelpPopover />
       <PropertiesDialog />
       <DialogHost />

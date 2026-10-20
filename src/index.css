@@ -676,3 +676,37 @@ button.danger { color: #ff9a9a; }
   .outliner .row:not(:hover):not(:focus-within) .ol-toggles { display: none; }
   .outliner .row.sub { padding-left: 22px; }
 }
+
+/* Keyboard Shortcuts dialog (keymap.ts): square, slim rows, the palette's thin themed scrollbar */
+.modal[data-testid="keymap"] { border-radius: 2px; background: var(--panel); }
+.modal[data-testid="keymap"] button, .modal[data-testid="keymap"] select, .modal[data-testid="keymap"] input, .modal[data-testid="keymap"] kbd { border-radius: 2px; }
+.modal[data-testid="keymap"] .modal-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; }
+.km-top { display: flex; gap: 10px; align-items: center; }
+.km-top input { flex: 1; min-width: 0; }
+.km-top label, .km-preset { display: flex; gap: 6px; align-items: center; color: var(--dim); white-space: nowrap; }
+.km-list { overflow-y: auto; max-height: min(60vh, 560px); border: 1px solid var(--line); background: var(--bg); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) var(--panel); }
+.km-list::-webkit-scrollbar { width: 8px; }
+.km-list::-webkit-scrollbar-track { background: var(--panel); }
+.km-list::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 0; }
+.km-row { padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.km-row:hover { background: #ffffff06; }
+.km-row.warn { box-shadow: inset 2px 0 0 var(--gold); }
+.km-line { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.km-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.km-group { color: var(--dim); font-size: 11px; width: 72px; flex: none; }
+.km-keys { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; max-width: 55%; }
+.km-chip { display: inline-flex; align-items: stretch; border: 1px solid var(--line); background: var(--panel2); }
+.km-chip.rec { border-color: var(--accent); }
+.km-chip.rec kbd { color: var(--accent); }
+.km-chip button { border: none; background: transparent; padding: 1px 4px; gap: 4px; border-radius: 0; }
+.km-chip kbd { border: none; background: transparent; padding: 0; color: var(--text); }
+.km-scope { color: var(--accent); font-size: 10px; }
+.km-x { color: var(--dim); }
+.km-x:hover { color: var(--red) !important; }
+.km-add, .km-reset { padding: 2px 4px; }
+.km-note { font-size: 11px; padding: 1px 0 2px 2px; }
+.km-note.warn { color: var(--gold); }
+.km-note.info { color: var(--dim); }
+.km-empty { padding: 16px; color: var(--dim); text-align: center; }
+.km-hint { color: var(--dim); font-size: 11px; }
+.palette kbd.scoped { border-style: dashed; }

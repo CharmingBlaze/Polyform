@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { byId } from '../commands'
+import { getBindingLabel } from '../keymap'
 import { BLENDS, shadeRamp, type Blend } from '../layers'
 import { faceMat } from '../model'
 import { applySwatchFile } from '../palfile'
@@ -17,7 +18,7 @@ import { SegmentedControl } from './SegmentedControl'
 
 const IMAGE_ONLY = new Set<PaintMode>(['shade', 'marquee', 'lasso', 'wand', 'move', 'line', 'rect', 'ellipse'])
 const SELECTS = new Set<PaintMode>(['marquee', 'lasso', 'wand'])
-const tip = (id: string) => { const c = byId[id]; return c ? `${c.label}${c.keys ? `  ·  ${c.keys}` : ''}` : '' }
+const tip = (id: string) => { const c = byId[id], k = c ? getBindingLabel(id) : ''; return c ? `${c.label}${k ? `  ·  ${k}` : ''}` : '' }
 const PAINT_HELP = 'Drag on the model or the texture. [ ] changes size. Hold Alt to pick a colour.'
 
 function Glyph({ children }: { children: ReactNode }) {

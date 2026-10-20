@@ -4,6 +4,7 @@ import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy
 import { openSideTab, setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands } from '../commands'
+import { bindingLabels, useKeymapVersion } from '../keymap'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
@@ -380,6 +381,7 @@ export function HelpPopover() {
   const workspace = useStore(s => s.workspace)
   const mode = useStore(s => s.mode)
   const full = useStore(toolHint)
+  useKeymapVersion()
   const [q, setQ] = useState('')
   const set = useStore(s => s.set)
   useEffect(() => {
@@ -390,7 +392,7 @@ export function HelpPopover() {
   }, [open, set])
   if (!open) return null
   const ws = shownWorkspace(workspace, mode)
-  const keyed = commands.filter(c => c.keys && (!q || `${c.label} ${c.keys} ${c.group}`.toLowerCase().includes(q.toLowerCase())))
+  const keyed = commands.map(c => ({ ...c, keys: bindingLabels(c.id, null).join(' / ') })).filter(c => c.keys && (!q || `${c.label} ${c.keys} ${c.group}`.toLowerCase().includes(q.toLowerCase())))
   const groups = [...new Set(keyed.map(c => c.group))]
   const mouse = MOUSE_TIPS.filter(([a, k]) => !q || `${a} ${k} mouse`.toLowerCase().includes(q.toLowerCase()))
   return (

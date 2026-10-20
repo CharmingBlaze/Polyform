@@ -7,6 +7,7 @@ import { history, useStore, WORKSPACES, type Layout } from './store'
 import { PRIMITIVES, type PrimitiveKind } from './model'
 import { ask } from './dialog'
 import { panelCollapsed } from './useLayout'
+import { getBindingLabel } from './keymap'
 
 export interface MenuItem {
   id: string
@@ -47,7 +48,7 @@ const S = () => useStore.getState()
 export function cmd(id: string, label?: string, extra: Partial<MenuItem> = {}): MenuItem {
   const c = byId[id]
   if (!c) return { id, label: label ?? id, enabled: false, ...extra }
-  return { id, label: label ?? c.label, keys: c.keys, run: c.run, enabled: c.when ? !!c.when() : true, ...extra }
+  return { id, label: label ?? c.label, keys: getBindingLabel(id) || undefined, run: c.run, enabled: c.when ? !!c.when() : true, ...extra }
 }
 
 const hasSel = () => { const s = S(); return s.selVerts.size + s.selFaces.size + s.selEdges.size + s.selBones.size > 0 }
@@ -90,7 +91,8 @@ export function buildMenus(openPalette: () => void): Menu[] {
     cmd('sel.invert', 'Invert Selection', { enabled: hasGeo() }),
     'sep',
     cmd('edit.numeric', 'Numeric Panel', { checked: s.numericOpen }),
-    { id: 'edit.palette', label: 'Command Palette…', keys: 'Ctrl+K', run: openPalette },
+    { id: 'edit.palette', label: 'Command Palette…', keys: getBindingLabel('app.palette') || undefined, run: openPalette },
+    cmd('help.keymap', 'Keyboard Shortcuts…', { id: 'edit.keymap' }),
   ]
   const view: MenuEntry[] = [
     { id: 'view.workspace', label: 'Workspace', sub: WORKSPACES.map(w => cmd(`ws.${w}`, WS_NAME[w], { radio: true, checked: s.workspace === w })) },
@@ -144,7 +146,8 @@ export function buildMenus(openPalette: () => void): Menu[] {
   ]
   const help: MenuEntry[] = [
     cmd('help.shortcuts', 'Hints & Shortcuts', { checked: s.helpOpen }),
-    { id: 'help.palette', label: 'Command Palette…', keys: 'Ctrl+K', run: openPalette },
+    { id: 'help.palette', label: 'Command Palette…', keys: getBindingLabel('app.palette') || undefined, run: openPalette },
+    cmd('help.keymap', 'Keyboard Shortcuts…'),
     'sep',
     { id: 'help.about', label: 'About Polyform', run: () => void ask({ title: 'About Polyform', cancel: 'ok', buttons: [{ label: 'OK', value: 'ok', primary: true }],
       message: 'Polyform: a small low-poly modeller for game assets. Model, UV, paint, rig and animate, then export glTF. Everything runs in this browser tab; projects are saved as .polyform files.' }) },

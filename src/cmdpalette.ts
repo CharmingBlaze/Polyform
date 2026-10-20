@@ -6,10 +6,11 @@
 import { defaultFilter } from 'cmdk'
 import { commands, WS_NAME, type Command } from './commands'
 import { history, useStore, type Workspace } from './store'
+import { bindingsOf, currentBindings, defaultKeyMap, isBrowserReserved, type Binding, type Scope } from './keymap'
 
 /** Shortcuts the browser keeps for itself in a tab (they never reach the page), so the palette does not advertise them. */
 export const BROWSER_RESERVED = ['Ctrl+Tab', 'Ctrl+Shift+Tab', 'Ctrl+W', 'Ctrl+N', 'Ctrl+T']
-export const isReserved = (keys: string) => BROWSER_RESERVED.some(k => k.toUpperCase() === keys.toUpperCase())
+export const isReserved = (keys: string) => BROWSER_RESERVED.some(k => k.toUpperCase() === keys.toUpperCase()) || isBrowserReserved(keys)
 
 export interface PaletteEntry {
   /** the first registered command with this label (the one that runs) */
@@ -18,6 +19,8 @@ export interface PaletteEntry {
   group: string
   /** every usable shortcut of the commands merged into this entry */
   keys: string[]
+  /** the scope of each of `keys` (live keymap: global, a workspace, or a hovered panel) */
+  keyScopes: Scope[]
   /** the workspace the command belongs to; null = any */
   ws: Workspace | null
   enabled: boolean
@@ -53,9 +56,14 @@ export function workspaceOf(c: Pick<Command, 'id' | 'group'>): Workspace | null 
 }
 export const wsLabel = (w: Workspace | null) => (w ? WS_NAME[w] : '')
 
-/** One entry per command; commands registered twice for extra shortcuts (same group and label) become one entry. */
-export function paletteEntries(list: readonly Command[] = commands): PaletteEntry[] {
+/**
+ * One entry per command; commands registered twice for extra shortcuts (same group and label) become one entry.
+ * Shortcuts are the live (rebindable) keymap's, not the registry defaults.
+ */
+export function paletteEntries(list: readonly Command[] = commands, bindings: readonly Binding[] = list === commands ? currentBindings() : bindingsOf(defaultKeyMap(list), list)): PaletteEntry[] {
   const out: PaletteEntry[] = [], byKey = new Map<string, PaletteEntry>()
+  const keysOf = new Map<string, Binding[]>()
+  for (const b of bindings) keysOf.set(b.id, [...(keysOf.get(b.id) ?? []), b])
   for (const c of list) {
     const k = `${c.group}\u0000${c.label}`
     let e = byKey.get(k)
@@ -63,10 +71,10 @@ export function paletteEntries(list: readonly Command[] = commands): PaletteEntr
       const rule = AVAILABLE.find(([re]) => re.test(c.id))
       let enabled = true
       try { enabled = (c.when ? !!c.when() : true) && (rule ? rule[1]() : true) } catch { enabled = true }
-      e = { id: c.id, label: c.label, group: c.group, keys: [], ws: workspaceOf(c), enabled, run: c.run }
+      e = { id: c.id, label: c.label, group: c.group, keys: [], keyScopes: [], ws: workspaceOf(c), enabled, run: c.run }
       byKey.set(k, e); out.push(e)
     }
-    if (c.keys && !isReserved(c.keys) && !e.keys.includes(c.keys)) e.keys.push(c.keys)
+    for (const b of keysOf.get(c.id) ?? []) if (!isReserved(b.keys) && !e.keys.includes(b.keys)) { e.keys.push(b.keys); e.keyScopes.push(b.scope) }
   }
   return out
 }

@@ -6,8 +6,9 @@ import { pairs as xPairs } from './xmirror'
 import { PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import * as G from './geom'
-import { interaction, isModalActive, overUV } from './interaction'
-import { copyTimelineKeys, deleteTimelineKeys, duplicateTimelineKeys, pasteTimelineKeys, setTimelineArmed, timelineArmed } from './timeline/edit'
+import { interaction } from './interaction'
+import { ask } from './dialog'
+import { scaleFrames } from './anim'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
@@ -30,6 +31,23 @@ const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ct
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
+/** Ask for a factor and scale the timing of the shown joints' and the objects' keys around the playhead. */
+async function scaleKeysPrompt() {
+  const s = S()
+  if (s.mode !== 'animate') s.setMode('animate')
+  const r = await ask({ title: 'Scale keys', message: `Spread the keys out (above 1) or squeeze them together (below 1) around frame ${S().frame}. ${s.selBones.size ? 'Selected joints and all objects.' : 'All joints and objects.'}`,
+    input: { label: 'Factor', value: '2' }, cancel: 'cancel', buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Scale', value: 'ok', primary: true }] })
+  if (r.value !== 'ok') return
+  const f = Number(r.text.replace(',', '.'))
+  if (!Number.isFinite(f) || f <= 0) return S().notify('Scale keys: type a factor above 0, e.g. 2 or 0.5')
+  const st = S(), pivot = st.frame
+  const bones = st.selBones.size ? [...st.selBones] : st.model.bones.map((_, i) => i)
+  st.edit(m => {
+    const c = m.clips[st.clip], last = Math.max(0, c.frames - 1)
+    bones.forEach(b => { if (c.keys[b]) c.keys[b] = scaleFrames(c.keys[b], pivot, f, last) })
+    Object.keys(c.okeys).forEach(g => { c.okeys[+g] = scaleFrames(c.okeys[+g], pivot, f, last) })
+  }, 'Scale keys')
+}
 const modalXf = (t: 'move' | 'rotate' | 'scale') => () => { S().set({ tool: t }); startModal(t) }
 
 export const commands: Command[] = [
@@ -123,7 +141,8 @@ export const commands: Command[] = [
     .map(([id, label]): Command => ({ id: `panel.tab.${id}`, label: `Side panel: ${label}`, group: 'View', run: () => openSideTab(id) })),
   { id: 'view.focus', label: 'Focus viewports (hide both panels)', group: 'View', keys: 'Ctrl+\\', run: () => toggleFocus() },
   { id: 'sel.all', label: 'Select all', group: 'Selection', keys: 'A', run: () => S().selectAll() },
-  { id: 'sel.all2', label: 'Select all', group: 'Selection', keys: 'Ctrl+A', run: () => S().selectAll() },
+  // Ctrl+A comes from the keymap (keymap.ts): Select all until Apply transform takes it, Select all pixels in Paint
+  { id: 'sel.all2', label: 'Select all', group: 'Selection', run: () => S().selectAll() },
   { id: 'sel.none', label: 'Deselect all', group: 'Selection', keys: 'Alt+A', run: () => S().selectNone() },
   { id: 'sel.esc', label: 'Cancel / deselect', group: 'Selection', keys: 'Esc', run: () => { const s = S(); if (s.extruding) s.cancelExtrude(); else s.selectNone() } },
   { id: 'sel.invert', label: 'Invert selection', group: 'Selection', keys: 'Ctrl+I', run: () => S().invertSelection() },
@@ -139,6 +158,8 @@ export const commands: Command[] = [
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
   ...OPS.filter(o => !o.id.startsWith('prim.')).map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
+  { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
+  { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
   { id: 'help.shortcuts', label: 'Help: hints and keyboard shortcuts', group: 'Help', keys: 'F1', run: () => S().set({ helpOpen: !S().helpOpen }) },
   { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => {
     const s = S(), live = !!s.lastOp && s.lastOp.rev === s.version
@@ -149,6 +170,7 @@ export const commands: Command[] = [
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
   { id: 'edit.undo', label: 'Undo', group: 'Edit', keys: 'Ctrl+Z', run: () => S().doUndo() },
   { id: 'edit.redo', label: 'Redo', group: 'Edit', keys: 'Ctrl+Shift+Z', run: () => S().doRedo() },
+  { id: 'edit.redo2', label: 'Redo', group: 'Edit', keys: 'Ctrl+Y', run: () => S().doRedo() },
   { id: 'joint.addAtCursor', label: 'Add joint at 3D cursor', group: 'Setup', keys: 'Shift+A', run: () => S().addJointAtCursor() },
   { id: 'cursor.origin', label: '3D cursor to origin', group: 'View', keys: 'Shift+C', run: () => S().set({ cursor3d: [0, 0, 0] }) },
   { id: 'cursor.selection', label: '3D cursor to selection', group: 'View', run: () => void import('./scene').then(({ sceneManager }) => {
@@ -176,6 +198,8 @@ export const commands: Command[] = [
   { id: 'anim.mode2', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => byId['anim.mode'].run() },
   { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', run: () => S().setKey() },
   { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },
+  // S over the Timeline (keymap scope panel:timeline): spread or squeeze the keys around the playhead
+  { id: 'anim.scaleKeys', label: 'Scale key timing around the playhead', group: 'Animate', run: () => void scaleKeysPrompt() },
   { id: 'anim.autokey', label: 'Toggle auto-key (record)', group: 'Animate', run: () => S().set({ autoKey: !S().autoKey }) },
   { id: 'anim.ik', label: 'Toggle IK (drag tip to pose the chain)', group: 'Animate', keys: 'Shift+I', run: () => {
     const s = S()
@@ -295,6 +319,7 @@ export function comboOf(e: KeyboardEvent) {
   let k = e.key
   if (/^Digit\d$/.test(e.code)) k = e.code.slice(5) // Shift+1 gives '!' on e.key
   else if (e.altKey && /^Key[A-Z]$/.test(e.code)) k = e.code.slice(3) // macOS Option+E gives '´' on e.key
+  else if (e.shiftKey && e.code === 'Backquote') k = '`' // Shift+` gives '~' on e.key
   else if (k === ' ') k = 'Space'
   else if (k === 'Escape') k = 'Esc'
   else if (k === 'Delete' || k === 'Backspace') k = 'Del'
@@ -314,7 +339,7 @@ export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
  *  Home, arrows, comma and period stay with the time ruler. */
 export const TIMELINE_KEYS = ['G', 'S', 'E', 'F', 'I', 'Del', 'Space', 'Ctrl+D', 'Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+V']
 
-function overTimeline(): boolean {
+export function overTimeline(): boolean {
   const el = document.querySelector('[data-testid="timeline"]')
   if (!el) return false
   const r = el.getBoundingClientRect()
@@ -324,7 +349,7 @@ function overTimeline(): boolean {
 
 /** Single-letter paint tools. They are not Command.keys: those letters already belong to modelling. */
 const PAINT_HOT: Record<string, PaintMode> = { B: 'brush', E: 'erase', G: 'fill', I: 'pick', M: 'marquee', V: 'move', L: 'line', R: 'rect', O: 'ellipse' }
-function paintHotkey(e: KeyboardEvent): boolean {
+export function paintHotkey(e: KeyboardEvent): boolean {
   if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat) return false
   if (S().tool !== 'paint') return false
   const mode = PAINT_HOT[e.key.length === 1 ? e.key.toUpperCase() : '']
@@ -335,47 +360,4 @@ function paintHotkey(e: KeyboardEvent): boolean {
   return true
 }
 
-export function installShortcuts(openPalette: () => void) {
-  const map = new Map<string, Command>()
-  commands.forEach(c => c.keys && !map.has(c.keys.toUpperCase()) && map.set(c.keys.toUpperCase(), c))
-  const onKey = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement
-    // typing goes to text fields; sliders, checkboxes and colour swatches keep the shortcuts (Ctrl+Z right after a drag)
-    const passive = t?.tagName === 'INPUT' && ['range', 'checkbox', 'radio', 'color', 'button'].includes((t as HTMLInputElement).type)
-    if (t && !passive && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
-    if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
-    if (document.querySelector('[data-modal-open], [data-menu-open]')) return // dialogs and open menus own the keyboard
-    const combo = comboOf(e)
-    if (!combo) return
-    if (paintHotkey(e)) return
-    if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && S().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
-    if (timelineArmed()) {
-      if (combo === 'Ctrl+Z' || combo === 'Ctrl+Shift+Z' || combo === 'Ctrl+Y') {
-        setTimelineArmed(false)
-        window.dispatchEvent(new CustomEvent('timeline-key', { detail: 'Esc' }))
-      } else {
-        e.preventDefault()
-        window.dispatchEvent(new CustomEvent('timeline-key', { detail: combo }))
-        return
-      }
-    }
-    if (overTimeline() && TIMELINE_KEYS.includes(combo)) {
-      e.preventDefault()
-      if (combo === 'Space') { byId['anim.play'].run(); return }
-      if (combo === 'I') { byId['anim.insertKey'].run(); return }
-      if (combo === 'Del') { deleteTimelineKeys(); return }
-      if (combo === 'Ctrl+C') { if (!copyTimelineKeys()) S().copyKeys(); return }
-      if (combo === 'Ctrl+V') { pasteTimelineKeys(false); return }
-      if (combo === 'Ctrl+Shift+V') { pasteTimelineKeys(true); return }
-      if (combo === 'Ctrl+D') { duplicateTimelineKeys(); return }
-      window.dispatchEvent(new CustomEvent('timeline-key', { detail: combo }))
-      return
-    }
-    if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
-    if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }
-    const c = map.get(combo.toUpperCase())
-    if (c) { e.preventDefault(); c.run() }
-  }
-  window.addEventListener('keydown', onKey)
-  return () => window.removeEventListener('keydown', onKey)
-}
+// installShortcuts lives in keymap.ts (rebindable, scoped keys)

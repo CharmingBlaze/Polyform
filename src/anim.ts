@@ -32,6 +32,19 @@ export function keyFrames(clipLike: ClipLike, bone: number): number[] {
   return k ? Object.keys(k).map(Number).sort((a, b) => a - b) : []
 }
 
+/**
+ * Key timing scaled around `pivot`: frame f moves to round(pivot + (f - pivot) * factor), clamped to 0..last.
+ * Keys landing on one frame keep the one that started nearest the pivot (one key per frame, never duplicates).
+ */
+export function scaleFrames<K>(keys: Record<number, K>, pivot: number, factor: number, last: number): Record<number, K> {
+  const out: Record<number, K> = {}
+  Object.keys(keys).map(Number).sort((a, b) => Math.abs(a - pivot) - Math.abs(b - pivot) || a - b).forEach(f => {
+    const t = Math.max(0, Math.min(last, Math.round(pivot + (f - pivot) * factor)))
+    if (!(t in out)) out[t] = keys[f]
+  })
+  return out
+}
+
 /** Interpolated local key (rotation as quaternion) of a bone at a frame; 'step' clips hold the previous key. */
 export function sampleBone(clipLike: ClipLike, bone: number, frame: number): { q: THREE.Quaternion; p: THREE.Vector3; key: Key } {
   const clip = asClip(clipLike)

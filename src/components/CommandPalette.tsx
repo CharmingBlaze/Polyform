@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { Command } from 'cmdk'
 import { paletteEntries, rankEntries, wsLabel, type PaletteEntry } from '../cmdpalette'
 import { loadRecent, noteRecent } from '../recent'
+import { comboOf } from '../commands'
+import { comboKey, currentBindings, scopeLabel } from '../keymap'
 
 /**
  * Ctrl+K command palette (cmdk): every registered command with its shortcuts, workspace and greyed state, fuzzy
@@ -33,13 +35,14 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       <span className="pl">{e.label}</span>
       <span className="pg">{e.group}</span>
       {e.ws && <span className="pw">{wsLabel(e.ws)}</span>}
-      {e.keys.map(k => <kbd key={k}>{k}</kbd>)}
+      {e.keys.map((k, i) => e.keyScopes[i] === 'global' ? <kbd key={k}>{k}</kbd>
+        : <kbd key={k} className="scoped" data-scope={e.keyScopes[i]} title={`Only in ${scopeLabel(e.keyScopes[i])}`}>{k}</kbd>)}
     </Command.Item>
   )
   return (
     <Command.Dialog open onOpenChange={o => { if (!o) onClose() }} label="Command palette" shouldFilter={false} loop
       value={value} onValueChange={setSel} overlayClassName="palette-bg" contentClassName="palette" data-modal-open="" data-testid="command-palette"
-      onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); onClose() } }}>
+      onKeyDown={e => { const c = comboKey(comboOf(e.nativeEvent) || '-'); if (currentBindings().some(b => b.id === 'app.palette' && b.scope === 'global' && comboKey(b.keys) === c)) { e.preventDefault(); onClose() } }}>
       <Command.Input value={q} onValueChange={v => { setQ(v); setSel(null) }} placeholder="Type a command…" autoFocus />
       <Command.List className="palette-list">
         <Command.Empty className="palette-empty">No matching commands</Command.Empty>
