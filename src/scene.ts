@@ -4,6 +4,7 @@ import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { alphaOf, cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, applyWrap, textures } from './textures'
+import { threeMaps } from './pbrmaps'
 import { usesAlpha } from './alphause'
 import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
@@ -302,11 +303,11 @@ class SceneManager {
       }
       // the Materials tab's look shows in every view: unlit (flat), emissive glow, opacity / alpha, normal map
       if (mt.unlit && !weightMode) return new THREE.MeshBasicMaterial(common)
-      const nmap = tex && !weightMode ? textures.three(mt.normalTex ?? null) : null
-      if (nmap) nmap.colorSpace = THREE.NoColorSpace
+      // image slots show in the textured view (metal/rough, normal, occlusion, emissive)
+      const maps = tex && !weightMode ? threeMaps(mt) : null
       return new THREE.MeshStandardMaterial({
-        ...common, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, normalMap: nmap,
-        emissive: mt.emissive ?? '#000000', emissiveIntensity: mt.emissiveStrength ?? 1,
+        ...common, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, ...(maps ?? {}),
+        emissive: maps?.emissive ?? mt.emissive ?? '#000000', emissiveIntensity: mt.emissiveStrength ?? 1,
       })
     })
     this.meshes.solid.material = make(true, false)

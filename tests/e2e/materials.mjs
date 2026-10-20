@@ -47,6 +47,9 @@ check('…and the viewport material follows', Math.abs((await S(() => window.__p
 await undo()
 check('one Ctrl+Z undoes the whole drag (back to 0.25)', (await mats())[1].roughness === 0.25, String((await mats())[1].roughness))
 await p.keyboard.press('Control+Shift+z'); await frame()
+check('basic panel: colour, metallic and roughness only; the rest is behind Options', await p.locator('[data-testid="mat-metalness"]').isVisible() && !(await p.locator('[data-testid="mat-emissive"]').isVisible()) && !(await p.locator('[data-testid="mat-image"]').isVisible()))
+await p.click('[data-testid="mat-options"]'); await frame()
+check('Options opens emission, alpha, flags and the image maps', await p.locator('[data-testid="mat-emissive"]').isVisible() && await p.locator('[data-testid="mat-map-occlusionTex"]').isVisible())
 await p.locator('[data-testid="mat-emissive"]').evaluate(el => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, '#ff8800'); el.dispatchEvent(new Event('input', { bubbles: true })) }); await frame()
 await p.fill('[data-testid="mat-emissive-strength"]', '3'); await p.locator('[data-testid="mat-emissive-strength"]').blur(); await frame()
 let m1 = (await mats())[1]
@@ -77,6 +80,14 @@ await S(() => window.__polyform.getState().selectNone())
 await p.click('[data-testid="mat-row-1"]'); await p.click('[data-testid="mat-select"]'); await frame()
 check('Select faces using: the 6 Brass faces', await S(() => { const s = window.__polyform.getState(); return s.selFaces.size === 6 && [...s.selFaces].every(f => s.model.faces[f].g === 1) }))
 await S(() => window.__polyform.getState().selectNone()); await frame(300)
+// image slots: a new blank map in each (Paint paints straight into them)
+for (const k of ['metalRoughTex', 'normalTex', 'occlusionTex', 'emissiveTex']) { await p.selectOption(`[data-testid="mat-map-${k}"]`, '__new'); await frame() }
+m1 = (await mats())[1]
+check('each image slot gets its own new blank image', ['metalRoughTex', 'normalTex', 'occlusionTex', 'emissiveTex'].every(k => typeof m1[k] === 'string') && new Set(['metalRoughTex', 'normalTex', 'occlusionTex', 'emissiveTex'].map(k => m1[k])).size === 4, JSON.stringify(m1))
+await p.locator('[data-testid="mat-normalScale"]').fill('0.5'); await p.locator('[data-testid="mat-occlusionStrength"]').fill('0.7'); await frame()
+m1 = (await mats())[1]
+check('normal strength and occlusion strength', m1.normalScale === 0.5 && m1.occlusionStrength === 0.7, JSON.stringify(m1))
+check('…the maps show in the views', await S(() => { const x = window.__polyformScene.meshes.textured.material[1]; return !!x.normalMap && !!x.aoMap && !!x.emissiveMap && x.roughnessMap === x.metalnessMap && !!x.roughnessMap }))
 await p.screenshot({ path: '/workspace/shot-materials.png' })
 
 // export → validator → re-import
@@ -89,12 +100,14 @@ check('export validates with 0 errors', rep.issues.numErrors === 0, JSON.stringi
 const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + new DataView(bytes.buffer).getUint32(12, true))))
 const gm = Object.fromEntries(json.materials.map(x => [x.name, x]))
 check('glTF: Brass is metallic with an emissive strength of 3, MASK 0.3, double-sided', gm.Brass?.pbrMetallicRoughness?.metallicFactor === 1 && gm.Brass?.extensions?.KHR_materials_emissive_strength?.emissiveStrength === 3 && gm.Brass?.alphaMode === 'MASK' && Math.abs(gm.Brass?.alphaCutoff - 0.3) < 1e-6 && gm.Brass?.doubleSided === true, JSON.stringify(gm.Brass))
+check('glTF: Brass has metallicRoughness, normal (scale 0.5), occlusion (0.7) and emissive textures', gm.Brass?.pbrMetallicRoughness?.metallicRoughnessTexture && gm.Brass?.normalTexture?.scale === 0.5 && Math.abs(gm.Brass?.occlusionTexture?.strength - 0.7) < 1e-6 && gm.Brass?.emissiveTexture, JSON.stringify(gm.Brass))
 check('glTF: the copy is KHR_materials_unlit', !!gm['Brass copy']?.extensions?.KHR_materials_unlit && (json.extensionsUsed || []).includes('KHR_materials_unlit'))
 await p.setInputFiles('#file-open', glb)
 await p.waitForFunction(() => window.__polyform.getState().model.materials.some(m => m.name === 'Brass copy') && window.__polyform.getState().model.faces.length === 12, null, { timeout: 15000 }).catch(() => {})
 await frame(300)
 const back = Object.fromEntries((await mats()).map(x => [x.name, x]))
 check('re-import: Brass keeps metal, emissive ×3, mask 0.3, double-sided', back.Brass?.metalness === 1 && back.Brass?.emissive === '#ff8800' && back.Brass?.emissiveStrength === 3 && back.Brass?.alphaMode === 'mask' && Math.abs(back.Brass?.alphaCutoff - 0.3) < 1e-6 && back.Brass?.doubleSided === true, JSON.stringify(back.Brass))
+check('re-import: the image slots and strengths come back', ['metalRoughTex', 'normalTex', 'occlusionTex', 'emissiveTex'].every(k => typeof back.Brass?.[k] === 'string') && back.Brass?.normalScale === 0.5 && Math.abs(back.Brass?.occlusionStrength - 0.7) < 1e-6, JSON.stringify(back.Brass))
 check('re-import: the copy is unlit', back['Brass copy']?.unlit === true, JSON.stringify(back['Brass copy']))
 // delete reassigns
 const n0 = (await mats()).length

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addPrimitive, emptyModel, validateModel, alphaOf, type Model } from '../src/model'
+import { addPrimitive, emptyModel, validateModel, alphaOf, materialTextures, type Model } from '../src/model'
 import * as MT from '../src/materials'
 import { exportErrors } from './util/meshcheck'
 
@@ -41,6 +41,16 @@ describe('material ops', () => {
     MT.setField(mt, 'emissive', '#000000'); expect('emissive' in mt).toBe(false)
     MT.setField(mt, 'alphaMode', 'mask'); MT.setField(mt, 'alphaMode', 'auto'); expect('alphaMode' in mt).toBe(false)
     MT.setField(mt, 'unlit', false); expect('unlit' in mt).toBe(false)
+    MT.setField(mt, 'occlusionTex', 'tex7'); expect(mt.occlusionTex).toBe('tex7')
+    MT.setField(mt, 'occlusionTex', null); expect('occlusionTex' in mt).toBe(false)
+    MT.setField(mt, 'normalScale', 1); expect('normalScale' in mt).toBe(false)
+    MT.setField(mt, 'occlusionStrength', 4); expect('occlusionStrength' in mt).toBe(false)
+    MT.setField(mt, 'occlusionStrength', 0.25); expect(mt.occlusionStrength).toBe(0.25)
+  })
+  it('image slots: materialTextures lists base + every filled slot', () => {
+    const mt = scene().materials[0]
+    Object.assign(mt, { texture: 'tex1', metalRoughTex: 'tex2', emissiveTex: 'tex3' })
+    expect(materialTextures(mt)).toEqual(['tex1', 'tex2', 'tex3'])
   })
   it('presets', () => {
     const mt = scene().materials[0]
@@ -60,7 +70,7 @@ describe('material ops', () => {
     const m = scene()
     Object.assign(m.materials[0], { emissive: '#123456', emissiveStrength: 2, opacity: 0.5, alphaMode: 'mask', alphaCutoff: 0.2, doubleSided: true, unlit: true })
     expect(() => validateModel(m)).not.toThrow()
-    for (const bad of [{ emissive: 'red' }, { opacity: 2 }, { alphaMode: 'MASK' }, { alphaCutoff: -1 }, { unlit: 'yes' }, { normalTex: 'bad id!' }]) {
+    for (const bad of [{ emissive: 'red' }, { opacity: 2 }, { alphaMode: 'MASK' }, { alphaCutoff: -1 }, { unlit: 'yes' }, { normalTex: 'bad id!' }, { metalRoughTex: 3 }, { occlusionTex: '../x' }, { emissiveTex: 'no way' }, { normalScale: 'big' }, { occlusionStrength: 2 }]) {
       const n = scene(); Object.assign(n.materials[0], bad)
       expect(() => validateModel(n)).toThrow()
     }

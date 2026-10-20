@@ -2,11 +2,12 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3 } from './model'
+import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
 import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, applyWrap, textures } from './textures'
+import { threeMaps } from './pbrmaps'
 import { usesAlpha } from './alphause'
 import { ensureSkin } from './skin'
 import { useStore } from './store'
@@ -49,11 +50,9 @@ export function buildExportScene(m: Model) {
     let mat: THREE.MeshBasicMaterial | THREE.MeshStandardMaterial
     if (mt.unlit) mat = new THREE.MeshBasicMaterial(common)
     else {
-      const nsrc = textures.three(mt.normalTex ?? null)
-      const normalMap = nsrc ? applyWrap(applyFilter(nsrc.clone(), 'linear'), mt.wrap) : null
-      if (normalMap) normalMap.colorSpace = THREE.NoColorSpace
-      mat = new THREE.MeshStandardMaterial({ ...common, roughness: mt.roughness, metalness: mt.metalness, normalMap,
-        emissive: mt.emissive ?? '#000000', emissiveIntensity: mt.emissive && mt.emissive !== '#000000' ? mt.emissiveStrength ?? 1 : 1 })
+      const maps = threeMaps(mt, { clone: true })
+      mat = new THREE.MeshStandardMaterial({ ...common, roughness: mt.roughness, metalness: mt.metalness, ...maps,
+        emissiveIntensity: maps.emissive !== '#000000' ? mt.emissiveStrength ?? 1 : 1 })
     }
     mat.name = mt.name
     return mat
@@ -244,7 +243,7 @@ export function exportOBJ(m: Model, name = 'model') {
   download(mtl, `${name}.mtl`, 'text/plain')
 }
 
-const usedTextures = (m: Model) => [...new Set([...m.materials.flatMap(mt => [mt.texture, mt.normalTex]).filter((t): t is string => !!t), ...usedRefTextures(m)])]
+const usedTextures = (m: Model) => [...new Set([...m.materials.flatMap(materialTextures), ...usedRefTextures(m)])]
 
 export function saveProject(m: Model, name = 'model') {
   download(JSON.stringify(projectFile(m, textures.serialize(usedTextures(m)))), `${name}.polyform.json`, 'application/json')
@@ -269,7 +268,7 @@ export async function openProjectText(text: string) {
   const { model, textures: texData } = migrateProject(JSON.parse(text))
   validateModel(model)
   await textures.loadAll(texData)
-  for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; if (mt.normalTex && !textures.has(mt.normalTex)) delete mt.normalTex }
+  for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; for (const s of MAP_SLOTS) if (mt[s.k] && !textures.has(mt[s.k]!)) delete mt[s.k] }
   useStore.getState().loadModel(model)
 }
 
@@ -339,10 +338,12 @@ export async function restoreAutosave() {
           if (bundle && textures.has(mt.texture)) await textures.loadAll(bundle)
           if (!textures.has(mt.texture)) mt.texture = null
         }
-        if (mt.normalTex && !textures.has(mt.normalTex)) {
-          const url = await idbGet<string>(texKey(mt.normalTex))
-          if (url) await textures.load(url, mt.normalTex).catch(() => {})
-          if (!textures.has(mt.normalTex)) delete mt.normalTex
+        for (const s of MAP_SLOTS) {
+          const id = mt[s.k]
+          if (!id || textures.has(id)) continue
+          const url = await idbGet<string>(texKey(id))
+          if (url) await textures.load(url, id).catch(() => {})
+          if (!textures.has(id)) delete mt[s.k]
         }
       }
       const panes = raw.__panes

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Copy, Plus, Trash2, MousePointerSquareDashed, PaintBucket } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Plus, Trash2, MousePointerSquareDashed, PaintBucket } from 'lucide-react'
 import { useStore } from '../store'
-import { faceMat, type AlphaMode, type Material } from '../model'
+import { faceMat, MAP_SLOTS, type AlphaMode, type Material } from '../model'
 import { textures } from '../textures'
 import { matPreview } from '../matpreview'
 import * as MT from '../materials'
@@ -9,8 +9,28 @@ import * as MT from '../materials'
 /** Images in the library (each lives on a material): id → the first material's name, for the image pickers. */
 function imageChoices(ms: Material[]) {
   const seen = new Map<string, string>()
-  for (const mt of ms) for (const id of [mt.texture, mt.normalTex]) if (id && textures.has(id) && !seen.has(id)) seen.set(id, mt.name)
+  for (const mt of ms) {
+    if (mt.texture && textures.has(mt.texture) && !seen.has(mt.texture)) seen.set(mt.texture, mt.name)
+    for (const sl of MAP_SLOTS) { const id = mt[sl.k]; if (id && textures.has(id) && !seen.has(id)) seen.set(id, `${mt.name} · ${sl.label}`) }
+  }
   return [...seen]
+}
+
+/** the Options section stays open across tab switches */
+let optionsOpen = false
+const MAP_TIPS: Record<string, string> = {
+  metalRoughTex: 'glTF metallic-roughness image: green = roughness, blue = metalness (times the sliders)',
+  normalTex: 'Normal map (tangent space, +Y up)',
+  occlusionTex: 'Ambient occlusion image (red channel)',
+  emissiveTex: 'Emissive image (times the emissive colour × strength; white when no colour is set)',
+}
+const NEW = '__new'
+/** neutral fills for a new blank map: full roughness + metal (the sliders scale them), flat normal, no occlusion, no glow */
+const BLANK: Record<string, string> = { metalRoughTex: '#00ffff', normalTex: '#8080ff', occlusionTex: '#ffffff', emissiveTex: '#000000' }
+/** a short note of what the closed Options section holds */
+const extras = (mt: Material) => {
+  const n = [mt.texture, ...MAP_SLOTS.map(s => mt[s.k])].filter(Boolean).length
+  return n ? `${n} map${n > 1 ? 's' : ''}` : ''
 }
 
 /**
@@ -24,6 +44,8 @@ export function MaterialsPanel() {
   const selFaces = useStore(s => s.selFaces)
   const selectMode = useStore(s => s.selectMode)
   const [editing, setEditing] = useState<number | null>(null)
+  const [opts, setOptsState] = useState(optionsOpen)
+  const setOpts = (v: boolean) => { optionsOpen = v; setOptsState(v) }
   const live = useRef<string | null>(null)
   const st = useStore.getState()
   const cur = Math.max(0, Math.min(activeMat, m.materials.length - 1))
@@ -39,7 +61,7 @@ export function MaterialsPanel() {
   const end = () => { live.current = null }
   const set = (k: string, v: unknown, label: string) => edit(label, mm => (MT.setField as (a: Material, b: string, c: unknown) => void)(mm.materials[cur], k, v))
   const imgs = imageChoices(m.materials)
-  const slider = (key: 'metalness' | 'roughness' | 'opacity' | 'alphaCutoff' | 'emissiveStrength', label: string, val: number, max = 1, step = 0.01) => (
+  const slider = (key: 'metalness' | 'roughness' | 'opacity' | 'alphaCutoff' | 'emissiveStrength' | 'normalScale' | 'occlusionStrength', label: string, val: number, max = 1, step = 0.01) => (
     <label className="mat-slider" title={`${label} (drag: one undo step)`}>
       <span>{label}</span>
       <input type="range" min={0} max={max} step={step} value={val} data-testid={`mat-${key}`}
@@ -84,13 +106,13 @@ export function MaterialsPanel() {
         <div className="mat-line">
           <span className="lbl">Base</span>
           <input type="color" value={mt.color} data-testid="mat-color" title="Base colour" onChange={e => drag('color', 'Base colour', x => MT.setField(x, 'color', e.target.value))} onBlur={end} />
-          <select data-testid="mat-image" value={mt.texture && textures.has(mt.texture) ? mt.texture : ''} title="Base image (from the Images library)" onChange={e => set('texture', e.target.value || null, 'Base image')}>
-            <option value="">No image</option>
-            {imgs.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select>
         </div>
         {slider('metalness', 'Metallic', mt.metalness)}
         {slider('roughness', 'Roughness', mt.roughness)}
+        <button className="mat-opts-toggle" data-testid="mat-options" aria-expanded={opts} title="Emission, opacity, flags and image maps (base, metal/rough, normal, occlusion, emissive)" onClick={() => setOpts(!opts)}>
+          {opts ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Options{!opts && extras(mt) ? <span className="dim"> · {extras(mt)}</span> : null}
+        </button>
+        {opts && <div className="mat-opts" data-testid="mat-opts">
         <div className="mat-line">
           <span className="lbl">Emissive</span>
           <input type="color" value={mt.emissive ?? '#000000'} data-testid="mat-emissive" title="Emissive colour (black = none)" onChange={e => drag('emissive', 'Emissive colour', x => MT.setField(x, 'emissive', e.target.value))} onBlur={end} />
@@ -111,13 +133,32 @@ export function MaterialsPanel() {
           <label title="No lighting: flat colour / image (KHR_materials_unlit)"><input type="checkbox" data-testid="mat-unlit" checked={!!mt.unlit} onChange={e => set('unlit', e.target.checked, 'Unlit')} /> Unlit</label>
           <button className="mini-toggle" data-testid="mat-filter" title="Image filtering: Pixel (nearest, crisp) or Smooth (linear)" onClick={() => set('filter', mt.filter === 'linear' ? 'nearest' : 'linear', 'Image filtering')}>{mt.filter === 'linear' ? 'Smooth' : 'Pixel'}</button>
         </div>
+        <div className="mat-sub">Image maps</div>
         <div className="mat-line">
-          <span className="lbl">Normal</span>
-          <select data-testid="mat-normal" value={mt.normalTex && textures.has(mt.normalTex) ? mt.normalTex : ''} title="Normal map (optional, from the Images library)" onChange={e => set('normalTex', e.target.value || null, 'Normal map')}>
-            <option value="">None</option>
+          <span className="lbl">Base</span>
+          <select data-testid="mat-image" value={mt.texture && textures.has(mt.texture) ? mt.texture : ''} title="Base image (from the Images library)" onChange={e => set('texture', e.target.value || null, 'Base image')}>
+            <option value="">No image</option>
             {imgs.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
         </div>
+        {MAP_SLOTS.map(sl => (
+          <div className="mat-line" key={sl.k}>
+            <span className="lbl">{sl.label}</span>
+            <select data-testid={`mat-map-${sl.k}`} value={mt[sl.k] && textures.has(mt[sl.k]!) ? mt[sl.k]! : ''} title={MAP_TIPS[sl.k]} onChange={e => {
+              const v = e.target.value
+              // a blank image to paint into, filled with the slot's neutral value
+              const id = v === NEW ? textures.create(256, 256, BLANK[sl.k]) : v || null
+              set(sl.k, id, v === NEW ? `New ${sl.label.toLowerCase()} image` : `${sl.label} map`)
+            }}>
+              <option value="">None</option>
+              <option value={NEW}>+ New blank 256²</option>
+              {imgs.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </div>
+        ))}
+        {mt.normalTex && slider('normalScale', 'Bump', mt.normalScale ?? 1, 2)}
+        {mt.occlusionTex && slider('occlusionStrength', 'AO str', mt.occlusionStrength ?? 1)}
+        </div>}
         <button className="primary mat-assign" data-testid="mat-assign" disabled={!selFaces.size} title={`Give the selected ${faceTarget} this material`} onClick={() => st.assignMaterial(cur)}>
           <PaintBucket size={14} /> Assign to selected {faceTarget}
         </button>

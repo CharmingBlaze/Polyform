@@ -52,7 +52,13 @@ export async function gltfToModel(gltf: GLTF, name = 'Imported'): Promise<Model>
       nm.roughness = std.roughness ?? 0.8
       nm.metalness = std.metalness ?? 0
       readPbrExtras(mt, nm)
-      if ((std as THREE.MeshStandardMaterial).normalMap?.image) { try { nm.normalTex = await imageToTexture(std.normalMap!.image as CanvasImageSource) } catch { /* no normal map */ } }
+      // image slots: metal/rough, normal (+ scale), occlusion (+ strength), emissive
+      const slot = async (t: THREE.Texture | null | undefined) => { if (!t?.image) return null; try { return await imageToTexture(t.image as CanvasImageSource) } catch { return null } }
+      const mrSrc = std.metalnessMap ?? std.roughnessMap
+      const ids = { metalRoughTex: await slot(mrSrc), normalTex: await slot(std.normalMap), occlusionTex: await slot(std.aoMap), emissiveTex: await slot(std.emissiveMap) }
+      for (const [k, v] of Object.entries(ids)) if (v) (nm as unknown as Record<string, string>)[k] = v
+      if (ids.normalTex && std.normalScale && Math.abs(std.normalScale.x - 1) > 1e-6) nm.normalScale = Math.round(std.normalScale.x * 1000) / 1000
+      if (ids.occlusionTex && (std.aoMapIntensity ?? 1) !== 1) nm.occlusionStrength = std.aoMapIntensity
       if (std.map?.image) {
         try {
           const c = document.createElement('canvas')

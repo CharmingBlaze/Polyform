@@ -120,9 +120,31 @@ export interface Material {
   doubleSided?: boolean
   /** KHR_materials_unlit: flat colour / image, no lighting */
   unlit?: boolean
-  /** normal map texture id, or absent */
+  // ---- PBR image slots (texture ids; all optional, absent = none). `texture` above is the base colour slot. ----
+  // Paint can paint straight into any of these; the exporter writes each as its glTF texture.
+  /** glTF metallicRoughness image: G = roughness, B = metalness (multiplied by the sliders) */
+  metalRoughTex?: string | null
+  /** normal map texture id (tangent space, OpenGL / glTF +Y) */
   normalTex?: string | null
+  /** normal map strength (glTF normalTexture.scale); 1 when absent */
+  normalScale?: number
+  /** ambient occlusion image (R channel, glTF occlusionTexture; needs UVs) */
+  occlusionTex?: string | null
+  /** occlusion strength 0..1 (glTF occlusionTexture.strength); 1 when absent */
+  occlusionStrength?: number
+  /** emissive image, multiplied by the emissive colour × strength (set a colour for it to show) */
+  emissiveTex?: string | null
 }
+/** Image slots of a material, besides the base colour `texture`: field, label, glTF name. */
+export const MAP_SLOTS = [
+  { k: 'metalRoughTex', label: 'Met/Rough', gltf: 'metallicRoughnessTexture' },
+  { k: 'normalTex', label: 'Normal', gltf: 'normalTexture' },
+  { k: 'occlusionTex', label: 'AO', gltf: 'occlusionTexture' },
+  { k: 'emissiveTex', label: 'Emissive', gltf: 'emissiveTexture' },
+] as const
+export type MapSlot = typeof MAP_SLOTS[number]['k']
+/** Every texture id a material uses (base colour first), skipping empty slots. */
+export const materialTextures = (mt: Material): string[] => [mt.texture, ...MAP_SLOTS.map(s => mt[s.k])].filter((t): t is string => !!t)
 export type AlphaMode = 'opaque' | 'blend' | 'mask'
 export type TexFilter = 'nearest' | 'linear'
 export type TexWrap = 'repeat' | 'clamp' | 'mirror'
@@ -382,7 +404,9 @@ export function validateModel(m: Model) {
     if (mt.alphaCutoff !== undefined && !num(mt.alphaCutoff, 0, 1)) throw new Error(`Material ${i} has an invalid alpha cutoff`)
     if (mt.doubleSided !== undefined && typeof mt.doubleSided !== 'boolean') throw new Error(`Material ${i} has an invalid double-sided flag`)
     if (mt.unlit !== undefined && typeof mt.unlit !== 'boolean') throw new Error(`Material ${i} has an invalid unlit flag`)
-    if (mt.normalTex !== undefined && mt.normalTex !== null && !(typeof mt.normalTex === 'string' && TEX_ID.test(mt.normalTex))) throw new Error(`Material ${i} has an invalid normal map id`)
+    for (const s of MAP_SLOTS) { const t = mt[s.k]; if (t !== undefined && t !== null && !(typeof t === 'string' && TEX_ID.test(t))) throw new Error(`Material ${i} has an invalid ${s.label.toLowerCase()} map id`) }
+    if (mt.normalScale !== undefined && !num(mt.normalScale, -10, 10)) throw new Error(`Material ${i} has an invalid normal scale`)
+    if (mt.occlusionStrength !== undefined && !num(mt.occlusionStrength, 0, 1)) throw new Error(`Material ${i} has an invalid occlusion strength`)
   })
   m.groups.forEach((g, i) => {
     if (!g || typeof g.name !== 'string' || typeof g.visible !== 'boolean') throw new Error(`Group ${i} is invalid`)

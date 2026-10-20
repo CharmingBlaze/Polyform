@@ -2,7 +2,7 @@
  * Material operations for the Materials tab (pure: they edit a model in place, the store wraps them in undo steps).
  * Every field maps onto glTF metallic-roughness PBR; the extras are optional so older projects load unchanged.
  */
-import { newMaterial, type AlphaMode, type Material, type Model } from './model'
+import { newMaterial, type AlphaMode, type MapSlot, type Material, type Model } from './model'
 
 export const PRESETS = {
   plastic: { label: 'Plastic', tip: 'Glossy dielectric: roughness 0.45, no metal' },
@@ -65,11 +65,11 @@ export function deleteMaterial(m: Model, i: number, to?: number): boolean {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Number.isFinite(v) ? v : lo))
 
 /** Set one field, clamped; defaults are stored as "absent" so files stay small and older readers see nothing new. */
-export function setField(mt: Material, k: 'roughness' | 'metalness' | 'opacity' | 'alphaCutoff' | 'emissiveStrength', v: number): void
+export function setField(mt: Material, k: 'roughness' | 'metalness' | 'opacity' | 'alphaCutoff' | 'emissiveStrength' | 'normalScale' | 'occlusionStrength', v: number): void
 export function setField(mt: Material, k: 'color' | 'emissive', v: string): void
 export function setField(mt: Material, k: 'alphaMode', v: AlphaMode | 'auto'): void
 export function setField(mt: Material, k: 'doubleSided' | 'unlit', v: boolean): void
-export function setField(mt: Material, k: 'texture' | 'normalTex', v: string | null): void
+export function setField(mt: Material, k: 'texture' | MapSlot, v: string | null): void
 export function setField(mt: Material, k: 'filter', v: 'nearest' | 'linear'): void
 export function setField(mt: Material, k: string, v: unknown) {
   const r = mt as unknown as Record<string, unknown>
@@ -83,7 +83,9 @@ export function setField(mt: Material, k: string, v: unknown) {
     case 'alphaMode': if (v === 'auto') delete mt.alphaMode; else mt.alphaMode = v as AlphaMode; break
     case 'doubleSided': case 'unlit': if (v) r[k] = true; else delete r[k]; break
     case 'texture': mt.texture = (v as string | null) || null; break
-    case 'normalTex': if (v) mt.normalTex = v as string; else delete mt.normalTex; break
+    case 'normalTex': case 'metalRoughTex': case 'occlusionTex': case 'emissiveTex': if (v) r[k] = v as string; else delete r[k]; break
+    case 'normalScale': { const n = clamp(v as number, -10, 10); if (n === 1) delete mt.normalScale; else mt.normalScale = n; break }
+    case 'occlusionStrength': { const o = clamp(v as number, 0, 1); if (o === 1) delete mt.occlusionStrength; else mt.occlusionStrength = o; break }
     case 'filter': if (v === 'linear') mt.filter = 'linear'; else delete mt.filter; break
   }
 }
