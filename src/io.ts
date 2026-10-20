@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3 } from './model'
+import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3 } from './model'
 import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
@@ -42,12 +42,19 @@ export function buildExportScene(m: Model) {
     // per-material sampler: clone shares the image, so the exporter still embeds it once
     const src = textures.three(mt.texture)
     const tex = src ? applyWrap(applyFilter(src.clone(), mt.filter), mt.wrap) : null
-    const alpha = !!tex && usesAlpha(m, mi, null)
-    const mat = new THREE.MeshStandardMaterial({
-      color: baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi)),
-      vertexColors: vcm.has(mi), roughness: mt.roughness, metalness: mt.metalness, map: tex,
-      transparent: alpha, depthWrite: !alpha,
-    })
+    const alpha = alphaOf(mt, !!tex && usesAlpha(m, mi, null))
+    const color = baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi))
+    const common = { color, vertexColors: vcm.has(mi), map: tex, transparent: alpha.blend, depthWrite: !alpha.blend, opacity: mt.opacity ?? 1, alphaTest: alpha.mask ? Math.max(0.001, mt.alphaCutoff ?? 0.5) : 0, side: mt.doubleSided ? THREE.DoubleSide : THREE.FrontSide }
+    // KHR_materials_unlit comes from a basic material; everything else is metallic-roughness PBR
+    let mat: THREE.MeshBasicMaterial | THREE.MeshStandardMaterial
+    if (mt.unlit) mat = new THREE.MeshBasicMaterial(common)
+    else {
+      const nsrc = textures.three(mt.normalTex ?? null)
+      const normalMap = nsrc ? applyWrap(applyFilter(nsrc.clone(), 'linear'), mt.wrap) : null
+      if (normalMap) normalMap.colorSpace = THREE.NoColorSpace
+      mat = new THREE.MeshStandardMaterial({ ...common, roughness: mt.roughness, metalness: mt.metalness, normalMap,
+        emissive: mt.emissive ?? '#000000', emissiveIntensity: mt.emissive && mt.emissive !== '#000000' ? mt.emissiveStrength ?? 1 : 1 })
+    }
     mat.name = mt.name
     return mat
   })
@@ -237,7 +244,7 @@ export function exportOBJ(m: Model, name = 'model') {
   download(mtl, `${name}.mtl`, 'text/plain')
 }
 
-const usedTextures = (m: Model) => [...new Set([...m.materials.map(mt => mt.texture).filter((t): t is string => !!t), ...usedRefTextures(m)])]
+const usedTextures = (m: Model) => [...new Set([...m.materials.flatMap(mt => [mt.texture, mt.normalTex]).filter((t): t is string => !!t), ...usedRefTextures(m)])]
 
 export function saveProject(m: Model, name = 'model') {
   download(JSON.stringify(projectFile(m, textures.serialize(usedTextures(m)))), `${name}.polyform.json`, 'application/json')
@@ -262,7 +269,7 @@ export async function openProjectText(text: string) {
   const { model, textures: texData } = migrateProject(JSON.parse(text))
   validateModel(model)
   await textures.loadAll(texData)
-  for (const mt of model.materials) if (mt.texture && !textures.has(mt.texture)) mt.texture = null
+  for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; if (mt.normalTex && !textures.has(mt.normalTex)) delete mt.normalTex }
   useStore.getState().loadModel(model)
 }
 
@@ -331,6 +338,11 @@ export async function restoreAutosave() {
           const bundle = await idbGet<Record<string, string>>(layersKey(mt.texture))
           if (bundle && textures.has(mt.texture)) await textures.loadAll(bundle)
           if (!textures.has(mt.texture)) mt.texture = null
+        }
+        if (mt.normalTex && !textures.has(mt.normalTex)) {
+          const url = await idbGet<string>(texKey(mt.normalTex))
+          if (url) await textures.load(url, mt.normalTex).catch(() => {})
+          if (!textures.has(mt.normalTex)) delete mt.normalTex
         }
       }
       const panes = raw.__panes

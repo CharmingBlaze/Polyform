@@ -68,7 +68,7 @@ check('a command jumping to another tab keeps it visible', (await railTabs()) ==
 
 // sidebar sections per workspace
 const sideTabs = () => p.locator('.sidebar .tabs button:not(.collapse-btn)').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
-const SIDES = { model: 'scene', uv: 'scene,uvtools,uv', paint: 'scene,uv', rig: 'scene,joints', animate: 'scene,joints', export: 'scene' }
+const SIDES = { model: 'scene,materials', uv: 'scene,materials,uvtools,uv', paint: 'scene,materials,uv', rig: 'scene,joints', animate: 'scene,joints', export: 'scene' }
 for (const [ws, want] of Object.entries(SIDES)) {
   await p.click(`[data-testid="ws-${ws}"]`); await frame()
   const got = await sideTabs()

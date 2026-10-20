@@ -54,6 +54,12 @@ export function normalizeCorners(m: Model) {
   }
 }
 
+/** glTF alphaMode for a material: its explicit choice, else Blend when the image has see-through texels or opacity < 1. */
+export function alphaOf(mt: { alphaMode?: 'opaque' | 'blend' | 'mask'; opacity?: number }, imageAlpha: boolean) {
+  const mode = mt.alphaMode ?? (imageAlpha || (mt.opacity ?? 1) < 1 ? 'blend' : 'opaque')
+  return { blend: mode === 'blend', mask: mode === 'mask' }
+}
+
 /** Material index a face renders with. */
 export const faceMat = (m: Model, f: Face) => (f.mat !== undefined ? f.mat : m.groups[f.g]?.mat ?? 0)
 
@@ -100,7 +106,24 @@ export interface Material {
   filter?: TexFilter
   /** How UVs outside 0..1 sample the image; repeat when absent. Exported as the glTF sampler wrap. */
   wrap?: TexWrap
+  // ---- glTF PBR extras (all optional: absent = the glTF default, so older projects need no migration) ----
+  /** emissive colour, sRGB hex; black / absent = none */
+  emissive?: string
+  /** emissive multiplier (KHR_materials_emissive_strength above 1); 1 when absent */
+  emissiveStrength?: number
+  /** 0..1, the base colour alpha; 1 when absent */
+  opacity?: number
+  /** glTF alphaMode; absent = automatic (Blend when the image or opacity needs it, else Opaque) */
+  alphaMode?: AlphaMode
+  /** Mask cutoff, 0..1; 0.5 when absent */
+  alphaCutoff?: number
+  doubleSided?: boolean
+  /** KHR_materials_unlit: flat colour / image, no lighting */
+  unlit?: boolean
+  /** normal map texture id, or absent */
+  normalTex?: string | null
 }
+export type AlphaMode = 'opaque' | 'blend' | 'mask'
 export type TexFilter = 'nearest' | 'linear'
 export type TexWrap = 'repeat' | 'clamp' | 'mirror'
 export interface Bone { name: string; parent: number; pos: Vec3 }
@@ -352,6 +375,14 @@ export function validateModel(m: Model) {
     if (mt.texture !== null && !(typeof mt.texture === 'string' && TEX_ID.test(mt.texture))) throw new Error(`Material ${i} has an invalid texture id`)
     if (mt.filter !== undefined && mt.filter !== 'nearest' && mt.filter !== 'linear') throw new Error(`Material ${i} has an invalid filter`)
     if (mt.wrap !== undefined && mt.wrap !== 'repeat' && mt.wrap !== 'clamp' && mt.wrap !== 'mirror') throw new Error(`Material ${i} has an invalid wrap`)
+    if (mt.emissive !== undefined && !HEX.test(String(mt.emissive))) throw new Error(`Material ${i} has an invalid emissive colour`)
+    if (mt.emissiveStrength !== undefined && !num(mt.emissiveStrength, 0, 1000)) throw new Error(`Material ${i} has an invalid emissive strength`)
+    if (mt.opacity !== undefined && !num(mt.opacity, 0, 1)) throw new Error(`Material ${i} has an invalid opacity`)
+    if (mt.alphaMode !== undefined && !['opaque', 'blend', 'mask'].includes(mt.alphaMode)) throw new Error(`Material ${i} has an invalid alpha mode`)
+    if (mt.alphaCutoff !== undefined && !num(mt.alphaCutoff, 0, 1)) throw new Error(`Material ${i} has an invalid alpha cutoff`)
+    if (mt.doubleSided !== undefined && typeof mt.doubleSided !== 'boolean') throw new Error(`Material ${i} has an invalid double-sided flag`)
+    if (mt.unlit !== undefined && typeof mt.unlit !== 'boolean') throw new Error(`Material ${i} has an invalid unlit flag`)
+    if (mt.normalTex !== undefined && mt.normalTex !== null && !(typeof mt.normalTex === 'string' && TEX_ID.test(mt.normalTex))) throw new Error(`Material ${i} has an invalid normal map id`)
   })
   m.groups.forEach((g, i) => {
     if (!g || typeof g.name !== 'string' || typeof g.visible !== 'boolean') throw new Error(`Group ${i} is invalid`)

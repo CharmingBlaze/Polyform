@@ -520,7 +520,7 @@ button.danger { color: #ff9a9a; }
 .uv-tool { height: 40px; font-size: 10.5px; gap: 2px; }
 
 /* side panels: an always-visible collapse chevron; collapse / expand slides (~120 ms) */
-.collapse-btn { opacity: .55; }
+.collapse-btn { opacity: .7; }
 .main.anim { transition: grid-template-columns .12s ease-out; }
 @media (prefers-reduced-motion: reduce) { .main.anim { transition: none; } }
 /* thinner side panel: names keep their room, the counts give way (full text in the tooltip) */
@@ -530,3 +530,28 @@ button.danger { color: #ff9a9a; }
 /* a narrow tool rail drops the shortcut chips (they stay in the tooltips and ? / F1) so labels keep one line */
 .tool-list { container-type: inline-size; }
 @container (max-width: 150px) { .tool-btn kbd { display: none; } }
+
+/* ---- Materials tab ---- */
+.materials { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.mat-bar { display: flex; align-items: center; gap: 2px; padding: 6px 8px 2px; }
+.mat-bar .icon-btn { width: 26px; height: 24px; padding: 0; justify-content: center; }
+.mat-bar .small { font-size: 11px; }
+.mat-list { flex: 1 1 40%; min-height: 72px; overflow-y: auto; padding: 2px 6px; }
+.mat-row { padding: 2px 6px; }
+.mat-ball { width: 24px; height: 24px; border-radius: 50%; flex: none; display: inline-block; }
+.mat-row input { min-width: 0; flex: 1; }
+.mat-editor { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 10px; border-top: 1px solid var(--line); font-size: 11.5px; }
+.mat-presets { display: flex; flex-wrap: wrap; gap: 3px; }
+.mat-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mat-line .lbl, .mat-slider > span { width: 58px; flex: none; color: var(--dim); }
+.mat-line select { flex: 1; min-width: 0; font-size: 11.5px; padding: 2px 4px; }
+.mat-line input[type=color] { width: 30px; height: 22px; padding: 0 2px; flex: none; }
+.mat-line .num { width: 54px; font-size: 11.5px; padding: 2px 4px; }
+.mat-line.toggles { gap: 10px; }
+.mat-line.toggles label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.mat-slider { display: flex; align-items: center; gap: 6px; }
+.mat-slider input[type=range] { flex: 1; min-width: 0; }
+.mat-slider output { width: 30px; text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+.mat-assign { justify-content: center; padding: 6px; margin-top: 2px; }
+/* three or more side tabs in a thin panel: the inactive ones show their icon only (title = tooltip) */
+.sidebar .tabs:is(.n3, .n4, .n5) button:not(.on) .tl { display: none; }

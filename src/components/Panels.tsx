@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Wrench } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Wrench, Palette } from 'lucide-react'
 import { useStore, type SideTab, type Workspace } from '../store'
 import { faceMat } from '../model'
 import { textures } from '../textures'
@@ -9,6 +9,7 @@ import { Outliner } from './Outliner'
 import { DopeSheet } from './DopeSheet'
 import { RefsPanel } from './RefsPanel'
 import { setHost } from '../portalhost'
+import { MaterialsPanel } from './MaterialsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 import { setPanel } from '../useLayout'
@@ -28,13 +29,15 @@ export function Sidebar() {
     <aside className="sidebar">
       <div className={`tabs n${tabs.length}`}>
         <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Collapse the side panel · Ctrl+]" onClick={() => setPanel('right', true)}><ChevronsRight size={14} /></button>
-        {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Outliner</button>}
-        {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>}
-        {tabs.includes('uvtools') && <button className={tab === 'uvtools' ? 'on' : ''} data-testid="side-uvtools" onClick={() => setTab('uvtools')}><Wrench size={14} /> UV Tools</button>}
-        {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>}
+        {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" title="Outliner" onClick={() => setTab('scene')}><Layers size={14} /> <span className="tl">Outliner</span></button>}
+        {tabs.includes('materials') && <button className={tab === 'materials' ? 'on' : ''} data-testid="side-materials" title="Materials" onClick={() => setTab('materials')}><Palette size={14} /> <span className="tl">Materials</span></button>}
+        {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" title="Joints" onClick={() => setTab('joints')}><Bone size={14} /> <span className="tl">Joints</span></button>}
+        {tabs.includes('uvtools') && <button className={tab === 'uvtools' ? 'on' : ''} data-testid="side-uvtools" title="UV Tools" onClick={() => setTab('uvtools')}><Wrench size={14} /> <span className="tl">UV Tools</span></button>}
+        {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" title="Images" onClick={() => setTab('uv')}><Image size={14} /> <span className="tl">Images</span></button>}
       </div>
       <div className="tab-body">
         {tab === 'scene' && <><Outliner />{workspace === 'model' && <RefsFold />}</>}
+        {tab === 'materials' && <MaterialsPanel />}
         {tab === 'joints' && <Joints />}
         {tab === 'uv' && <UVSide />}
         {tab === 'uvtools' && <div className="uv-tools" data-testid="uv-tools" ref={el => setHost('uv-tools', el)} />}
@@ -67,8 +70,8 @@ export function SideIcons() {
   const uvSpace = useStore(s => s.uvSpace)
   const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [], uvSpace ? ['uvtools'] : [])
   const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
-  const ICON = { scene: Layers, joints: Bone, uv: Image, uvtools: Wrench } as const
-  const LABEL = { scene: 'Outliner', joints: 'Joints', uv: 'Images', uvtools: 'UV Tools' } as const
+  const ICON = { scene: Layers, materials: Palette, joints: Bone, uv: Image, uvtools: Wrench } as const
+  const LABEL = { scene: 'Outliner', materials: 'Materials', joints: 'Joints', uv: 'Images', uvtools: 'UV Tools' } as const
   const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); setPanel('right', false) }
   return (
     <aside className="side-icons" data-testid="side-icons">
@@ -79,8 +82,8 @@ export function SideIcons() {
 }
 
 /** Sidebar sections relevant per workspace: the Outliner always, Images for UV/Paint, Joints for Rig/Animate (the active one always stays). */
-const SIDE_ORDER: SideTab[] = ['scene', 'joints', 'uvtools', 'uv']
-const SIDE_TABS: Record<Workspace, SideTab[]> = { model: ['scene'], uv: ['scene', 'uv'], paint: ['scene', 'uv'], rig: ['scene', 'joints'], animate: ['scene', 'joints'], export: ['scene'] }
+const SIDE_ORDER: SideTab[] = ['scene', 'materials', 'joints', 'uvtools', 'uv']
+const SIDE_TABS: Record<Workspace, SideTab[]> = { model: ['scene', 'materials'], uv: ['scene', 'materials', 'uv'], paint: ['scene', 'materials', 'uv'], rig: ['scene', 'joints'], animate: ['scene', 'joints'], export: ['scene'] }
 
 function Joints() {
   const m = useStore(s => s.model)

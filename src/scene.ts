@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
-import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
+import { alphaOf, cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, applyWrap, textures } from './textures'
 import { usesAlpha } from './alphause'
 import type { RefImage } from './model'
@@ -294,11 +294,19 @@ class SceneManager {
       if (own) { applyFilter(own, mt.filter); applyWrap(own, mt.wrap) }
       // the UV checker previews unmapped materials, but would hide vertex colours; weight paint hides maps so the heat map reads
       const map = tex && !weightMode ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
-      const alpha = !!own && alphaKey[mi] === '1'
-      return new THREE.MeshStandardMaterial({
-        color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
-        transparent: alpha, depthWrite: !alpha,
+      const a = alphaOf(mt, !!own && alphaKey[mi] === '1'), alpha = a.blend
+      const common = {
+        color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, side: THREE.DoubleSide,
+        transparent: alpha, depthWrite: !alpha, opacity: mt.opacity ?? 1, alphaTest: a.mask ? Math.max(0.001, mt.alphaCutoff ?? 0.5) : 0,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      }
+      // the Materials tab's look shows in every view: unlit (flat), emissive glow, opacity / alpha, normal map
+      if (mt.unlit && !weightMode) return new THREE.MeshBasicMaterial(common)
+      const nmap = tex && !weightMode ? textures.three(mt.normalTex ?? null) : null
+      if (nmap) nmap.colorSpace = THREE.NoColorSpace
+      return new THREE.MeshStandardMaterial({
+        ...common, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, normalMap: nmap,
+        emissive: mt.emissive ?? '#000000', emissiveIntensity: mt.emissiveStrength ?? 1,
       })
     })
     this.meshes.solid.material = make(true, false)

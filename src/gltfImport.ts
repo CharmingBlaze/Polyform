@@ -1,7 +1,7 @@
 // Full glTF / .glb import: meshes, materials (with images), skins (one joint per point), and animations → clips.
 import * as THREE from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { emptyModel, identityXform, newClip, newGroup, newMaterial, type Key, type Model, type OKey, type Vec2, type Vec3 } from './model'
+import { emptyModel, identityXform, newClip, newGroup, newMaterial, type Key, type Material, type Model, type OKey, type Vec2, type Vec3 } from './model'
 import { normalizeSkin, primaryJoint } from './skin'
 import type { Skin } from './model'
 import { textures } from './textures'
@@ -12,6 +12,25 @@ const eulerOf = (q: THREE.Quaternion): Vec3 => {
 }
 
 /** Flatten a loaded glTF into a Polyform model. Skinned meshes take the strongest joint per point. */
+/** glTF material extras → our material: emissive (+ strength), opacity, alpha mode / cutoff, double-sided, unlit. */
+export function readPbrExtras(mt: THREE.Material, nm: Material) {
+  const std = mt as THREE.MeshStandardMaterial
+  if (std.emissive && std.emissive.getHex() !== 0) { nm.emissive = `#${std.emissive.getHexString()}`; if ((std.emissiveIntensity ?? 1) !== 1) nm.emissiveStrength = std.emissiveIntensity }
+  if (mt.opacity < 1) nm.opacity = Math.round(mt.opacity * 1000) / 1000
+  if (mt.transparent) nm.alphaMode = 'blend'
+  else if (mt.alphaTest > 0) { nm.alphaMode = 'mask'; nm.alphaCutoff = mt.alphaTest }
+  if (mt.side === THREE.DoubleSide) nm.doubleSided = true
+  if ((mt as THREE.MeshBasicMaterial).isMeshBasicMaterial) nm.unlit = true
+}
+
+async function imageToTexture(img: CanvasImageSource) {
+  const c = document.createElement('canvas')
+  c.width = (img as HTMLImageElement).width || (img as HTMLCanvasElement).width || 256
+  c.height = (img as HTMLImageElement).height || (img as HTMLCanvasElement).height || 256
+  c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+  return textures.loadBlob(await new Promise<Blob>((res, rej) => c.toBlob(b => b ? res(b) : rej(), 'image/png')))
+}
+
 export async function gltfToModel(gltf: GLTF, name = 'Imported'): Promise<Model> {
   const m = emptyModel()
   m.materials = []
@@ -32,6 +51,8 @@ export async function gltfToModel(gltf: GLTF, name = 'Imported'): Promise<Model>
       const nm = newMaterial(std.name || `Material ${i + 1}`, color)
       nm.roughness = std.roughness ?? 0.8
       nm.metalness = std.metalness ?? 0
+      readPbrExtras(mt, nm)
+      if ((std as THREE.MeshStandardMaterial).normalMap?.image) { try { nm.normalTex = await imageToTexture(std.normalMap!.image as CanvasImageSource) } catch { /* no normal map */ } }
       if (std.map?.image) {
         try {
           const c = document.createElement('canvas')

@@ -27,7 +27,7 @@ import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
 export const WORKSPACES: Workspace[] = ['model', 'uv', 'paint', 'rig', 'animate', 'export']
 export type RailTab = 'Create' | 'Modify' | 'Multiply' | 'Construct' | 'Map' | 'Paint' | 'Setup' | 'Animate' | 'Export'
-export type SideTab = 'scene' | 'joints' | 'uv' | 'uvtools'
+export type SideTab = 'scene' | 'materials' | 'joints' | 'uv' | 'uvtools'
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
 export type EditMode = 'vertex' | 'edge' | 'face'
 export type SelectMode = 'object' | EditMode | 'joint'

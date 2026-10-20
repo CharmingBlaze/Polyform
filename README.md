@@ -12,6 +12,18 @@ npm test           # unit tests
 npm run test:e2e   # needs `npm run dev` in another terminal
 ```
 
+## Materials
+
+The right panel's **Materials** tab (Model / UV / Paint) lists every material with a live preview sphere and its face
+count. **+** adds, the copy icon duplicates, the bin deletes (never the last one; its faces fall back to the first
+material), and the select icon selects the faces using it; double-click a name to rename. Below the list is a glTF PBR
+metallic-roughness editor: base colour and image, metallic, roughness, emissive colour × strength
+(KHR_materials_emissive_strength), opacity with Auto / Opaque / Blend / Mask + cutoff, 2-sided, Unlit
+(KHR_materials_unlit), Pixel / Smooth filtering and an optional normal map, plus Plastic / Metal / Emissive / Glass /
+Unlit px presets. Every change shows live in the views and is one undo step (a slider drag is one step). **Assign to
+selected** gives whole objects the material in Object mode and just the selected faces in Face mode. Everything
+round-trips through .glb (0 validator errors). No save-format bump: all new fields are optional.
+
 ## What "working" looks like
 
 1. **Empty scene** → click **Character + walk** (or Create → Character). The app jumps to Animate; **Space** plays the walk cycle; **Ctrl+Z** returns to your previous scene.

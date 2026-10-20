@@ -316,7 +316,9 @@ export function installShortcuts(openPalette: () => void) {
   commands.forEach(c => c.keys && !map.has(c.keys.toUpperCase()) && map.set(c.keys.toUpperCase(), c))
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+    // typing goes to text fields; sliders, checkboxes and colour swatches keep the shortcuts (Ctrl+Z right after a drag)
+    const passive = t?.tagName === 'INPUT' && ['range', 'checkbox', 'radio', 'color', 'button'].includes((t as HTMLInputElement).type)
+    if (t && !passive && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
     if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
     if (document.querySelector('[data-modal-open], [data-menu-open]')) return // dialogs and open menus own the keyboard
     const combo = comboOf(e)
