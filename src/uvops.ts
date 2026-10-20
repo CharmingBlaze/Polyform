@@ -480,6 +480,8 @@ export interface PackOpts {
   fixed?: number
   /** image height / width: islands are packed in square pixels on a non-square image */
   aspect?: number
+  /** never turn islands 90° (pixel art stays upright) */
+  noRotate?: boolean
 }
 /**
  * Pack islands into 0..1 with equal texel density and no overlaps. Returns the number of islands; `fitted` on the
@@ -501,7 +503,7 @@ export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: Pack
     for (const f of fs) for (const [u, v] of m.faces[f].uv) { x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v) }
     // islands measured in square pixels (u-width units): v spans `aspect` times as many
     let w = (x1 - x0) * k, h = (y1 - y0) * k * aspect
-    const rot = h > w * 1.0001
+    const rot = !o.noRotate && h > w * 1.0001
     if (rot) [w, h] = [h, w]
     items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot })
   }
@@ -691,3 +693,175 @@ export function snapFacesToPaletteColor(
   return { ...g, ...cell }
 }
 
+// ---------- pixel-true projections (UV-8) ----------
+type V3 = [number, number, number]
+const sub3 = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+const dot3 = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const cross3 = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+const norm3 = (a: V3): V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l] }
+
+/**
+ * Faces grouped for pixel layouts: neighbours across a non-seam edge whose normals differ by less than `maxDeg`
+ * share a group (Blockbench's template rule), so a flat strip stays joined while a box splits per side.
+ */
+export function planarGroups(m: Model, faces: number[], maxDeg = 36): number[][] {
+  const set = new Set(faces), seams = seamSet(m), byEdge = new Map<number, number[]>()
+  for (const fi of faces) { const f = m.faces[fi]; f.v.forEach((a, i) => { const k = edgeKey(a, f.v[(i + 1) % f.v.length]); byEdge.set(k, [...(byEdge.get(k) || []), fi]) }) }
+  const nrm = new Map(faces.map(fi => { const n = faceNormal(m, m.faces[fi]); return [fi, [n.x, n.y, n.z] as V3] }))
+  const cosMax = Math.cos((maxDeg * Math.PI) / 180), seen = new Set<number>(), out: number[][] = []
+  for (const s of faces) {
+    if (seen.has(s)) continue
+    const grp = [s], q = [s]; seen.add(s)
+    while (q.length) {
+      const fi = q.pop()!, f = m.faces[fi]
+      f.v.forEach((a, i) => {
+        const k = edgeKey(a, f.v[(i + 1) % f.v.length])
+        if (seams.has(k)) return
+        for (const g of byEdge.get(k) || []) {
+          if (seen.has(g) || !set.has(g) || dot3(nrm.get(fi)!, nrm.get(g)!) < cosMax) continue
+          seen.add(g); grp.push(g); q.push(g)
+        }
+      })
+    }
+    out.push(grp)
+  }
+  return out
+}
+
+/** Upright 2D frame on a plane with normal n: v follows world up where it can, u = v × n (seen from outside). */
+function planeFrame(n: V3): { u: V3; v: V3 } {
+  const up: V3 = Math.abs(n[1]) > 0.95 ? [0, 0, n[1] > 0 ? -1 : 1] : [0, 1, 0]
+  const v = norm3(sub3(up, [n[0] * dot3(up, n), n[1] * dot3(up, n), n[2] * dot3(up, n)]))
+  return { u: cross3(v, n), v }
+}
+
+/**
+ * Pixel-true per-face layout (Blockbench "auto size" for meshes). Each planar group is projected onto its plane
+ * (upright where possible), turned so its most common edge direction (length-weighted, 2° bins) lies on an axis,
+ * scaled to `density` px per unit, kept centred where its UVs were (whole texels) and clamped into 0..1.
+ * Returns the groups laid out.
+ */
+export function autoPixel(m: Model, faces: number[], density: number, tw: number, th: number): number {
+  const groups = planarGroups(m, faces)
+  for (const g of groups) {
+    // plane: area-weighted normal
+    let n: V3 = [0, 0, 0]
+    for (const fi of g) { const w = newell(m.verts, m.faces[fi].v); n = [n[0] + w.x, n[1] + w.y, n[2] + w.z] }
+    n = norm3(n)
+    const { u: U3, v: V3d } = planeFrame(n)
+    const pt = (vi: number): Vec2 => { const p = m.verts[vi] as V3; return [dot3(p, U3), dot3(p, V3d)] }
+    // dominant edge direction mod 90°
+    const bins = new Float64Array(45)
+    for (const fi of g) {
+      const f = m.faces[fi]
+      f.v.forEach((a, i) => {
+        const p = pt(a), q = pt(f.v[(i + 1) % f.v.length]), dx = q[0] - p[0], dy = q[1] - p[1], len = Math.hypot(dx, dy)
+        if (len < 1e-9) return
+        let ang = (Math.atan2(dy, dx) * 180) / Math.PI
+        ang = ((ang % 90) + 90) % 90
+        bins[Math.min(44, Math.floor(ang / 2))] += len
+      })
+    }
+    let bi = 0
+    for (let i = 1; i < 45; i++) if (bins[i] > bins[bi] + 1e-9) bi = i
+    // mean angle inside the winning bin, then rotate it onto the nearest axis (|turn| <= 45°)
+    let sw = 0, sa = 0
+    for (const fi of g) {
+      const f = m.faces[fi]
+      f.v.forEach((a, i) => {
+        const p = pt(a), q = pt(f.v[(i + 1) % f.v.length]), len = Math.hypot(q[0] - p[0], q[1] - p[1])
+        if (len < 1e-9) return
+        let ang = (Math.atan2(q[1] - p[1], q[0] - p[0]) * 180) / Math.PI
+        ang = ((ang % 90) + 90) % 90
+        if (Math.min(44, Math.floor(ang / 2)) === bi) { sw += len; sa += ang * len }
+      })
+    }
+    let turn = sw ? -(sa / sw) : 0
+    if (turn < -45) turn += 90
+    const cs = Math.cos((turn * Math.PI) / 180), sn = Math.sin((turn * Math.PI) / 180)
+    // px coordinates (x right, y up), then UV
+    const px = new Map<number, Vec2>()
+    for (const fi of g) for (const vi of m.faces[fi].v) if (!px.has(vi)) { const p = pt(vi); px.set(vi, [(p[0] * cs - p[1] * sn) * density, (p[0] * sn + p[1] * cs) * density]) }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    px.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y) })
+    const w = x1 - x0, h = y1 - y0
+    // where it sits now: centre of its current UVs (px), so the layout stays put
+    const ids = g.flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c)))
+    const b = cornerBox(m, ids)
+    const cx = b ? b.c[0] * tw : tw / 2, cy = b ? b.c[1] * th : th / 2
+    let ox = Math.round(cx - w / 2), oy = Math.round(cy - h / 2)
+    ox = Math.max(0, Math.min(ox, Math.max(0, Math.floor(tw - w)))); oy = Math.max(0, Math.min(oy, Math.max(0, Math.floor(th - h))))
+    for (const fi of g) { const f = m.faces[fi]; f.uv = f.v.map(vi => { const q = px.get(vi)!; return [(ox + q[0] - x0) / tw, (oy + q[1] - y0) / th] as Vec2 }) }
+  }
+  return groups.length
+}
+
+/** Do any two of these groups' UV bounding boxes overlap (by more than eps)? */
+export function groupsOverlap(m: Model, groups: number[][], eps = 1e-6): boolean {
+  const bs = groups.map(g => cornerBox(m, g.flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c))))).filter(Boolean) as NonNullable<ReturnType<typeof cornerBox>>[]
+  for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) {
+    const a = bs[i], c = bs[j]
+    if (a.minU < c.maxU - eps && c.minU < a.maxU - eps && a.minV < c.maxV - eps && c.minV < a.maxV - eps) return true
+  }
+  return false
+}
+
+/** Move each UV island so its box's min corner sits on a whole texel. */
+export function snapIslandsToTexels(m: Model, faces: number[], tw: number, th: number) {
+  const isl = islands(m, faces), groups = new Map<number, number[]>()
+  for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
+  for (const g of groups.values()) {
+    const ids = g.flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c))), b = cornerBox(m, ids)
+    if (!b) continue
+    const dx = Math.round(b.minU * tw) / tw - b.minU, dy = Math.round(b.minV * th) / th - b.minV
+    for (const fi of g) m.faces[fi].uv = m.faces[fi].uv.map(([u, v]) => [u + dx, v + dy] as Vec2)
+  }
+}
+
+/**
+ * Project from a view: `proj` maps a world point to view-plane coordinates (x right, y up, same units on both
+ * axes). The result is fitted into 0..1 keeping the aspect, like the axis projections.
+ */
+export function projectView(m: Model, faces: number[], proj: (p: Vec3Like) => Vec2) {
+  const uvs = faces.map(fi => m.faces[fi].v.map(v => proj(m.verts[v])))
+  let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity
+  uvs.flat().forEach(([u, v]) => { minU = Math.min(minU, u); minV = Math.min(minV, v); maxU = Math.max(maxU, u); maxV = Math.max(maxV, v) })
+  const s = Math.max(maxU - minU, maxV - minV) || 1
+  faces.forEach((fi, k) => { m.faces[fi].uv = uvs[k].map(([u, v]) => [(u - minU) / s, (v - minV) / s] as Vec2) })
+}
+type Vec3Like = readonly number[]
+
+export type BoxSide = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz'
+/**
+ * Minecraft-style box layout (the cross). Sides come from each face's dominant normal axis; sizes from the
+ * faces' bounding box × density (w = X, h = Y, d = Z in px). Image rows, top-left origin:
+ *   row 1 (d tall):  [gap d] [top w] [bottom w]
+ *   row 2 (h tall):  [−X d] [front +Z w] [+X d] [back −Z w]
+ * so the side strip runs continuously around the object. Every face keeps its place within its side; textures
+ * stay upright and unmirrored. The cross's top-left goes to `at` (px, top-left origin), whole texels. Returns the
+ * cross size in px.
+ */
+export function boxCross(m: Model, faces: number[], density: number, tw: number, th: number, at?: { x: number; y: number }): { w: number; h: number; x: number; y: number } {
+  const { lo, hi } = boundsOf(m, faces)
+  const W = Math.round((hi[0] - lo[0]) * density), H = Math.round((hi[1] - lo[1]) * density), D = Math.round((hi[2] - lo[2]) * density)
+  const cw = 2 * D + 2 * W, ch = D + H
+  // rect (px, top-left) and the side's 2D frame: (u, v) from a world point, both 0..1 across the side
+  const nx = (p: Vec3Like, k: number) => (hi[k] - lo[k] > 1e-12 ? (p[k] - lo[k]) / (hi[k] - lo[k]) : 0.5)
+  const sides: Record<BoxSide, { r: [number, number, number, number]; f: (p: Vec3Like) => Vec2 }> = {
+    py: { r: [D, 0, W, D], f: p => [nx(p, 0), 1 - nx(p, 2)] },
+    ny: { r: [D + W, 0, W, D], f: p => [nx(p, 0), nx(p, 2)] },
+    nx: { r: [0, D, D, H], f: p => [nx(p, 2), nx(p, 1)] },
+    pz: { r: [D, D, W, H], f: p => [nx(p, 0), nx(p, 1)] },
+    px: { r: [D + W, D, D, H], f: p => [1 - nx(p, 2), nx(p, 1)] },
+    nz: { r: [2 * D + W, D, W, H], f: p => [1 - nx(p, 0), nx(p, 1)] },
+  }
+  let x = at ? Math.round(at.x) : 0, y = at ? Math.round(at.y) : 0
+  x = Math.max(0, Math.min(x, Math.max(0, tw - cw))); y = Math.max(0, Math.min(y, Math.max(0, th - ch)))
+  for (const fi of faces) {
+    const f = m.faces[fi], n = faceNormal(m, f), a = [Math.abs(n.x), Math.abs(n.y), Math.abs(n.z)]
+    const side: BoxSide = a[0] >= a[1] && a[0] >= a[2] ? (n.x >= 0 ? 'px' : 'nx') : a[1] >= a[2] ? (n.y >= 0 ? 'py' : 'ny') : n.z >= 0 ? 'pz' : 'nz'
+    const { r, f: fr } = sides[side]
+    f.uv = f.v.map(vi => { const [s, t] = fr(m.verts[vi]); return [(x + r[0] + s * r[2]) / tw, 1 - (y + r[1] + (1 - t) * r[3]) / th] as Vec2 })
+  }
+  return { w: cw, h: ch, x, y }
+}

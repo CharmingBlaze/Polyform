@@ -371,6 +371,46 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('one undo step', close((await dens())[4], 16, 1e-6))
 }
 
+// UV-8: pixel-true Auto UV, Box cross, Project from view
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(64, 64, 'px64')
+  await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'density 16'))
+  const pxBoxes = (tw, th) => S(([tw, th]) => window.__polyform.getState().model.faces.map(f => { const us = f.uv.map(q => q[0] * tw), vs = f.uv.map(q => (1 - q[1]) * th); return { x0: Math.min(...us), x1: Math.max(...us), y0: Math.min(...vs), y1: Math.max(...vs) } }), [tw, th])
+  const areas = () => S(() => window.__polyform.getState().model.faces.map(f => { let a = 0; f.uv.forEach((q, i) => { const r = f.uv[(i + 1) % f.uv.length]; a += q[0] * r[1] - r[0] * q[1] }); return a / 2 }))
+  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-auto-px"]'); await frame()
+  let bx = await pxBoxes(64, 64)
+  check('Auto px: every side of the 1×1×1 box is 16×16 px on whole pixels', bx.every(r => close(r.x1 - r.x0, 16, 1e-6) && close(r.y1 - r.y0, 16, 1e-6) && close(r.x0, Math.round(r.x0), 1e-6) && close(r.y0, Math.round(r.y0), 1e-6)), JSON.stringify(bx))
+  check('Auto px: no two sides overlap', bx.every((a, i) => bx.every((b, j) => i === j || a.x1 <= b.x0 + 1e-6 || b.x1 <= a.x0 + 1e-6 || a.y1 <= b.y0 + 1e-6 || b.y1 <= a.y0 + 1e-6)))
+  await selFace(0); await frame()
+  check('numeric W / H of a side read 16 × 16', (await p.inputValue('[data-testid="uv-num-w"]')) === '16' && (await p.inputValue('[data-testid="uv-num-h"]')) === '16')
+  await p.keyboard.press('Control+z'); await frame()
+  // Box cross on a 2×1×1 box, 128-px image
+  await S(() => { const s = window.__polyform.getState(); s.edit(m => { m.verts = m.verts.map(([x, y, z]) => [x * 2, y, z]) }, 'wide'); s.selectNone() })
+  await addImage(128, 128, 'px128')
+  await p.click('[data-testid="uv-proj-cross"]'); await frame()
+  bx = await pxBoxes(128, 128)
+  const X0 = Math.min(...bx.map(r => r.x0)), X1 = Math.max(...bx.map(r => r.x1)), Y0 = Math.min(...bx.map(r => r.y0)), Y1 = Math.max(...bx.map(r => r.y1))
+  check('Box cross: 2×1×1 at 16 px/unit is 96 × 32 px', close(X1 - X0, 96, 1e-6) && close(Y1 - Y0, 32, 1e-6), JSON.stringify([X0, X1, Y0, Y1]))
+  check('Box cross: every side has positive area', (await areas()).every(a => a > 0))
+  await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectAll() }); await frame()
+  await p.mouse.move(640, 700); await frame()
+  await p.screenshot({ path: '/workspace/shot-uv-box.png' })
+  await S(() => window.__polyform.getState().selectNone())
+  // Project from view: the perspective pane's camera
+  const pane = p.locator('[data-testid^="pane-"]:visible').first()
+  const pb = await pane.boundingBox()
+  await p.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2); await frame()
+  const before = JSON.stringify(await uvs())
+  await p.click('[data-testid="uv-proj-view"]'); await frame()
+  const after = await uvs()
+  const flat = after.flat()
+  check('From view: UVs change, fit inside 0..1 and touch both ends of the longer side', JSON.stringify(after) !== before && flat.every(([u, v]) => u >= -1e-9 && u <= 1 + 1e-9 && v >= -1e-9 && v <= 1 + 1e-9) && (close(Math.max(...flat.map(q => q[0])) - Math.min(...flat.map(q => q[0])), 1, 1e-6) || close(Math.max(...flat.map(q => q[1])) - Math.min(...flat.map(q => q[1])), 1, 1e-6)))
+  const front = await S(() => { const s = window.__polyform.getState(), cam = window.__polyformViews.find(v => v).camera; return s.model.faces.map(f => { const c = f.v.reduce((a, v) => a.map((x, k) => x + s.model.verts[v][k] / f.v.length), [0, 0, 0]); const p = cam.position; let n = [0, 0, 0]; f.v.forEach((a, i) => { const A = s.model.verts[a], B = s.model.verts[f.v[(i + 1) % f.v.length]]; n = [n[0] + (A[1] - B[1]) * (A[2] + B[2]), n[1] + (A[2] - B[2]) * (A[0] + B[0]), n[2] + (A[0] - B[0]) * (A[1] + B[1])] }); return n[0] * (p.x - c[0]) + n[1] * (p.y - c[1]) + n[2] * (p.z - c[2]) > 0 }) })
+  const ar = await areas()
+  check('From view: faces turned to the camera keep a positive UV area', front.some(x => x) && front.every((f, i) => !f || ar[i] > 0), JSON.stringify([front, ar]))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

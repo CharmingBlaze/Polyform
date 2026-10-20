@@ -9,6 +9,7 @@ import * as U from '../uvops'
 import * as UVS from '../uvsel'
 import { gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
+import { viewCtx } from './Viewport'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
 type Xf = 'move' | 'rotate' | 'scale'
@@ -692,6 +693,45 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (!faces.length) return
     useStore.getState().edit(m => U.keepPins(m, faces, () => (axis === 'cyl' ? U.projectCylinder(m, faces) : axis === 'sphere' ? U.projectSphere(m, faces) : U.project(m, faces, axis))), 'UV project')
   }
+  /** image the pixel layouts are measured on: the shown one, else the paint size */
+  const imgW = () => tw || paintTexSize, imgH = () => th || paintTexSize
+  /** pixel-true Auto UV: each flat group at the project density; repacked (upright, whole texels) if groups collide */
+  const autoPx = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    const w = imgW(), h = imgH(), dens = st.model.props.texelDensity
+    let packed = false, shrunk = false
+    st.edit(m => U.keepPins(m, faces, () => {
+      U.autoPixel(m, faces, dens, w, h)
+      if (U.groupsOverlap(m, U.planarGroups(m, faces))) {
+        packed = true
+        shrunk = U.packIslandsEx(m, faces, 1 / w, { fixed: dens / w, aspect: h / w, noRotate: true }).shrunk
+        U.snapIslandsToTexels(m, faces, w, h)
+      }
+    }), 'UV auto (pixel)')
+    st.notify(`Auto (pixel): ${dens} px per unit on ${w}×${h}${packed ? (shrunk ? ' · did not fit: packed smaller' : ' · packed') : ''}`)
+  }
+  /** project with the camera of the hovered (or maximized) 3D pane */
+  const projectFromView = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    const want = st.maximized ?? interaction.hoverPane
+    const c = viewCtx[want] ?? viewCtx.find(v => v)
+    if (!c) { st.notify('No 3D view to project from'); return }
+    c.camera.updateMatrixWorld()
+    const a = c.w / c.h, q = new THREE.Vector3()
+    st.edit(m => U.keepPins(m, faces, () => U.projectView(m, faces, p => { q.set(p[0], p[1], p[2]).project(c.camera); return [q.x * a, q.y] })), 'UV project from view')
+  }
+  /** Minecraft-style box cross at the project density, at the selection's current top-left */
+  const boxCross = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    const w = imgW(), h = imgH(), dens = st.model.props.texelDensity
+    const b = U.cornerBox(st.model, faces.flatMap(fi => st.model.faces[fi].uv.map((_, c) => fi * 1024 + c)))
+    let r = { w: 0, h: 0, x: 0, y: 0 }
+    st.edit(m => U.keepPins(m, faces, () => { r = U.boxCross(m, faces, dens, w, h, b ? { x: b.minU * w, y: (1 - b.maxV) * h } : undefined) }), 'UV box cross')
+    st.notify(`Box cross: ${r.w}×${r.h} px at ${dens} px per unit${r.w > w || r.h > h ? ` · larger than the ${w}×${h} image: lower the density in File → Properties` : ''}`)
+  }
   const selectIsland = (hit: Hit | null) => {
     const st = useStore.getState(), faces = uvFaces()
     const seeds = hit?.faces ?? (hit ? [] : [...st.selFaces])
@@ -760,11 +800,14 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           {(['project', 'adjust', 'align', 'seams'] as const).map(t => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
         </div>
         {tab === 'project' && <div className="btn-row">
-          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
+          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
+          <B id="auto-px" label="Auto px" tip="Pixel-true: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
+          <B id="proj-cross" label="Box cross" tip="Box layout (Minecraft cross): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
           <B id="proj-front" label="Front" onClick={() => project('z')} />
           <B id="proj-top" label="Top" onClick={() => project('y')} />
           <B id="proj-side" label="Side" onClick={() => project('x')} />
-          <B id="proj-box" label="Box" onClick={() => project('box')} />
+          <B id="proj-view" label="View" tip="Project from the last hovered 3D view's camera" onClick={projectFromView} />
+          <B id="proj-box" label="Box" tip="Per face along its main axis, stacked (fitted into 0–1)" onClick={() => project('box')} />
           <B id="proj-cyl" label="Cylinder" tip="Wrap around the vertical axis; caps go flat into the top strip" onClick={() => project('cyl')} />
           <B id="proj-sphere" label="Sphere" tip="Longitude / latitude about the selection's centre" onClick={() => project('sphere')} />
         </div>}
