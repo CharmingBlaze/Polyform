@@ -103,6 +103,8 @@ export interface ViewCtx {
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera; target: THREE.Vector3; sph: THREE.Spherical; w: number; h: number; update: () => void; el: HTMLDivElement
   /** client-space point on a gizmo handle (axis 0-2 at `along` of the arrow, 3 = center; ring: angle in radians), for e2e tests */
   handlePoint?: (axis: 0 | 1 | 2 | 3, along?: number, ring?: boolean) => { x: number; y: number } | null
+  /** this pane's pickers at local pixel coordinates (face / edge key / vertex, -1 = none), for e2e tests and benchmarks */
+  pick?: { face: (x: number, y: number) => number; edge: (x: number, y: number) => number; vert: (x: number, y: number) => number }
 }
 /** Live view contexts by pane, for tools that need a camera (gizmos, paint, modal transforms). */
 export const viewCtx: (ViewCtx | null)[] = [null, null, null, null]
@@ -279,6 +281,9 @@ export function Viewport({ pane }: { pane: number }) {
     }
     return best
   }
+
+  // the pickers close over this render's shading, so refresh them after every render
+  useEffect(() => { if (ctx.current) ctx.current.pick = { face: pickFaceScreen, edge: pickEdge, vert: pickVert } })
 
   // camera controls shared by mouse and the title-bar drag buttons
   const orbit = (dx: number, dy: number) => {
