@@ -733,6 +733,33 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('Ctrl+Alt+click selects their islands', isl.includes(0) && isl.includes(1), JSON.stringify(isl))
 }
 
+// New primitives on an image: UVs in pixels at the texel density, placed in free space (one undo step each)
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  const mat = await addImage(128, 128, 'prim128')
+  // the image on material 0 (new objects use it); the existing box squeezed into the bottom-right 8×8 texels
+  await S(mat => window.__polyform.getState().edit(m => { m.materials[0].texture = m.materials[mat].texture; m.groups.forEach(g => (g.mat = 0)); m.props.texelDensity = 16; m.faces.forEach(f => { f.uv = [[120 / 128, 0], [1, 0], [1, 8 / 128], [120 / 128, 8 / 128]] }) }, 'prep'), mat)
+  const pxBox = fs => S(fs => { const m = window.__polyform.getState().model; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const fi of fs) for (const [u, v] of m.faces[fi].uv) { x0 = Math.min(x0, u * 128); x1 = Math.max(x1, u * 128); y0 = Math.min(y0, (1 - v) * 128); y1 = Math.max(y1, (1 - v) * 128) } return { x: +x0.toFixed(4), y: +y0.toFixed(4), w: +(x1 - x0).toFixed(4), h: +(y1 - y0).toFixed(4) } }, fs)
+  const whole = fs => S(fs => fs.every(fi => window.__polyform.getState().model.faces[fi].uv.every(([u, v]) => Math.abs(u * 128 - Math.round(u * 128)) < 1e-6 && Math.abs(v * 128 - Math.round(v * 128)) < 1e-6)), fs)
+  const newFaces = () => S(() => [...window.__polyform.getState().selFaces].sort((a, b) => a - b))
+  await S(() => window.__polyform.getState().addPrimitive('box')); await frame()
+  const fa = await newFaces(), ba = await pxBox(fa)
+  check('Add box on an image: the 64×32 px box cross at 16 px/unit, top-left, whole pixels', fa.length === 6 && ba.x === 0 && ba.y === 0 && ba.w === 64 && ba.h === 32 && await whole(fa), JSON.stringify(ba))
+  await S(() => window.__polyform.getState().addPrimitive('cylinder')); await frame()
+  const fc = await newFaces(), bc = await pxBox(fc)
+  check('Add cylinder: flat faces at the density, whole-pixel origin, in free space below / beside the box cross', fc.length > 6 && Number.isInteger(bc.x) && Number.isInteger(bc.y) && (bc.y >= 34 || bc.x >= 66) && bc.x + bc.w <= 128 && bc.y + bc.h <= 128, JSON.stringify(bc))
+  // drawn primitive (drag in a view): sized after the drag, still free space
+  await S(() => { const s = window.__polyform.getState(); s.armDraw('box'); s.drawSet({ min: [3, 0, 0], max: [4, 2, 1] }); s.drawSet({ min: [3, 0, 0], max: [4, 1, 1] }); s.confirmDraw() }); await frame()
+  const fd = await newFaces(), bd = await pxBox(fd)
+  const apart = (a, b) => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y
+  check('Drawn box: 64×32 px cross after the drag, clear of the others', bd.w === 64 && bd.h === 32 && await whole(fd) && apart(bd, ba) && apart(bd, bc) && apart(bd, { x: 120, y: 120, w: 8, h: 8 }), JSON.stringify([bd, bc]))
+  const nf = () => S(() => window.__polyform.getState().model.faces.length)
+  const counts = []
+  for (let k = 0; k < 3; k++) { await p.keyboard.press('Control+z'); await frame(); counts.push(await nf()) }
+  check('each add is one undo step (drawn box, cylinder, box)', counts.join() === [12 + fc.length, 12, 6].join(), counts.join())
+  check('…and the UVs of the existing box are untouched throughout', (await pxBox([0, 1, 2, 3, 4, 5])).x === 120)
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import * as M from './model'
 import * as G from './geom'
+import { primitiveImageUVs, primitiveUVNote } from './primuv'
 import type { Model, ParamDef, Params, PrimitiveKind, Vec3 } from './model'
 
 export interface OpSel { verts: number[]; faces: number[]; edges: [number, number][]; bones: number[]; axis: boolean[] }
@@ -32,7 +33,7 @@ export const OPS: OpDef[] = [
   ...(Object.keys(M.PRIMITIVES) as PrimitiveKind[]).map((k): OpDef => ({
     id: `add.${k}`, label: M.PRIMITIVES[k].label, tab: 'Create',
     params: [...M.PRIMITIVES[k].params, N('x', 'Center X', 0, -1000, 1000, 0.1), N('y', 'Center Y', 0, -1000, 1000, 0.1), N('z', 'Center Z', 0, -1000, 1000, 0.1)],
-    run: (m, _s, p) => { const r = M.addPrimitive(m, k, [p.x, p.y, p.z], p); return { verts: r.verts, faces: r.faces } },
+    run: (m, _s, p) => { const r = M.addPrimitive(m, k, [p.x, p.y, p.z], p); const uv = primitiveImageUVs(m, r.faces, k); return { verts: r.verts, faces: r.faces, note: primitiveUVNote(uv) } },
   })),
   // ---------- Modify (exact transforms)
   {

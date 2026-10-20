@@ -17,6 +17,7 @@ import * as UV from './uvops'
 import * as UVS from './uvsel'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
 import { textures as tex } from './textures'
+import { primitiveImageUVs, primitiveTarget } from './primuv'
 import * as IO from './imageops'
 import { hexToRgb } from './paintcore'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
@@ -49,6 +50,7 @@ export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects
 export interface DrawState { kind: PrimitiveKind; min: Vec3; max: Vec3; has: boolean; seg: number; axes: [boolean, boolean, boolean]; view: string | null }
 /** Model before the drawn primitive (the preview is regenerated from it on every change). */
 let drawBase: Model | null = null
+let drawOcc: Uint8Array | null = null
 
 export const history = new History()
 const clearedNote = (c: { name: string; keys: number }[]) =>
@@ -683,6 +685,9 @@ export const useStore = create<State>((set, get) => ({
     const nd: DrawState = { ...d, ...extra, min: [...box.min] as Vec3, max: [...box.max] as Vec3, has: true }
     const m = M.cloneModel(drawBase!)
     const r = M.fitPrimitive(m, nd.kind, nd.min, nd.max, nd.seg)
+    // on a material with an image: UVs in pixels at the texel density, in free space (others' texels cached per draw)
+    if (!d.has || !drawOcc) { const t = primitiveTarget(m, r.faces); drawOcc = t ? UV.occupancy(m, t.others, t.w, t.h) : null }
+    if (drawOcc) primitiveImageUVs(m, r.faces, nd.kind, drawOcc)
     interaction.modal = true
     set(st => ({ model: m, version: st.version + 1, draw: nd, selFaces: new Set(r.faces), selVerts: new Set(r.verts), selEdges: new Set() }))
   },

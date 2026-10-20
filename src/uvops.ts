@@ -769,10 +769,11 @@ function planeFrame(n: V3): { u: V3; v: V3 } {
  * Pixel-true per-face layout (Blockbench "auto size" for meshes). Each planar group is projected onto its plane
  * (upright where possible), turned so its most common edge direction (length-weighted, 2° bins) lies on an axis,
  * scaled to `density` px per unit, kept centred where its UVs were (whole texels) and clamped into 0..1.
- * Returns the groups laid out.
+ * Returns the groups laid out. `maxDeg`: how far apart face normals in one group may be (1 = flat groups only,
+ * every face exactly at the density).
  */
-export function autoPixel(m: Model, faces: number[], density: number, tw: number, th: number): number {
-  const groups = planarGroups(m, faces)
+export function autoPixel(m: Model, faces: number[], density: number, tw: number, th: number, maxDeg = 36): number {
+  const groups = planarGroups(m, faces, maxDeg)
   for (const g of groups) {
     // plane: area-weighted normal
     let n: V3 = [0, 0, 0]
@@ -945,4 +946,52 @@ export function densityColor(d: number, target: number, alpha = 0.55): string {
   const t = Math.max(-1, Math.min(1, Math.log2(d / target)))
   const g = [70, 200, 110], lo = [70, 120, 255], hi = [240, 70, 60], c = t < 0 ? lo : hi, k = Math.abs(t)
   return `rgba(${g.map((x, i) => Math.round(x + (c[i] - x) * k)).join(',')},${alpha})`
+}
+// ---------- free-space placement (new primitives at the texel density) ----------
+/** Texels covered by these faces' UVs on a tw×th image: 1 = taken (texel centres, image rows top-down). */
+export function occupancy(m: Model, faces: number[], tw: number, th: number): Uint8Array {
+  const occ = new Uint8Array(tw * th)
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length < 3) continue
+    scanPolygon(tw, th, f.uv.map(([u, v]) => [u * tw, (1 - v) * th] as [number, number]), i => { occ[i] = 1 })
+  }
+  return occ
+}
+/**
+ * First spot (rows from the top, then columns from the left) where a w×h px block fits inside the image with
+ * `pad` free texels around it (the padding may run off the image edge). Null when there is none.
+ */
+export function findFreeRect(occ: Uint8Array, tw: number, th: number, w: number, h: number, pad = 0): { x: number; y: number } | null {
+  if (w > tw || h > th || w < 0 || h < 0) return null
+  // summed-area table of taken texels
+  const W = tw + 1, sat = new Int32Array(W * (th + 1))
+  for (let y = 0; y < th; y++) { let row = 0; for (let x = 0; x < tw; x++) { row += occ[y * tw + x]; sat[(y + 1) * W + x + 1] = sat[y * W + x + 1] + row } }
+  const sum = (x0: number, y0: number, x1: number, y1: number) => {
+    x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(tw, x1); y1 = Math.min(th, y1)
+    return x1 <= x0 || y1 <= y0 ? 0 : sat[y1 * W + x1] - sat[y0 * W + x1] - sat[y1 * W + x0] + sat[y0 * W + x0]
+  }
+  for (let y = 0; y + h <= th; y++) for (let x = 0; x + w <= tw; x++) if (!sum(x - pad, y - pad, x + w + pad, y + h + pad)) return { x, y }
+  return null
+}
+export interface PrimitiveUVResult { w: number; h: number; x: number; y: number; fits: boolean }
+/**
+ * UVs for a new primitive on a tw×th image, in whole pixels at `density` px per unit: a box gets the box cross,
+ * anything else its flat face groups (each face exactly at the density) packed upright. The layout then moves as one block to the first free spot
+ * of the image (`occ`: texels other faces already use), `padPx` texels clear of them. When there is no room it
+ * stays at the top-left (`fits` false) and may overlap.
+ */
+export function primitivePixelUVs(m: Model, faces: number[], o: { density: number; tw: number; th: number; padPx?: number; box?: boolean; occ?: Uint8Array }): PrimitiveUVResult {
+  const { density, tw, th } = o, pad = Math.max(0, Math.round(o.padPx ?? 2))
+  if (o.box) boxCross(m, faces, density, tw, th, { x: 0, y: 0 })
+  else { autoPixel(m, faces, density, tw, th, 1); packIslandsEx(m, faces, 0, { fixed: density / tw, pixel: { tw, th }, padPx: pad, noRotate: true }) }
+  const b = cornerBox(m, faces.flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c))))
+  if (!b) return { w: 0, h: 0, x: 0, y: 0, fits: true }
+  const bx = Math.round(b.minU * tw), by = Math.round((1 - b.maxV) * th)
+  const w = Math.ceil(b.maxU * tw - bx - 1e-6), h = Math.ceil((1 - b.minV) * th - by - 1e-6)
+  const spot = findFreeRect(o.occ ?? new Uint8Array(tw * th), tw, th, w, h, pad)
+  const to = spot ?? { x: 0, y: 0 }
+  const du = (to.x - bx) / tw, dv = -(to.y - by) / th
+  for (const fi of faces) m.faces[fi].uv = m.faces[fi].uv.map(([u, v]) => [u + du, v + dv] as Vec2)
+  return { w, h, x: to.x, y: to.y, fits: !!spot }
 }
