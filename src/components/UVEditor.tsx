@@ -383,7 +383,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     for (const fi of faces) m.faces[fi].uv.forEach((u, i) => inside(u) && vs.add(m.faces[fi].v[i]))
     return { verts: [...vs] }
   }
-  const applyHit = (hit: Hit | null, add: boolean, sub: boolean) => {
+  const applyHit = (hit: Hit | null, add: boolean, sub: boolean, toggle = false): void => {
+    // Ctrl+click: add the element if it is not selected, else remove it; on empty space nothing changes
+    if (toggle) { if (hit) { const was = hitSelected(hit); applyHit(hit, !was, was) } return }
     const st = useStore.getState()
     const merge = (cur: Set<number>, ids: number[]) => { const s = new Set(add || sub ? cur : []); ids.forEach(i => (sub ? s.delete(i) : s.add(i))); return s }
     if (hit?.corners) {
@@ -585,7 +587,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       // pick / fill already handled; allow fall-through only if nothing happened
       if (useStore.getState().paint.mode === 'pick' || useStore.getState().paint.mode === 'fill') return
     }
-    const add = e.shiftKey, sub = e.ctrlKey || e.metaKey
+    // Ctrl+drag: marquee from anywhere (replace; +Shift add, +Alt subtract); a Ctrl+click toggles. Shift-drag on empty space adds.
+    const ctrl = e.ctrlKey || e.metaKey
+    const add = e.shiftKey, sub = ctrl && e.altKey && !e.shiftKey
+    if (ctrl) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, toggle: !add && !sub, moved: false }; return }
     coarse.current = e.pointerType === 'pen' || e.pointerType === 'touch'
     if (!add && !sub) {
       const h = hitHandle(x, y)
@@ -660,7 +665,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     // a plain click on an already selected element selects only it
     if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
     if (d.kind !== 'rect') { force(n => n + 1); return }
-    if (!d.moved) { applyHit(pickAt(d.x0, d.y0), d.add, d.sub); return }
+    if (!d.moved) { applyHit(pickAt(d.x0, d.y0), d.add, d.sub, !!d.toggle); return }
     applyHit(pickRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)), d.add, d.sub)
     void e
   }
@@ -885,7 +890,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
         ]} />}
         {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">

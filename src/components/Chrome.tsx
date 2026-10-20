@@ -349,7 +349,7 @@ function toolHint(s: ReturnType<typeof useStore.getState>): string {
     return `${base}: drag on the model or UV editor · Ctrl+click picks · [ ] size · Mirror X in the Paint tab`
   })()
   const hint: Record<string, string> = {
-    select: 'Drag to box-select · Shift add · Ctrl remove · Alt+click edge/face loop · L / Ctrl+L linked · Ctrl+/- grow/shrink',
+    select: 'Drag to box-select · Ctrl-drag box (+Shift add, +Alt remove) · Shift-click add · Ctrl-click toggle · Alt+click edge/face loop · L / Ctrl+L linked · Ctrl+/- grow/shrink',
     move: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): drag the tip joint — parents rotate to reach · ` : '') + 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,
     rotate: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): rotate orbits the tip · ` : '') + 'Drag a ring to rotate (outer ring = view axis) · R modal · Ctrl snaps 15°' + mir,
     scale: 'Drag a cube to scale (center = uniform) · S modal · Ctrl snaps 0.1' + mir,
@@ -416,6 +416,7 @@ export function HelpPopover() {
   const ws = shownWorkspace(workspace, mode)
   const keyed = commands.filter(c => c.keys && (!q || `${c.label} ${c.keys} ${c.group}`.toLowerCase().includes(q.toLowerCase())))
   const groups = [...new Set(keyed.map(c => c.group))]
+  const mouse = MOUSE_TIPS.filter(([a, k]) => !q || `${a} ${k} mouse`.toLowerCase().includes(q.toLowerCase()))
   return (
     <div className="help-pop" data-testid="help" role="dialog" aria-label="Hints and shortcuts">
       <div className="help-head"><b>Hints & shortcuts</b><span className="grow" /><button className="icon-btn" onClick={() => set({ helpOpen: false })} data-testid="help-close"><X size={14} /></button></div>
@@ -423,6 +424,9 @@ export function HelpPopover() {
         <p className="help-tip" data-testid="help-tool">{full}</p>
         <ul className="help-ws" data-testid="help-ws">{WS_TIPS[ws].map(t => <li key={t}>{t}</li>)}</ul>
         <input className="help-filter" placeholder="Filter shortcuts…" value={q} onChange={e => setQ(e.target.value)} data-testid="help-filter" />
+        {mouse.length > 0 && <div className="help-group" data-testid="help-mouse"><div className="help-g">Mouse</div>
+          {mouse.map(([a, k]) => <div key={a} className="help-row"><span>{a}</span><kbd>{k}</kbd></div>)}
+        </div>}
         {groups.map(g => <div key={g} className="help-group"><div className="help-g">{g}</div>
           {keyed.filter(c => c.group === g).map(c => <div key={c.id} className="help-row"><span>{c.label}</span><kbd>{c.keys}</kbd></div>)}
         </div>)}
@@ -430,6 +434,18 @@ export function HelpPopover() {
     </div>
   )
 }
+
+/** Pointer gestures (3D views and UV editor); the help lists them above the keyboard shortcuts. */
+export const MOUSE_TIPS: [string, string][] = [
+  ['Box select (replace), any tool, from anywhere', 'Ctrl+Drag'],
+  ['Box select: add', 'Ctrl+Shift+Drag'],
+  ['Box select: remove', 'Ctrl+Alt+Drag'],
+  ['Toggle one element', 'Ctrl+Click'],
+  ['Add to selection', 'Shift+Click'],
+  ['Box select with pen / touch: drag on empty space, or use the Select tool', 'Drag'],
+  ['Edge / face loop', 'Alt+Click'],
+  ['Maximize / restore a view: the ⤢ button in its header', 'Shift+Space'],
+]
 
 /** Small menu at the mouse (Alt+E). Click an item or press its number; Esc or a click outside closes it. */
 let lastClient = { x: 200, y: 200 }

@@ -107,6 +107,7 @@ check('status hint is the short first clause', !shortHint.includes(' · '), shor
 await p.click('[data-testid="help-btn"]'); await frame()
 const help = await p.textContent('[data-testid="help"]')
 check('? popover: full tool hint, workspace tips, every shortcut', /Ctrl\+K|Ctrl\+R/.test(help) && /extrude/i.test(help) && (await p.locator('.help-row').count()) > 40, String(await p.locator('.help-row').count()))
+check('? popover: Mouse group documents Ctrl+drag box select (+Shift add, +Alt remove) and the maximize button', /Ctrl\+Drag/.test(help) && /Ctrl\+Shift\+Drag/.test(help) && /Ctrl\+Alt\+Drag/.test(help) && /Maximize/.test(await p.textContent('[data-testid="help-mouse"]')))
 await p.fill('[data-testid="help-filter"]', 'loop cut'); await frame()
 check('shortcut filter', (await p.locator('.help-row').count()) >= 1 && (await p.locator('.help-row').count()) < 5)
 await p.keyboard.press('Escape'); await frame()

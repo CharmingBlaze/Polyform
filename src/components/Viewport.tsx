@@ -25,7 +25,7 @@ const ORTHO_DIR: Record<string, { pos: Vec3; up: Vec3 }> = {
 }
 
 type Drag =
-  | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean }
+  | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean; toggle?: boolean }
   | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number; cursorAt?: { x: number; y: number } }
   | { kind: 'paint' }
   | { kind: 'draw'; phase: 'foot' | 'height'; p0: THREE.Vector3; x0: number; y0: number; moved: boolean; h0?: number }
@@ -1018,7 +1018,7 @@ export function Viewport({ pane }: { pane: number }) {
     hit.current!.setPointerCapture(e.pointerId)
     if (btn === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
     if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
-    if (btn === 2 || (btn === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
+    if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
     if (btn !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still
@@ -1055,15 +1055,18 @@ export function Viewport({ pane }: { pane: number }) {
       useStore.getState().setSelection({ verts: sv })
       return
     }
+    // Ctrl+drag: marquee from anywhere (replace; +Shift add, +Alt subtract); a Ctrl+click toggles one element
+    const ctrl = e.ctrlKey || e.metaKey
+    if (ctrl) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.altKey && !e.shiftKey, alt: false, toggle: !e.shiftKey && !e.altKey }; return }
     // press on an element: select it now, drag past 4 px moves it (one undo step); empty space: marquee
-    const hitEl = !e.altKey && !(e.ctrlKey || e.metaKey) ? pickAny(x, y, st) : null
+    const hitEl = !e.altKey ? pickAny(x, y, st) : null
     if (hitEl) {
       const was = isSelected(hitEl, st)
       if (!was) selectHit(hitEl, e.shiftKey ? 'add' : 'replace')
       drag.current = { kind: 'press', x0: x, y0: y, hit: hitEl, wasSelected: was, add: e.shiftKey }
       return
     }
-    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.ctrlKey || e.metaKey, alt: e.altKey }
+    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: false, alt: e.altKey }
   }
 
   function pickAny(x: number, y: number, st: ReturnType<typeof useStore.getState>): Hit | null {
@@ -1201,9 +1204,10 @@ export function Viewport({ pane }: { pane: number }) {
     const inside = (p: { x: number; y: number; z: number }) => p.z > -1 && p.z < 1 && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1
     const m = st.model
     const P = sceneManager.posed
+    const toggle = click && !!d.toggle
     const merge = (cur: Set<number>, hits: number[]) => {
-      const s = new Set(d.add || d.sub ? cur : [])
-      hits.forEach(h => (d.sub ? s.delete(h) : s.add(h)))
+      const s = new Set(d.add || d.sub || toggle ? cur : [])
+      hits.forEach(h => (toggle ? (s.has(h) ? s.delete(h) : s.add(h)) : d.sub ? s.delete(h) : s.add(h)))
       return s
     }
     if (mode === 'joint') {
@@ -1251,7 +1255,7 @@ export function Viewport({ pane }: { pane: number }) {
         if (hitEl.type === 'vert') st.setSelection({ verts: merge(st.selVerts, [hitEl.i]) })
         else if (hitEl.type === 'edge') st.setSelection({ edges: merge(st.selEdges, [hitEl.i]) })
         else st.setSelection({ faces: merge(st.selFaces, [hitEl.i]) })
-      } else if (!d.add && !d.sub) st.selectNone()
+      } else if (!d.add && !d.sub && !toggle) st.selectNone()
       return
     }
     // box select follows the sub-mode; in solid shading only visible elements are taken
@@ -1344,8 +1348,7 @@ export function Viewport({ pane }: { pane: number }) {
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>
       <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel}
-        onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none' }}
-        onDoubleClick={() => set({ maximized: maximized !== null ? null : pane })} />
+        onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none' }} />
       {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none' }} />}
       <div className="vp-title">
         <select value={cfg.type} data-testid={`pane-${pane}-view`} onChange={e => setPane({ type: e.target.value as ViewType })} title="View type">
@@ -1358,7 +1361,7 @@ export function Viewport({ pane }: { pane: number }) {
         <button className="vp-btn" data-testid={`pane-${pane}-pan`} title="Pan: drag this button" {...dragButton('pan')}><Move size={13} /></button>
         <button className="vp-btn" data-testid={`pane-${pane}-rotate`} title={isPersp ? 'Rotate: drag this button' : 'Rotate (perspective only)'} disabled={!isPersp} {...dragButton('orbit')}><Rotate3d size={13} /></button>
         <button className="vp-btn" data-testid={`pane-${pane}-zoom`} title="Zoom: drag this button up/down" {...dragButton('zoom')}><Search size={13} /></button>
-        <button className="vp-btn" data-testid={`pane-${pane}-max`} title={maximized === pane ? 'Restore' : 'Maximize'} onClick={() => set({ maximized: maximized === pane ? null : pane })}>{maximized === pane ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button>
+        <button className="vp-btn" data-testid={`pane-${pane}-max`} title={maximized === pane ? 'Restore (Shift+Space)' : 'Maximize (Shift+Space)'} onClick={() => set({ maximized: maximized === pane ? null : pane })}>{maximized === pane ? <Minimize2 size={13} /> : <Maximize2 size={13} />}</button>
       </div>
       <div className="vp-corner">
         <button title="Frame selected (F)" onClick={() => frameSelection()}>Frame</button>

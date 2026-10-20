@@ -54,6 +54,58 @@ for (const [kind, pane] of [['pan', 1], ['rotate', 1], ['zoom', 1], ['pan', 0], 
   check('maximize toggles back', restored === null)
   check('maximize keeps the same camera', JSON.stringify(before.pos) === JSON.stringify(after.pos) && JSON.stringify(before.target) === JSON.stringify(after.target), JSON.stringify([before, after]))
 }
+
+// double-click no longer changes the layout; only the header button (and Shift+Space) maximizes
+{
+  const bb = await p.locator('[data-testid="pane-1"] .vp-hit').boundingBox()
+  await p.mouse.dblclick(bb.x + bb.width * 0.8, bb.y + bb.height * 0.85); await p.waitForTimeout(100)
+  check('double-click in a view does not maximize', (await p.evaluate(() => window.__polyform.getState().maximized)) === null)
+}
+// Ctrl+drag marquee with any tool, from anywhere (even over an element): replace / +Shift add / +Alt remove; Ctrl+click toggles
+{
+  await p.evaluate(() => {
+    const s = window.__polyform.getState()
+    s.edit(m => { m.faces = []; m.verts = []; m.vbone = []; m.skin = []; m.groups = []; m.bones = []; m.wires = [] }, 'clear')
+    s.addPrimitive('box'); s.set({ tool: 'move', mode: 'model', snap: false, maximized: null }); s.setSelectMode('face'); s.selectNone()
+  })
+  await p.waitForTimeout(150)
+  const box = pane => p.evaluate(pane => {
+    const c = window.__polyformViews[pane]; const V = c.camera.position.constructor; const r = c.el.getBoundingClientRect()
+    const pts = window.__polyform.getState().model.verts.map(v => { const q = new V(...v).project(c.camera); return { x: r.left + (q.x * .5 + .5) * c.w, y: r.top + (-q.y * .5 + .5) * c.h } })
+    const xs = pts.map(q => q.x), ys = pts.map(q => q.y)
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }
+  }, pane)
+  const verts = () => p.evaluate(() => JSON.stringify(window.__polyform.getState().model.verts))
+  const faces = () => p.evaluate(() => window.__polyform.getState().selFaces.size)
+  const withKeys = async (keys, fn) => { for (const k of keys) await p.keyboard.down(k); await fn(); for (const k of [...keys].reverse()) await p.keyboard.up(k) }
+  const dragFrom = async (a, b2) => { await p.mouse.move(a.x, a.y); await p.mouse.down(); await p.mouse.move(b2.x, b2.y, { steps: 8 }); await p.mouse.up(); await p.waitForTimeout(60) }
+  const B = await box(2), mid = { x: (B.x0 + B.x1) / 2, y: (B.y0 + B.y1) / 2 }, far = { x: B.x1 + 30, y: B.y1 + 30 }
+  const v0 = await verts()
+  await withKeys(['Control'], () => dragFrom(mid, far))
+  const n1 = await faces()
+  check('Ctrl+drag starting on a face (Move tool) box-selects instead of moving', n1 > 0 && (await verts()) === v0, `${n1}`)
+  // off the gizmo (it sits on the selection centre and keeps Ctrl = snap there)
+  const q = { x: B.x0 + (B.x1 - B.x0) * 0.25, y: B.y0 + (B.y1 - B.y0) * 0.25 }
+  await withKeys(['Control'], () => p.mouse.click(q.x, q.y)); await p.waitForTimeout(60)
+  const n2 = await faces()
+  await withKeys(['Control'], () => p.mouse.click(q.x, q.y)); await p.waitForTimeout(60)
+  check('Ctrl+click toggles a face, a second Ctrl+click toggles it back', Math.abs(n2 - n1) === 1 && (await faces()) === n1, `${n1} ${n2}`)
+  // a narrower Ctrl+drag replaces; Ctrl+Shift+drag over everything adds back
+  await p.evaluate(() => window.__polyform.getState().set({ tool: 'select' }))
+  await p.evaluate(() => window.__polyform.getState().selectNone())
+  const P = await box(1), pm = { x: (P.x0 + P.x1) / 2, y: (P.y0 + P.y1) / 2 }, pfar = { x: P.x1 + 30, y: P.y1 + 30 }, pnear = { x: P.x0 - 30, y: P.y0 - 30 }
+  await withKeys(['Control'], () => dragFrom(pnear, pfar))
+  const all = await faces()
+  await withKeys(['Control'], () => dragFrom(pm, pfar))
+  const part = await faces()
+  check('Ctrl+drag replaces the selection', all > 0 && part > 0 && part < all, `${all} ${part}`)
+  await withKeys(['Control', 'Shift'], () => dragFrom(pnear, pfar))
+  check('Ctrl+Shift+drag adds', (await faces()) === all)
+  const cam = JSON.stringify((await cams())[1])
+  await withKeys(['Control', 'Alt'], () => dragFrom(pnear, pfar))
+  const left = await faces()
+  check('Ctrl+Alt+drag removes and does not orbit the perspective view', left === 0 && JSON.stringify((await cams())[1]) === cam, `${left}/${all}`)
+}
 await b.close()
 for (const [n, ok, info] of results) console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info)
 console.log('pageErrors', JSON.stringify(errs))

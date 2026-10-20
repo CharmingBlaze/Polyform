@@ -525,6 +525,31 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.click('[data-testid="uv-pack-opts"]')
 }
 
+// Ctrl+drag marquee in the UV editor (same rule as the 3D views): replace / +Shift add / +Alt remove; Ctrl+click toggles
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await gridLayout(); await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.selectNone() }); await frame()
+  const fsel = () => S(() => [...window.__polyform.getState().selFaces].sort((a, b) => a - b).join(','))
+  const around = async i => { const ox = (1 + (i % 3) * 5) / 16, oy = (1 + Math.floor(i / 3) * 6) / 16; return [await uvC(ox - 0.5 / 16, oy - 0.5 / 16), await uvC(ox + 4.5 / 16, oy + 4.5 / 16)] }
+  const ctrlDrag = async (a, z, extra = []) => { for (const k of ['Control', ...extra]) await p.keyboard.down(k); await p.mouse.move(a.x, a.y); await p.mouse.down(); await p.mouse.move((a.x + z.x) / 2, (a.y + z.y) / 2, { steps: 3 }); await p.mouse.move(z.x, z.y, { steps: 3 }); await p.mouse.up(); for (const k of ['Control', ...extra].reverse()) await p.keyboard.up(k); await frame() }
+  const ctrlClick = async a => { await p.keyboard.down('Control'); await p.mouse.click(a.x, a.y); await p.keyboard.up('Control'); await frame() }
+  const u0 = JSON.stringify(await uvs())
+  const c0 = await uvC(...await centroid(0)), [, z4] = await around(4)
+  await ctrlDrag(c0, z4)
+  const got = (await fsel()).split(',').filter(Boolean).map(Number)
+  check('UV: Ctrl+drag starting on a face box-selects (no move)', got.includes(4) && got.every(f => [0, 1, 3, 4].includes(f)) && JSON.stringify(await uvs()) === u0, got.join(','))
+  await ctrlDrag(...await around(5))
+  check('UV: Ctrl+drag replaces the selection', (await fsel()) === '5', await fsel())
+  await ctrlDrag(...await around(2), ['Shift'])
+  check('UV: Ctrl+Shift+drag adds', (await fsel()) === '2,5', await fsel())
+  const c2 = await uvC(...await centroid(2))
+  await ctrlClick(c2); const t1 = await fsel(); await ctrlClick(c2)
+  check('UV: Ctrl+click toggles a face off and back on', t1 === '5' && (await fsel()) === '2,5', `${t1} / ${await fsel()}`)
+  await ctrlDrag(...await around(5), ['Alt'])
+  check('UV: Ctrl+Alt+drag removes', (await fsel()) === '2', await fsel())
+  check('UV hint documents Ctrl-drag', /Ctrl-drag box/.test(await p.textContent('.uv-hint')))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }
