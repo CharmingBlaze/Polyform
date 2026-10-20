@@ -8,6 +8,7 @@ import { usesAlpha } from './alphause'
 import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
+import { PickTarget } from './pick'
 
 /**
  * Camera layers. Each pane's camera enables the layers for its view type and shading:
@@ -72,8 +73,10 @@ class SceneManager {
   onionGeo: THREE.BufferGeometry[] = []
   ghost: THREE.MeshBasicMaterial
   meshes: Record<'solid' | 'smooth' | 'textured', THREE.Mesh>
-  /** raycast target for painting / face picking (never rendered) */
-  pickMesh: THREE.Mesh
+  /** BVH-accelerated raycast target over the rendered triangles (never rendered) */
+  readonly pick = new PickTarget()
+  /** raycast target for painting / face / edge / point picking, its BVH up to date (only the closest hit is reported) */
+  get pickMesh(): THREE.Mesh { return this.pick.get() }
   posed: Vec3[] = []
   joints: Vec3[] = []
   visibleVerts = new Set<number>()
@@ -132,7 +135,6 @@ class SceneManager {
     this.meshes = { solid: mk(LAYER.solid), smooth: mk(LAYER.smooth), textured: mk(LAYER.textured) }
     this.ghost = new THREE.MeshBasicMaterial({ color: '#9aa6c0', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })
     const ghost = new THREE.Mesh(this.meshGeo, this.ghost); ghost.layers.set(LAYER.ghost); ghost.frustumCulled = false; s.add(ghost)
-    this.pickMesh = new THREE.Mesh(this.meshGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
 
     const selMatP = new THREE.MeshBasicMaterial({ color: '#ff9a3c', transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
     const selP = new THREE.Mesh(this.selGeo, selMatP); selP.layers.set(LAYER.overlayDepth); selP.renderOrder = 2; s.add(selP)
@@ -396,6 +398,7 @@ class SceneManager {
     setAttr(this.meshGeo, 'color', vcol, 3)
     this.meshGeo.computeBoundingSphere()
     this.meshGeo.computeBoundingBox()
+    this.pick.sync(this.meshGeo)
     setAttr(this.selGeo, 'position', sel, 3)
     setAttr(this.wireGeo, 'position', wire, 3)
     setAttr(this.selEdgeGeo, 'position', selEdge, 3)
@@ -515,6 +518,7 @@ class SceneManager {
     posAttr.needsUpdate = true
     this.meshGeo.computeBoundingSphere()
     this.meshGeo.computeBoundingBox()
+    this.pick.moved()
 
     // light normals refresh (face-flat) so lit shading does not look stuck during the drag
     const nrmAttr = this.meshGeo.getAttribute('normal') as THREE.BufferAttribute | undefined
