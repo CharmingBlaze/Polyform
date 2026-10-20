@@ -5,11 +5,11 @@ import { faceMat, type Vec2 } from './model'
 import { useStore } from './store'
 import * as U from './uvops'
 import { unwrapSeams } from './lscm'
-import { smartProject } from './uvblender'
+import { followActiveQuads, smartProject } from './uvblender'
 import { placeUnwrapped, type PlaceResult } from './uvplace'
 
 export type ProjKind = 'front' | 'top' | 'side' | 'box' | 'cyl' | 'sphere'
-export type UnwrapKind = 'unwrap' | 'smart' | ProjKind | 'view'
+export type UnwrapKind = 'unwrap' | 'smart' | 'follow' | ProjKind | 'view'
 
 /** faces to work on, whether that is all of them, and the other faces sharing their images */
 export function unwrapTargets() {
@@ -29,6 +29,15 @@ export function runUnwrap(kind: UnwrapKind, proj?: (p: readonly number[]) => Vec
   const st = useStore.getState()
   const { faces, all, others } = unwrapTargets()
   if (!faces.length) { st.notify('Nothing to unwrap'); return false }
+  if (kind === 'follow') {
+    // the active face = the last one clicked (Shift+click order), as in Blender
+    const act = [...st.selFaces].filter(fi => faces.includes(fi)).pop()
+    if (act === undefined || st.model.faces[act]?.v.length !== 4) { st.notify('Follow Active Quads: select quads; the last one clicked (active) must be a quad'); return false }
+    let n = 0
+    st.edit(m => U.keepPins(m, faces, () => { n = followActiveQuads(m, faces, act, st.ui.uvUnwrap.follow) }), 'Follow active quads')
+    st.notify(`Follow Active Quads (${st.ui.uvUnwrap.follow === 'even' ? 'even' : 'length average'}): ${n} quad${n === 1 ? '' : 's'} laid out from the active one`)
+    return n > 0
+  }
   const o = st.ui.uvUnwrap
   const img = st.imageSizeOf(faces), dens = st.model.props.texelDensity
   const place = { margin: o.margin, img: img ? { tw: img.w, th: img.h, density: dens } : undefined }

@@ -35,6 +35,7 @@ const pickable = async (n, skip = []) => {
   }
   return out
 }
+const tool = async id => { await p.click('[data-testid="side-uvtools"]'); if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]'); await p.click('[data-testid="uv-proj-menu"]'); await p.click(`[data-testid="uvm-${id}"]`) }
 const shiftClick = async (x, y) => { await p.keyboard.down('Shift'); await p.mouse.click(x, y); await p.keyboard.up('Shift'); await frame() }
 
 // ---- Shift+click multi-select in the 3D view (Blender toggle) ----
@@ -115,6 +116,19 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
   const a0 = await uvs()
   const ch = a0.map((u, i) => (JSON.stringify(u) !== JSON.stringify(b0[i]) ? i : -1)).filter(i => i >= 0)
   check('Smart UV Project on 3 selected faces changes only those', ch.length > 0 && ch.every(i => pick3.includes(i)), JSON.stringify(ch))
+}
+
+// ---- Follow Active Quads on a quad grid ----
+{
+  await S(() => { const s = window.__polyform.getState(), m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().runOp('add.plane', { w: 2, d: 2, seg: 4 }); window.__polyform.getState().selectNone() }); await frame(200)
+  const n = await S(() => window.__polyform.getState().model.faces.length)
+  // scramble the UVs, give the active (last selected) face a clean square
+  await S(n => { const s = window.__polyform.getState(); s.edit(m => { m.faces.forEach((f, i) => { f.uv = f.uv.map((_, c) => [((i * 7 + c * 3) % 11) / 11, ((i * 5 + c) % 13) / 13]) }); m.faces[5].uv = m.faces[5].uv.map((_, c) => [[0.4, 0.4], [0.5, 0.4], [0.5, 0.5], [0.4, 0.5]][c]) }, 'scramble'); s.setSelectMode('face'); s.setSelection({ faces: [...Array(n).keys()].filter(i => i !== 5).concat([5]) }) }, n); await frame()
+  await tool('proj-follow'); await frame(200)
+  const u = await uvs()
+  const rect = u.every(f => new Set(f.map(q => q[0].toFixed(5))).size === 2 && new Set(f.map(q => q[1].toFixed(5))).size === 2)
+  check('Follow Active Quads: every quad of the grid becomes an axis-aligned cell of one island', rect && (await ISL()).length === 1, JSON.stringify(u.slice(0, 3)))
+  check('…the active quad keeps its UVs', JSON.stringify(u[5].map(q => q.map(x => x.toFixed(4)))) === JSON.stringify([[0.4, 0.4], [0.5, 0.4], [0.5, 0.5], [0.4, 0.5]].map(q => q.map(x => x.toFixed(4)))))
 }
 
 // ---- Live Unwrap: dragging a pin re-solves its island ----

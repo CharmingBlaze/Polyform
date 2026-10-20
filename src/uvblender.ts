@@ -1,7 +1,7 @@
 // Blender UV operators that are not the seam unwrap itself: Smart UV Project, Follow Active Quads, Lightmap Pack,
 // Average Islands Scale, Minimize Stretch, Seams from Islands, seams by angle and Split. Pure functions on the model.
 import { edgeKey, faceNormal, type Model, type Vec2 } from './model'
-import { faceArea3D } from './uvops'
+import { faceArea3D, uvArea } from './uvops'
 
 type V3 = [number, number, number]
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -76,5 +76,50 @@ export function smartProject(m: Model, faces: number[], angleDeg = 66, areaWeigh
   }
   spread(m, groups)
   return groups
+}
+
+// ---------- Follow Active Quads ----------
+export type FollowMode = 'even' | 'length_average'
+/**
+ * Follow Active Quads: starting from the active quad's UVs, every quad reached across shared edges is laid out
+ * as the continuation of its neighbour (the strip runs straight). 'even': every step as long as the previous;
+ * 'length_average': steps follow the 3D edge lengths. Non-quads are left alone. Returns the quads laid out.
+ */
+export function followActiveQuads(m: Model, faces: number[], active: number, mode: FollowMode = 'length_average'): number {
+  const quads = new Set(faces.filter(fi => m.faces[fi]?.v.length === 4))
+  if (!quads.has(active)) return 0
+  const f0 = m.faces[active]
+  if (Math.abs(uvArea(f0.uv)) < 1e-12) {
+    // degenerate start: a rectangle from the 3D edge lengths
+    const P = f0.v.map(vi => m.verts[vi] as V3), w = Math.hypot(...sub(P[1], P[0])), h = Math.hypot(...sub(P[3], P[0]))
+    f0.uv = [[0, 0], [w, 0], [w, h], [0, h]]
+  }
+  const byEdge = new Map<number, number[]>()
+  for (const fi of quads) { const f = m.faces[fi]; f.v.forEach((a, i) => { const k = edgeKey(a, f.v[(i + 1) % 4]); const l = byEdge.get(k); if (l) l.push(fi); else byEdge.set(k, [fi]) }) }
+  const len = (a: number, b: number) => Math.hypot(...sub(m.verts[a] as V3, m.verts[b] as V3))
+  const done = new Set([active]), q = [active]
+  while (q.length) {
+    const fi = q.shift()!, F = m.faces[fi]
+    for (let i = 0; i < 4; i++) {
+      const a = F.v[i], b = F.v[(i + 1) % 4], l = byEdge.get(edgeKey(a, b)) || []
+      if (l.length !== 2) continue
+      const gi = l[0] === fi ? l[1] : l[0]
+      if (done.has(gi)) continue
+      const G = m.faces[gi], ga = G.v.indexOf(a), gb = G.v.indexOf(b)
+      // in F: a' is a's other neighbour (not b), b' is b's; in G: c next to a, d next to b
+      const ia = i, ib = (i + 1) % 4, iap = (i + 3) % 4, ibp = (i + 2) % 4
+      const gc = G.v[(ga + 1) % 4] === b ? (ga + 3) % 4 : (ga + 1) % 4, gd = G.v[(gb + 1) % 4] === a ? (gb + 3) % 4 : (gb + 1) % 4
+      const ua = F.uv[ia], ub = F.uv[ib], uap = F.uv[iap], ubp = F.uv[ibp]
+      let r = 1
+      if (mode === 'length_average') { const prev = len(F.v[iap], a) + len(F.v[ibp], b), next = len(a, G.v[gc]) + len(b, G.v[gd]); r = prev > 1e-12 ? next / prev : 1 }
+      const uv: Vec2[] = G.uv.map(p => [p[0], p[1]] as Vec2)
+      uv[ga] = [ua[0], ua[1]]; uv[gb] = [ub[0], ub[1]]
+      uv[gc] = [ua[0] + (ua[0] - uap[0]) * r, ua[1] + (ua[1] - uap[1]) * r]
+      uv[gd] = [ub[0] + (ub[0] - ubp[0]) * r, ub[1] + (ub[1] - ubp[1]) * r]
+      G.uv = uv
+      done.add(gi); q.push(gi)
+    }
+  }
+  return done.size
 }
 

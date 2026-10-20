@@ -83,7 +83,8 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
     await p.click('[data-testid="uv-tab-unwrap"]'); await p.waitForTimeout(80)
     // dropdowns in the panel
     await p.click('[data-testid="uv-proj-menu"]'); await p.waitForTimeout(60)
-    const projItems = await p.locator('[data-testid^="uvm-proj-"]').count()
+    let projItems = 0
+    for (const k of ['front', 'top', 'side', 'box', 'cyl', 'sphere']) projItems += await p.locator(`[data-testid="uvm-proj-${k}"]`).count()
     await p.keyboard.press('Escape'); await p.waitForTimeout(60)
     check('Project ▾ lists planar front / top / side, box, cylinder, sphere', projItems === 6, String(projItems))
     await p.screenshot({ path: '/workspace/shot-uv-roomy.png' })
