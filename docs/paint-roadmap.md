@@ -1,15 +1,15 @@
 # Paint roadmap
 
-Polyform Paint is for someone who wants a step up from Blockbench and does not want Blender. Photoshop and Aseprite features are copied only where they pay off on a model: sensible defaults, one obvious way to do the thing, and the extra controls behind **Options** (Alt+O) or the command palette (Ctrl+K).
+Polyform Paint is for someone who wants a step up from Blockbench and does not want Blender. Photoshop and Aseprite features are copied only where they pay off on a model: a square tool strip, one options row for the tool in hand, and the command palette (Ctrl+K) for the rest.
 
-A new user paints by choosing the Paint tool and dragging on the model. No dialog, no mode manual.
+A new user paints by choosing the Paint workspace and dragging on the model or the texture beside it. No dialog, no mode manual.
 
 ## Design bar
 
 Every item below is judged against three rules from the lead, plus the product position.
 
 - **Quicker than the reference.** The same job takes fewer clicks than in Aseprite, Lightcube, Photoshop, or Blockbench. If a feature needs a nested dialog, it does not ship.
-- **Laptop.** The Paint tab lives in the side rail. The default view is brush, colour, size, strength, mirror, and pen pressure. Layers, selection, and shading scroll inside Options. The layer list stops at about 140px.
+- **Laptop.** The tool strip, colour and layers stay in the side rail and scroll there. The texture canvas shares the main view with the 3D pane, so a 1280×720 window does not grow a second page. The layer list stops at about 160px.
 - **Pen.** Pressure scales brush size and strength (toggles stay on the default view; a mouse is full pressure). The eraser end erases. Shade uses the same pressure-to-size path. Selection and shade do not need a right-click, because right-drag orbits. Hit targets in the Paint tab are at least ~28px.
 - **Not Blender, not Photoshop.** A handful of blend modes, not dozens. Simple selections with an obvious Move. No layer groups, no adjustment-layer stack, no transform cage. Items marked **Leave out** are a decision, not a backlog.
 
@@ -26,13 +26,16 @@ Blockbench is GPL-3.0. The notes below are ideas and workflow only. No Blockbenc
 
 | Feature | Where it works | Notes |
 | --- | --- | --- |
-| Layer stack: visibility, opacity, six blends, add / reorder / merge down / flatten / rename | 2D and 3D, because both show the flattened image | Max 16. One undo step per edit. Opacity drag is one step. |
-| Marquee, lasso, magic wand, move by whole texels | UV editor and the 3D view | Shift adds, Ctrl+Shift subtracts, a marquee click clears. The brush, fill, and shade obey the selection. |
-| Shade ink | UV editor and the 3D view | Seven-step ramp around the brush colour. One stroke moves one step. Light or dark. Pen pressure changes the radius. |
-| Swatches | Paint tab | Click to use. Right-click removes (the last one stays). Save swatch keeps up to 24. |
-| Command palette entries | `commands.ts`, append-only | Each new action has a one-line description and a shortcut that does not steal model or UV keys. |
+| Artist layout | Paint workspace | Square tool strip (B E G I L R O M V, shade). Options row for the active tool. Primary / secondary, HSV square, swatches, .gpl save and load. Layer list with thumbnails, drag reorder, duplicate. |
+| Texture canvas | Beside the 3D view | Split and swap. Checkerboard, pixel grid from 8× zoom, zoom presets, brush outline, X/Y guides at the image centre. Unwrap tools stay off this workspace. |
+| Layer stack | 2D and 3D | Visibility, opacity, six blends, add / duplicate / reorder / merge / flatten. Max 16. One undo step. |
+| Marquee, lasso, wand, move | Texture canvas and the 3D view | Shift adds, Ctrl+Shift subtracts. Brush, fill and shade obey the selection. |
+| Line, rectangle, ellipse | Texture canvas and the 3D view | Outline by default. Fill is on the options row. One undo on pointer-up. |
+| Shade ink | Texture canvas and the 3D view | Seven-step ramp. One stroke, one step. |
+| Symmetry | Mesh X = 0 and Y = 0; image centre on the texture canvas | Guides show the axis. |
+| Command palette entries | `commands.ts`, append-only | Single-letter tools apply only while the paint tool is active, so they do not take B / E / G / I / M from modelling. |
 
-The default Paint tab is unchanged for the first stroke: Image / Vertex / Weight, Brush / Erase / Pick / Fill, colour, swatches, palette-grid snap, size, strength, hardness, mirror, pressure, new-image size. Shape, pixel-perfect, lock alpha, shade, select, and layers open with Options.
+Alt+O still toggles the old options flag. The controls it used to hide are on the strip and the options row now.
 
 ## Already there (before this round)
 
@@ -57,8 +60,8 @@ Status words: **done**, **must** (next, still fits the bar), **nice** (later, st
 | | |
 | --- | --- |
 | Now | One stack per image. Normal, multiply, screen, overlay, darken, lighten. Opacity, visibility, merge down, flatten. The composite is what the 3D view, the UV editor, and glTF read. A single untouched "Layer 1" writes no extra file data. |
-| Must | Duplicate layer. |
-| Nice | A second symmetry axis as a layer you can turn off, not a new painting mode. |
+| Must | Done this round: duplicate, drag reorder, thumbnails. |
+| Nice | A second symmetry axis as its own layer, if artists want symmetry that is not the whole stroke. |
 | Blockbench has, we don't | Groups, per-layer offset, layers smaller than the texture, crop-to-selection, import a layer from a file, blend modes beyond the six (add, difference, alpha mask, colour). |
 | We already do better | The same stack is on the model and in the UV editor. Blockbench paints a texture view; the mesh is a preview. Pixel-perfect strokes and seam dilation live on this stack. |
 | How we beat all four | Aseprite layers do not sit on a posed mesh. Photoshop layers do not cross a UV seam. Lightcube is pixel-and-voxel, not a shared 2D/3D stack. Blockbench layers do not survive a glTF export as one image while the editor keeps the stack. Ours do. |
@@ -83,24 +86,24 @@ Undo of a move restores pixels and does not restore the selection mask. The mask
 | | |
 | --- | --- |
 | Now | Colour input, swatches (save / right-click remove, cap 24), a 7-step shade ramp you can click, eyedropper (also Ctrl+click). Palette grid + Snap faces for low-poly palette textures. |
-| Must | Nothing blocking. The ramp and the swatches cover "pick a related colour" without a wheel. |
-| Nice | Generate a short swatch list from the current image. One palette file in, one palette file out (a single text format, not eight). |
+| Must | Done this round: primary / secondary, a compact HSV square, and .gpl save / load. |
+| Nice | Generate a short swatch list from the current image. |
 | Blockbench has, we don't | Several palettes, colour history, import/export of gpl / css / aco / act / ase / bbpalette, palette lock, an HSV wheel. |
 | We already do better | Snap faces turns a palette image into the UV layout. That is a low-poly workflow the other four do not share. Shade steps are the same texels in 2D and on the model, and a stroke cannot climb more than one step. |
 | How we beat all four | Indexed-style colour that is true on the model: the swatch you pick is the texel you see in the viewport, and Snap faces keeps whole faces on one swatch. Aseprite's indexed mode is 2D. Photoshop's is a document mode. Blockbench's palette does not move UVs. Lightcube's palette does not shade a UV island. |
-| Leave out | A document-wide indexed mode that remaps the file. Multiple palette libraries. An HSV wheel as the primary picker (the system colour input plus the ramp is faster on a laptop and on a pen). Palette-lock that rejects colours outside the list (the ramp is the gentle version). |
+| Leave out | A document-wide indexed mode that remaps the file. Multiple palette libraries. A Photoshop-sized colour panel (the square is the picker). Palette-lock that rejects colours outside the list (the ramp is the gentle version). |
 
 ### Brushes and inks
 
 | | |
 | --- | --- |
-| Now | Round / square, size, strength, hardness, pixel-perfect, lock alpha, shade ink, mirror X, pressure → size / strength. Shift+click lines. |
+| Now | Round / square, size, strength, hardness, pixel-perfect, lock alpha, shade ink, mirror X and Y, line / rectangle / ellipse, pressure → size / strength. Shift+click lines, and the line tool snaps to 15° while Shift is held. |
 | Must | Nothing blocking. |
-| Nice | One more symmetry toggle (Y or Z) next to Mirror X. A single "softer" shade that still steps the ramp, if artists ask. |
+| Nice | A single "softer" shade that still steps the ramp, if artists ask. |
 | Blockbench has, we don't | Brush presets, softness graphs, aspect ratio, tilt, screen-space projection, clone/copy brush, shapes, gradient, brush lock to the element or the selected faces, tiled view. |
 | We already do better | Pixel-perfect cleanup of L-corners and jitter, in the UV editor and on the mesh, with seam dilation turned off so the stroke does not bleed. Lock alpha. Fill by island and by object. |
 | How we beat all four | A 1px stroke that crosses a UV seam is the same texels you would get in Aseprite, and you can see it on the posed model while you draw. Photoshop's brush engine is deeper and slower to set up. Blockbench has no pixel-perfect pass. Lightcube has no UV seam. |
-| Leave out | Brush-preset browsers, tilt curves, scatter/dual-brush, aspect-ratio dials. Clone stamp. Shape and gradient tools (fill + line cover the cases that matter). Screen-space projection (it lies about texels). Tiled painting as its own view. |
+| Leave out | Brush-preset browsers, tilt curves, scatter/dual-brush, aspect-ratio dials. Clone stamp. Gradient tools. Screen-space projection (it lies about texels). Tiled painting as its own view. |
 
 ### Animation
 
@@ -130,13 +133,13 @@ Undo of a move restores pixels and does not restore the selection mask. The mask
 
 | | |
 | --- | --- |
-| Now | Paint in the 3D view and the UV editor. Brush outline in the UV editor at texel size. Checker and UV overlays belong to the UV tools. New image size is a dropdown on the Paint tab (64–2048). |
+| Now | Paint on the model and on a large texture canvas beside it (split, swap, zoom presets, checkerboard, pixel grid, brush outline, symmetry guides). The UV editor still paints the same stack. New image size is 64–2048. |
 | Must | Nothing blocking. |
-| Nice | The selection thumbnail could show the drag before pointer-up. Only if it stays a few pixels in the panel. |
+| Nice | Onion of the previous texture frame on that canvas, when flipbooks exist. |
 | Blockbench has, we don't | Tiled texture view, paint locked to one element. |
 | We already do better | Two views, one bitmap, posed mesh, seam-aware pixel strokes. |
 | How we beat all four | You never leave the model to see if a texel wrapped a seam. Aseprite has no mesh. Photoshop has no live UV. Lightcube's 3D is voxels. Blockbench's 3D paint is a projection onto the element, not a shared pixel-perfect buffer. |
-| Leave out | A floating canvas window, rulers, guides, snap-to-grid panels, and a custom brush-cursor editor. |
+| Leave out | A floating canvas window, rulers, snap-to-grid panels, and a custom brush-cursor editor. Symmetry guides are the one guide, and they follow the axis you turned on. |
 
 ### File I/O
 
@@ -154,13 +157,13 @@ Undo of a move restores pixels and does not restore the selection mask. The mask
 
 | | |
 | --- | --- |
-| Now | Default panel paints without reading this doc. Options (Alt+O) holds shape, pixel-perfect, lock alpha, shade, selection, layers, and save-swatch. Fill's scope appears only while Fill is on. Every new action is in the command registry with a plain-English line and a shortcut (see below). [ ] still changes brush size. Shift+click still draws a line for the brush and for shade. |
+| Now | The Paint workspace is a tool strip, one options row, colour, and layers. Fill's scope appears only while Fill is on. Rectangle fill appears only for the rectangle and the ellipse. Every new action is in the command registry (see below). [ ] still changes brush size. Hold Alt to pick a colour. |
 | Must | The hint bar in the status strip still describes the brush for every paint mode. That strip lives in a file this work does not edit. When that file is free, one short line per mode is enough. |
 | Nice | Nothing that adds a toolbar. |
-| Blockbench has, we don't | A tall tool column with pan, shapes, gradient, and selection modes always on screen. |
-| We already do better | The first screen is a brush. Power tools are one toggle away and also in Ctrl+K, so a laptop rail does not become a Blockbench column. |
+| Blockbench has, we don't | Pan, gradient, and a dozen brush modes always on the column. |
+| We already do better | Ten tools, letters on the buttons, and the options row changes with the tool. The letters work only while painting, so the model keys stay put. |
 | How we beat all four | Faster to start than Photoshop (no tool presets), clearer than Aseprite's icon grid, less hunting than Blockbench's painter, and the 3D view is the canvas Lightcube cannot share with a UV editor. |
-| Leave out | Icon toolbars, customizable workspaces inside Paint, radial menus, and nested "Paint preferences" dialogs. |
+| Leave out | Customizable workspaces inside Paint, radial menus, and nested "Paint preferences" dialogs. The strip is fixed on purpose. |
 
 Shortcuts (none of these are model keys, and none are taken by the UV editor):
 
@@ -184,8 +187,16 @@ Shortcuts (none of these are model keys, and none are taken by the UV editor):
 | Show or hide the active layer | Alt+Shift+H |
 | Cycle blend mode | Alt+Shift+B |
 | Save the brush colour as a swatch | Alt+Shift+C |
+| Straight line / rectangle / ellipse | L / R / O while painting |
+| Fill the shape instead of outlining | Alt+Shift+O |
+| Mirror Y | Alt+Y |
+| Swap primary and secondary | Alt+Shift+Q |
+| Duplicate the active layer | Alt+Shift+J |
+| Save / load a .gpl palette | Alt+Shift+P / Alt+Shift+U |
 
-While a selection tool is active: Shift adds, Ctrl+Shift subtracts, a marquee click clears. Ctrl alone is still the eyedropper. Alt is not used, because Alt+drag orbits the view.
+While the paint tool is on an image, B E G I M V L R O pick the tool and do not run the modelling command on that letter. Shade stays on Alt+Shift+S so S can still scale.
+
+While a selection tool is active: Shift adds, Ctrl+Shift subtracts, a marquee click clears. Ctrl or Alt picks a colour. Alt+drag does not orbit while the paint tool is active. Middle and right still navigate.
 
 ## Decisions worth a look
 
@@ -196,4 +207,5 @@ While a selection tool is active: Shift adds, Ctrl+Shift subtracts, a marquee cl
 5. **paintcore** gained an optional `Stroke.limit` (texels that are 0 stay as they were). `TexPatch` gained an optional `layer` id and an optional `stack` snapshot. `beginStroke` is unchanged. Both additions are backward compatible.
 6. **glTF** already exports `textures.three` of the composite. Layers are not a second image. Validator target stays zero errors.
 7. **Status-bar copy** was left alone on purpose (that component is owned elsewhere). New modes fall through to the brush hint until that line is updated.
-8. **No marching ants** on the UV or 3D canvas in this round. The selection preview is the small thumbnail in Options.
+8. **Marching ants** are a tint on the texture canvas and a thumbnail in the layer column. The 3D view does not draw ants (that overlay belongs to the viewport owner). The tint is not baked into the image, so export stays clean.
+9. **Layout touched, narrowly.** `App.tsx` adds a paint split (class `paint-pane`, test id `paint-pane`) when the workspace is Paint and does not set `uvSpace`. `Panels.tsx` hides the small UV editor card in that workspace. `Viewport.tsx` lets Alt pick a colour instead of orbiting while the paint tool is active, and draws the symmetry guide plus the shape preview. Paint CSS stays in `src/paint.css`.

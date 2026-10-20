@@ -310,11 +310,12 @@ function FrameInput({ frame, max, onSet }: { frame: number; max: number; onSet: 
 
 function UVSide() {
   const uvSpace = useStore(s => s.uvSpace)
+  const workspace = useStore(s => s.workspace)
   return (
     <>
       <Images />
       <RefsPanel />
-      {!uvSpace && <div className="card"><div className="label">UV editor</div><UVEditor /></div>}
+      {!uvSpace && workspace !== 'paint' && <div className="card"><div className="label">UV editor</div><UVEditor /></div>}
     </>
   )
 }

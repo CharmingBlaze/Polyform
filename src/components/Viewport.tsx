@@ -5,7 +5,8 @@ import { LAYER, paneLayers, sceneManager } from '../scene'
 import { useStore, type Shading, type ViewType } from '../store'
 import { faceCenter, faceNormal, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
-import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
+import { noteShapeMods, paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
+import { PaintOverlay } from './PaintOverlay'
 import { input, notePen, notePointer, palmRejected, penErases, pickRadius, wheelIntent } from '../input'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
@@ -115,6 +116,7 @@ export function Viewport({ pane }: { pane: number }) {
   const brushRef = useRef<HTMLDivElement>(null)
   const painting = useStore(s => s.tool === 'paint' && s.mode === 'model')
   const brushSize = useStore(s => s.paint.size)
+  const brushShape = useStore(s => s.paint.shape)
   const [rect, setRect] = useState<null | { x: number; y: number; w: number; h: number }>(null)
   const maximized = useStore(s => s.maximized)
   const layout = useStore(s => s.layout)
@@ -1023,7 +1025,7 @@ export function Viewport({ pane }: { pane: number }) {
     hit.current!.setPointerCapture(e.pointerId)
     if (btn === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
     if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
-    if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
+    if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select' && st.tool !== 'paint')) { drag.current = { kind: 'orbit', x, y }; return }
     if (btn !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still.
@@ -1039,7 +1041,9 @@ export function Viewport({ pane }: { pane: number }) {
       if (st.mode !== 'model') st.set({ mode: 'model' })
       notePen(e, true)
       if (penPaint) input.erase = true
-      if (paintStrokeStart(x, y, ray, c, (e.ctrlKey || e.metaKey) && !e.shiftKey, e.shiftKey ? { free: e.ctrlKey || e.metaKey } : undefined)) drag.current = { kind: 'paint' }
+      const pickMod = ((e.ctrlKey || e.metaKey) && !e.shiftKey) || (e.altKey && !e.shiftKey && !(e.ctrlKey || e.metaKey))
+      noteShapeMods(e.shiftKey, e.ctrlKey || e.metaKey)
+      if (paintStrokeStart(x, y, ray, c, pickMod, e.shiftKey ? { free: e.ctrlKey || e.metaKey } : undefined)) drag.current = { kind: 'paint' }
       return
     }
     if (tool === 'joint') {
@@ -1138,7 +1142,7 @@ export function Viewport({ pane }: { pane: number }) {
     if (d.kind === 'orbit') { orbit(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'pan') { pan(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'zoom') { zoom(Math.exp((y - d.y) * 0.01)); d.x = x; d.y = y; return }
-    if (d.kind === 'paint') { notePen(e); paintAt(x, y); return }
+    if (d.kind === 'paint') { notePen(e); noteShapeMods(e.shiftKey, e.ctrlKey || e.metaKey); paintAt(x, y); return }
     if (d.kind === 'rect') {
       if (d.alt && Math.hypot(x - d.x0, y - d.y0) > TWEAK_PX) { setRect(null); drag.current = { kind: isPersp ? 'orbit' : 'pan', x, y }; return }
       d.x1 = x; d.y1 = y
@@ -1357,7 +1361,8 @@ export function Viewport({ pane }: { pane: number }) {
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>
       <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel}
         onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none'; setHoverFace(-1, '3d') }} />
-      {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none' }} />}
+      {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none', borderRadius: brushShape === 'square' ? 0 : '50%' }} />}
+      {painting && <PaintOverlay pane={pane} getCtx={() => ctx.current} />}
       <div className="vp-title">
         <select value={cfg.type} data-testid={`pane-${pane}-view`} onChange={e => setPane({ type: e.target.value as ViewType })} title="View type">
           {(Object.keys(VIEW_LABEL) as ViewType[]).filter(v => v !== 'uv').map(v => <option key={v} value={v}>{VIEW_LABEL[v]}</option>)}

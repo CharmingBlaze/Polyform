@@ -1,4 +1,4 @@
-// Layers, shade, and selection in the Paint tab: hidden until Options, then usable with a pen-sized click.
+// Layers, shade, and selection in the Paint workspace: the tool strip, the texture canvas, one undo each.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'
 const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
@@ -29,19 +29,20 @@ const tex = await S(() => {
   return id
 })
 await p.click('[data-testid="ws-paint"]')
-await p.waitForFunction(() => window.__polyformUV?.toClient, null, { timeout: 8000 }).catch(() => {})
+await p.waitForFunction(() => window.__polyformPaintView?.toClient, null, { timeout: 8000 }).catch(() => {})
 await S(() => window.__polyform.getState().set({ railTab: 'Paint', tool: 'paint' }))
 await p.click('[data-testid="tab-paint"]')
 await frame()
 
-check('advanced tools stay tucked away', !(await p.locator('[data-testid="paint-shade"]').count()) && !(await p.locator('[data-testid="paint-layer-add"]').count()))
-check('brush, colour and size are on screen', await p.locator('[data-testid="paint-brush"]').isVisible() && await p.locator('[data-testid="paint-options"]').isVisible())
-const pageOverflow = await S(() => document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight)
+check('tool strip, colour and layers are on screen', await p.locator('[data-testid="paint-brush"]').isVisible() && await p.locator('[data-testid="paint-shade"]').isVisible() && await p.locator('[data-testid="paint-marquee"]').isVisible() && await p.locator('[data-testid="paint-layer-add"]').isVisible() && await p.locator('[data-testid="paint-pane"]').isVisible())
+const square = await p.locator('[data-testid="paint-brush"]').evaluate(el => getComputedStyle(el).borderRadius)
+check('paint tools are square-cornered', square === '0px', square)
+const pageOverflow = await S(() => {
+  const de = document.documentElement
+  const rail = document.querySelector('[data-testid="tool-rail"]')
+  return (de.scrollWidth > innerWidth || de.scrollHeight > innerHeight) || (rail && rail.scrollWidth > rail.clientWidth + 1)
+})
 check('default paint tab fits a 1280×720 laptop', !pageOverflow)
-
-await p.click('[data-testid="paint-options"]')
-await frame()
-check('Options reveals shade, selection and layers', await p.locator('[data-testid="paint-shade"]').isVisible() && await p.locator('[data-testid="paint-marquee"]').isVisible() && await p.locator('[data-testid="paint-layer-add"]').isVisible())
 check('a new image is one layer until you add another', (await S(id => window.__polyformTextures.layersOf(id).length, tex)) === 1)
 
 await S(() => window.__polyform.getState().commit())
@@ -62,13 +63,8 @@ check('undo add layer leaves the single layer', (await S(id => window.__polyform
 await p.locator('[data-testid="paint-size"]').fill('1')
 await p.click('[data-testid="paint-shade"]')
 await frame()
-const at = await S(() => {
-  const f = window.__polyform.getState().model.faces[0]
-  const u = f.uv.reduce((s, q) => s + q[0], 0) / f.uv.length
-  const v = f.uv.reduce((s, q) => s + q[1], 0) / f.uv.length
-  return window.__polyformUV.toClient(u, v)
-})
-check('UV editor can place a shade click', !!at, JSON.stringify(at))
+const at = await S(() => window.__polyformPaintView.toClient(0.5, 0.5))
+check('texture canvas can place a shade click', !!at && at.x > 0, JSON.stringify(at))
 if (at) {
   const before = await S(t => window.__polyformPaint.count(t, '#e87c7c', 2), tex)
   const hs = await steps()

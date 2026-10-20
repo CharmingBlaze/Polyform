@@ -1,20 +1,60 @@
-/* Paint tab only. Kept out of index.css so the rail styles stay shared. */
-.paint-panel .paint-modes button { min-height: 28px; padding: 4px 2px; }
-.paint-panel .swatch { height: 22px; }
-.paint-panel .paint-opt,
-.paint-options .btn-row button,
-.paint-options > button { min-height: 28px; }
-.paint-opt { align-self: flex-start; padding: 4px 10px; border-radius: 6px; }
-.paint-opt.on { background: var(--panel2); }
-.paint-options { display: flex; flex-direction: column; gap: 6px; }
-.paint-modes.cols4 { grid-template-columns: repeat(4, 1fr); }
-.paint-layers { max-height: 140px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
-.paint-layer { display: grid; grid-template-columns: 22px 1fr; gap: 4px; align-items: center; min-height: 26px; border-radius: 4px; padding: 1px 2px; }
+/* Paint only. Square corners stay inside these classes so the rest of the app keeps its own. */
+.paint-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
+.paint-panel button,
+.paint-panel input,
+.paint-panel select,
+.paint-panel .swatch,
+.paint-panel .tool-btn,
+.paint-panel .seg,
+.paint-panel .seg button,
+.paint-canvas button,
+.paint-space .uv-divider button { border-radius: 0; }
+.paint-panel .tool-btn { min-height: 26px; }
+.paint-tools { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+.paint-tools button { min-width: 0; width: 100%; height: 34px; padding: 2px 0; margin: 0; flex-direction: column; gap: 0; justify-content: center; }
+.paint-tools button i { font-style: normal; font-size: 9px; line-height: 1; color: var(--dim); }
+.paint-tools button.on i { color: inherit; }
+.paint-bar, .paint-colour, .paint-layerbox { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.paint-panel .paint-modes button { min-height: 26px; padding: 2px 0; min-width: 0; }
+.paint-panel .swatch { height: 18px; border-radius: 0; }
+.paint-slots { display: grid; grid-template-columns: 28px 22px 28px 1fr; gap: 4px; align-items: center; min-width: 0; }
+.paint-slot { width: 28px; height: 28px; padding: 0; border: 1px solid rgba(255, 255, 255, .35); }
+.paint-slot.on { outline: 1px solid #fff; outline-offset: 1px; }
+.paint-swap { width: 22px; height: 22px; padding: 0; justify-content: center; }
+.paint-slots code { overflow: hidden; text-overflow: ellipsis; }
+.paint-hsv { display: flex; flex-direction: column; gap: 4px; }
+.paint-sv { position: relative; height: 84px; cursor: crosshair; background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue, #f00)); touch-action: none; }
+.paint-hue { position: relative; height: 12px; cursor: crosshair; background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); touch-action: none; }
+.paint-sv i, .paint-hue i { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border: 1px solid #fff; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+.paint-layers { max-height: 160px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.paint-layer { display: grid; grid-template-columns: 18px 22px 1fr; gap: 4px; align-items: center; min-height: 26px; padding: 1px 2px; cursor: grab; }
 .paint-layer.on { background: var(--panel2); }
-.paint-layer input[type="checkbox"] { width: 16px; height: 16px; margin: 0; }
-.paint-layer input:not([type="checkbox"]) { width: 100%; min-width: 0; background: transparent; border: none; color: inherit; font: inherit; padding: 2px 4px; }
-.paint-ramp { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.paint-ramp button { height: 22px; min-height: 22px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, .2); padding: 0; }
-.paint-select-preview { width: 100%; height: 72px; image-rendering: pixelated; background: repeating-conic-gradient(#1a1c22 0% 25%, #12141a 0% 50%) 50% / 8px 8px; border-radius: 4px; object-fit: contain; }
-.paint-options .btn-row { margin-bottom: 0; }
-.paint-options .btn-row button { flex: 1; padding: 4px 6px; }
+.paint-eye { width: 18px; height: 18px; padding: 0; justify-content: center; background: transparent; border-color: transparent; }
+.paint-thumb { width: 22px; height: 22px; image-rendering: pixelated; background: repeating-conic-gradient(#2a2d34 0% 25%, #1a1c22 0% 50%) 50% / 8px 8px; }
+.paint-layer input { width: 100%; min-width: 0; background: transparent; border: none; color: inherit; font: inherit; padding: 2px; border-radius: 0; }
+.paint-ramp { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.paint-ramp button { height: 16px; min-height: 16px; padding: 0; border: 1px solid rgba(255, 255, 255, .25); }
+.paint-select-preview { width: 100%; height: 56px; image-rendering: pixelated; background: repeating-conic-gradient(#1a1c22 0% 25%, #12141a 0% 50%) 50% / 8px 8px; object-fit: contain; }
+.paint-panel .btn-row { flex-wrap: wrap; margin: 0; min-width: 0; }
+.paint-panel .mini { margin-left: 0; flex: 1; min-width: 0; }
+.paint-panel .mini input { width: 100%; min-width: 0; max-width: 52px; }
+.paint-panel .btn-row button { flex: 1; min-width: 0; padding: 3px 4px; }
+.paint-panel .check { font-size: 11px; }
+.paint-panel .pen-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.paint-canvas { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; background: #12141a; }
+.uv-pane > .paint-canvas { flex: 1; min-width: 0; min-height: 0; }
+.paint-zoom { display: flex; gap: 2px; align-items: center; padding: 4px; border-bottom: 1px solid var(--line); min-width: 0; }
+.paint-zoom button { min-width: 0; padding: 2px 6px; min-height: 24px; }
+.paint-zoom button.on { background: var(--panel2); }
+.paint-zoom span { margin-left: auto; color: var(--dim); font-size: 11px; }
+.paint-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: crosshair; }
+.paint-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.paint-checker { position: absolute; background: repeating-conic-gradient(#2a2d34 0% 25%, #1c1f26 0% 50%) 50% / 16px 16px; pointer-events: none; }
+.paint-guide { position: absolute; pointer-events: none; background: rgba(240, 210, 80, .85); z-index: 2; }
+.paint-guide.x { width: 1px; }
+.paint-guide.y { height: 1px; }
+.paint-brush-ring { position: absolute; pointer-events: none; border: 1px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .7); transform: translate(-50%, -50%); z-index: 3; }
+.paint-guides { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; overflow: visible; }
+.paint-guides line[data-axis] { stroke: rgba(240, 210, 80, .9); stroke-width: 1; }
+.paint-shape-line { fill: rgba(255, 255, 255, .08); stroke: #fff; stroke-width: 1; }

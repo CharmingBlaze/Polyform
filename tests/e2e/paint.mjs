@@ -224,25 +224,23 @@ await p.screenshot({ path: '/workspace/shot-paint.png' })
   check('reopened painted model still renders its image', await S(() => !!window.__polyformScene.meshes.textured.material[0].map))
 }
 
-// 8. paint in the UV editor (Paint workspace keeps the Paint tool + UV side panel)
+// 8. paint on the texture canvas beside the model (the Paint workspace hides the unwrap editor)
 {
   await p.click('[data-testid="ws-paint"]')
   await p.click('[data-testid="paint-brush"]')
   await p.click('[data-testid="swatch-7"]') // purple
   await p.locator('[data-testid="paint-size"]').fill('28')
   const purple = await S(() => window.__polyform.getState().paint.color)
-  await p.waitForSelector('[data-testid="uv-canvas"]', { timeout: 5000 })
-  // paint workspace already has tool=paint; ensure __polyformUV is live
+  await p.waitForSelector('[data-testid="paint-canvas"]', { timeout: 5000 })
   const atUV = await S(() => {
-    const u = window.__polyformUV
+    const u = window.__polyformPaintView
     if (!u?.toClient) return null
-    // centre of the first face's UV island (or 0.5,0.5)
     const f = window.__polyform.getState().model.faces[0]
     const u0 = f.uv.reduce((s, q) => s + q[0], 0) / f.uv.length
     const v0 = f.uv.reduce((s, q) => s + q[1], 0) / f.uv.length
     return u.toClient(u0, v0)
   })
-  check('UV editor paint: canvas + hook ready', !!atUV && await S(() => window.__polyform.getState().tool === 'paint'), JSON.stringify(atUV))
+  check('texture canvas paint: canvas + hook ready', !!atUV && await S(() => window.__polyform.getState().tool === 'paint'), JSON.stringify(atUV))
   if (atUV) {
     const h0 = await steps()
     const before = await S(([t, c]) => window.__polyformPaint.count(t, c), [tex, purple])
@@ -251,8 +249,8 @@ await p.screenshot({ path: '/workspace/shot-paint.png' })
     await p.mouse.move(atUV.x + 36, atUV.y, { steps: 6 })
     await p.mouse.up(); await frame()
     const after = await S(([t, c]) => window.__polyformPaint.count(t, c), [tex, purple])
-    check('UV editor paint: stroke paints into the shown image', after > before + 10, `before=${before} after=${after} color=${purple}`)
-    check('UV editor paint: stroke is an undo step', (await steps()) > h0)
+    check('texture canvas paint: stroke paints into the shown image', after > before + 10, `before=${before} after=${after} color=${purple}`)
+    check('texture canvas paint: stroke is an undo step', (await steps()) > h0)
   }
 }
 await b.close()

@@ -1,4 +1,5 @@
-import { addPaintLayerHere, clearPaintSelectionHere, cyclePaintBlend, deleteActivePaintLayer, flattenPaintLayersHere, invertPaintSelectionHere, mergeActivePaintLayer, moveActivePaintLayer, savePaintSwatch, selectAllPaintHere, setPaintOptionsOpen, toggleActivePaintLayer, togglePaintOptions } from './paintlayers'
+import { addPaintLayerHere, clearPaintSelectionHere, cyclePaintBlend, deleteActivePaintLayer, duplicateActivePaintLayer, flattenPaintLayersHere, invertPaintSelectionHere, mergeActivePaintLayer, moveActivePaintLayer, savePaintSwatch, selectAllPaintHere, setPaintOptionsOpen, toggleActivePaintLayer, togglePaintOptions } from './paintlayers'
+import { openSwatchFile, saveSwatchFile } from './palfile'
 import { useStore, WORKSPACES, type EditMode, type PaintMode, type Tool, type Workspace } from './store'
 import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
 import { pairs as xPairs } from './xmirror'
@@ -260,6 +261,15 @@ export const commands: Command[] = [
   { id: 'paint.layerHide', label: 'Show or hide the active paint layer', group: 'Paint', keys: 'Alt+Shift+H', run: () => { setPaintOptionsOpen(true); toggleActivePaintLayer() } },
   { id: 'paint.blend', label: 'Cycle the layer blend mode', group: 'Paint', keys: 'Alt+Shift+B', run: () => { setPaintOptionsOpen(true); cyclePaintBlend() } },
   { id: 'paint.swatch', label: 'Save the brush colour as a swatch', group: 'Paint', keys: 'Alt+Shift+C', run: () => savePaintSwatch() },
+  { id: 'paint.line', label: 'Draw a straight line (L while painting)', group: 'Paint', run: () => paintImageMode('line') },
+  { id: 'paint.rect', label: 'Draw a rectangle (R while painting)', group: 'Paint', run: () => paintImageMode('rect') },
+  { id: 'paint.ellipse', label: 'Draw an ellipse (O while painting)', group: 'Paint', run: () => paintImageMode('ellipse') },
+  { id: 'paint.shapeFill', label: 'Fill the rectangle or ellipse instead of outlining it', group: 'Paint', keys: 'Alt+Shift+O', run: () => S().setPaint({ shapeFill: !S().paint.shapeFill }) },
+  { id: 'paint.mirrorY', label: 'Paint: toggle mirror Y', group: 'Paint', keys: 'Alt+Y', run: () => S().setPaint({ mirrorY: !S().paint.mirrorY }) },
+  { id: 'paint.swap', label: 'Swap the primary and secondary colour', group: 'Paint', keys: 'Alt+Shift+Q', run: () => { const p = S().paint; S().setPaint({ color: p.secondary, secondary: p.color }) } },
+  { id: 'paint.layerDup', label: 'Duplicate the active paint layer', group: 'Paint', keys: 'Alt+Shift+J', run: () => duplicateActivePaintLayer() },
+  { id: 'paint.paletteSave', label: 'Save the swatches as a GIMP palette', group: 'Paint', keys: 'Alt+Shift+P', run: () => saveSwatchFile() },
+  { id: 'paint.paletteLoad', label: 'Load a GIMP palette into the swatches', group: 'Paint', keys: 'Alt+Shift+U', run: () => openSwatchFile() },
 ]
 
 export const byId = Object.fromEntries(commands.map(c => [c.id, c]))
@@ -288,6 +298,19 @@ export const UV_KEYS = ['G', 'R', 'S', 'L', 'F', 'Home', 'Shift+R', 'Shift+Alt+R
 /** UV copy / paste over the editor, except in Animate where Ctrl+C / V copy keys */
 export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
 
+/** Single-letter paint tools. They are not Command.keys: those letters already belong to modelling. */
+const PAINT_HOT: Record<string, PaintMode> = { B: 'brush', E: 'erase', G: 'fill', I: 'pick', M: 'marquee', V: 'move', L: 'line', R: 'rect', O: 'ellipse' }
+function paintHotkey(e: KeyboardEvent): boolean {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat) return false
+  if (S().tool !== 'paint') return false
+  const mode = PAINT_HOT[e.key.length === 1 ? e.key.toUpperCase() : '']
+  if (!mode) return false
+  e.preventDefault()
+  const image = mode === 'marquee' || mode === 'move' || mode === 'line' || mode === 'rect' || mode === 'ellipse'
+  S().setPaint(image ? { mode, target: 'image' } : { mode })
+  return true
+}
+
 export function installShortcuts(openPalette: () => void) {
   const map = new Map<string, Command>()
   commands.forEach(c => c.keys && !map.has(c.keys.toUpperCase()) && map.set(c.keys.toUpperCase(), c))
@@ -298,6 +321,7 @@ export function installShortcuts(openPalette: () => void) {
     if (document.querySelector('[data-modal-open], [data-menu-open]')) return // dialogs and open menus own the keyboard
     const combo = comboOf(e)
     if (!combo) return
+    if (paintHotkey(e)) return
     if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && S().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
     if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }

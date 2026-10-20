@@ -6,6 +6,8 @@ import { panelKey, sideHandle, useSides } from './useLayout'
 import { DialogHost } from './components/Modal'
 import { PropertiesDialog } from './components/Properties'
 import { UVEditor } from './components/UVEditor'
+import { PaintCanvas, PaintDivider } from './components/PaintCanvas'
+import { usePaintView } from './paintview'
 import { EmptyScene } from './components/Workspace'
 import { installShortcuts } from './commands'
 import { importFile, restoreAutosave, startAutosave } from './io'
@@ -27,14 +29,20 @@ export default function App() {
   const uvMax = useStore(s => s.uvMax)
   const workspace = useStore(s => s.workspace)
   const animate = useStore(s => s.mode === 'animate')
+  const paintView = usePaintView()
+  const paintSpace = workspace === 'paint' && !uvSpace && !animate
   const timelineH = useStore(s => s.ui.timelineH)
   const showTimeline = useStore(s => !s.ui.timelineHidden) && animate
   const sides = useSides()
-  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvSwap, uvMax, showTimeline, timelineH, sides.leftW, sides.rightW])
+  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvSwap, uvMax, showTimeline, timelineH, sides.leftW, sides.rightW, paintSpace, paintView.split, paintView.swap, paintView.max])
   // UV workspace: [3D preview | divider | UV editor], or mirrored with Swap; the UV editor gets ~2/3 by default
   const v3 = uvMax === '3d' ? 'minmax(0, 1fr)' : uvMax === 'uv' ? '0px' : `minmax(0, ${uvSplit}fr)`
   const vu = uvMax === 'uv' ? 'minmax(0, 1fr)' : uvMax === '3d' ? '0px' : `minmax(0, ${1 - uvSplit}fr)`
   const cols = uvSwap ? `${vu} 10px ${v3}` : `${v3} 10px ${vu}`
+  const p3 = paintView.max === 'tex' ? '0px' : paintView.max === '3d' ? 'minmax(0, 1fr)' : `minmax(0, ${paintView.split}fr)`
+  const pt = paintView.max === '3d' ? '0px' : paintView.max === 'tex' ? 'minmax(0, 1fr)' : `minmax(0, ${1 - paintView.split}fr)`
+  const paintCols = paintView.swap ? `${pt} 10px ${p3}` : `${p3} 10px ${pt}`
+  const swapped = (uvSpace && uvSwap) || (paintSpace && paintView.swap)
 
   // collapse / expand slides the columns (~120 ms, none with prefers-reduced-motion); drags resize instantly
   const [anim, setAnim] = useState(false)
@@ -72,7 +80,7 @@ export default function App() {
       <div className={`main ${anim ? 'anim' : ''}`} data-left={sides.leftCollapsed ? 'icons' : 'open'} data-right={sides.rightCollapsed ? 'icons' : 'open'} style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
         <ToolRail />
         <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
-          <div className={`work ${uvSpace ? 'uv-space' : ''} ${uvSpace && uvSwap ? 'swap' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
+          <div className={`work ${uvSpace ? 'uv-space' : ''} ${paintSpace ? 'paint-space' : ''} ${swapped ? 'swap' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : paintSpace ? { gridTemplateColumns: paintCols } : undefined}>
             <div ref={viewsRef} className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
               {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
@@ -81,6 +89,10 @@ export default function App() {
             {uvSpace && <>
               <UVDivider />
               <div className="uv-pane" data-testid="uv-pane">{uvMax !== '3d' && <UVEditor big />}</div>
+            </>}
+            {paintSpace && <>
+              <PaintDivider />
+              <div className="uv-pane paint-pane" data-testid="paint-pane">{paintView.max !== '3d' && <PaintCanvas />}</div>
             </>}
           </div>
           {showTimeline && <Timeline />}
