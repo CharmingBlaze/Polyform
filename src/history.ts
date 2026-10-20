@@ -258,7 +258,7 @@ export class History {
     if (!tex.length) return
     this.commit(m)
     this.truncate()
-    const bytes = tex.reduce((a, p) => a + p.data.data.byteLength + 64, 0)
+    const bytes = tex.reduce((a, p) => a + p.data.data.byteLength + 64 + (p.stack?.layers.reduce((n, l) => n + (l.data?.byteLength ?? 0) + 48, 0) ?? 0), 0)
     // share the resolved snap reference so tex-only steps don't allocate mesh data
     const curSnap = this.resolveAt(this.cur)
     this.steps.push({ snap: curSnap, label, tex, bytes })

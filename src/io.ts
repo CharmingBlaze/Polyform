@@ -315,6 +315,7 @@ export async function importFile(file: File) {
 const KEY = 'polyform:autosave'
 const LEGACY_TEX_KEY = 'polyform:texture'
 const texKey = (id: string) => `polyform:tex:${id}`
+const layersKey = (id: string) => `polyform:layers:${id}`
 export async function restoreAutosave() {
   try {
     const raw = await idbGet<Record<string, unknown>>(KEY)
@@ -327,6 +328,8 @@ export async function restoreAutosave() {
         if (mt.texture && !textures.has(mt.texture)) {
           const url = await idbGet<string>(texKey(mt.texture))
           if (url) await textures.load(url, mt.texture).catch(() => {})
+          const bundle = await idbGet<Record<string, string>>(layersKey(mt.texture))
+          if (bundle && textures.has(mt.texture)) await textures.loadAll(bundle)
           if (!textures.has(mt.texture)) mt.texture = null
         }
       }
@@ -349,6 +352,9 @@ export function startAutosave() {
       if (written.get(id) === textures.entryVersion(id)) continue
       const url = textures.toDataURL(id)
       if (url) { written.set(id, textures.entryVersion(id)); idbSet(texKey(id), url).catch(() => {}) }
+      const bundle = textures.layerBundle(id)
+      if (bundle) idbSet(layersKey(id), bundle).catch(() => {})
+      else idbDel(layersKey(id)).catch(() => {})
     }
   }
   textures.onChange(() => { clearTimeout(texTimer); texTimer = window.setTimeout(saveTextures, 800) })

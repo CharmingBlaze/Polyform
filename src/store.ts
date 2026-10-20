@@ -36,12 +36,16 @@ export type ViewType = 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 
 export type Shading = 'wire' | 'solid' | 'smooth' | 'textured' | 'texwire'
 export type Layout = '1' | '2h' | '2v' | '3' | '4'
 export interface Pane { type: ViewType; shade: Shading; grid: boolean }
-export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill'
+export type PaintMode = 'brush' | 'erase' | 'pick' | 'fill' | 'shade' | 'marquee' | 'lasso' | 'wand' | 'move'
 /** Paint into the face's image, vertex colours (glTF COLOR_0), or bone weights (up to 4). */
 export type PaintTarget = 'image' | 'vertex' | 'weight'
 export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget; /** 0 = auto-detect from the texture */ paletteCols: number; paletteRows: number
   /** UV-13 pixel art: brush shape, whole-texel 1-px lines without L-corners, paint only on existing alpha, what Fill covers */
-  shape: 'round' | 'square'; pixelPerfect: boolean; lockAlpha: boolean; fillScope: FillScope }
+  shape: 'round' | 'square'; pixelPerfect: boolean; lockAlpha: boolean; fillScope: FillScope
+  /** shading ink steps toward the light end of the ramp when true, toward black when false */
+  shadeLight: boolean
+  /** magic-wand colour tolerance, per channel */
+  wandTol: number }
 export type FillScope = 'face' | 'island' | 'object' | 'connected' | 'colour'
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
@@ -404,7 +408,7 @@ export const useStore = create<State>((set, get) => ({
   showTexture: true,
   showWire: true,
   activeMat: 0,
-  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image', paletteCols: 0, paletteRows: 0, shape: 'round', pixelPerfect: false, lockAlpha: false, fillScope: 'face' },
+  paint: { color: '#e05050', size: 12, hardness: 0.7, opacity: 1, mode: 'brush', texSize: 512, mirror: false, swatches: ['#1b1b22', '#f4f1e8', '#e05050', '#f2a541', '#f5d547', '#5fb85a', '#3f8fd8', '#8a5ad8', '#8a5a3c', '#7d8597'], target: 'image', paletteCols: 0, paletteRows: 0, shape: 'round', pixelPerfect: false, lockAlpha: false, fillScope: 'face', shadeLight: true, wandTol: 0 },
   numericOpen: false,
   helpOpen: false,
   propsOpen: false,

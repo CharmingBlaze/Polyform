@@ -21,6 +21,8 @@ export interface Stroke {
   dirty: Rect | null
   /** paint only where the image already has alpha > 0, and never change alpha (UV-13) */
   lockAlpha?: boolean
+  /** when set (same length as `mask`), texels that are 0 stay exactly as they were — a pixel selection */
+  limit?: Uint8Array | null
 }
 export function beginStroke(px: Px, color: RGB, erase: boolean, lockAlpha = false): Stroke {
   return { before: { width: px.width, height: px.height, data: new Uint8ClampedArray(px.data) }, out: px, mask: new Float32Array(px.width * px.height), color, erase, dirty: null, lockAlpha }
@@ -30,7 +32,8 @@ export function beginStroke(px: Px, color: RGB, erase: boolean, lockAlpha = fals
 function composite(s: Stroke, r: Rect) {
   const { width } = s.out, b = s.before.data, o = s.out.data, [cr, cg, cb] = s.color
   for (let y = r[1]; y < r[3]; y++) for (let x = r[0]; x < r[2]; x++) {
-    const i = y * width + x, a = s.mask[i], k = i * 4
+    const i = y * width + x, k = i * 4
+    const a = s.limit && s.limit.length === s.mask.length && !s.limit[i] ? 0 : s.mask[i]
     if (s.lockAlpha) {
       // alpha stays; transparent texels stay untouched; erase cannot change alpha so it does nothing
       if (s.erase || b[k + 3] === 0) { o[k] = b[k]; o[k + 1] = b[k + 1]; o[k + 2] = b[k + 2]; o[k + 3] = b[k + 3]; continue }

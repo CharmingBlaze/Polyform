@@ -1,4 +1,5 @@
-import { useStore, WORKSPACES, type EditMode, type Tool, type Workspace } from './store'
+import { addPaintLayerHere, clearPaintSelectionHere, cyclePaintBlend, deleteActivePaintLayer, flattenPaintLayersHere, invertPaintSelectionHere, mergeActivePaintLayer, moveActivePaintLayer, savePaintSwatch, selectAllPaintHere, setPaintOptionsOpen, toggleActivePaintLayer, togglePaintOptions } from './paintlayers'
+import { useStore, WORKSPACES, type EditMode, type PaintMode, type Tool, type Workspace } from './store'
 import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
 import { pairs as xPairs } from './xmirror'
 import { PRIMITIVES, type PrimitiveKind } from './model'
@@ -10,6 +11,12 @@ import { toggleFocus, togglePanel } from './useLayout'
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
 const S = () => useStore.getState()
+/** Advanced paint modes: switch to the Paint tab and open Options so the control is on screen. */
+function paintImageMode(mode: PaintMode) {
+  setPaintOptionsOpen(true)
+  const s = S()
+  s.set({ tool: 'paint', mode: 'model', railTab: 'Paint', paint: { ...s.paint, target: 'image', mode } })
+}
 export const WS_NAME: Record<Workspace, string> = { model: 'Model', uv: 'UV', paint: 'Paint', rig: 'Rig', animate: 'Animate', export: 'Export' }
 const tool = (t: Tool, label: string, keys: string): Command => ({ id: `tool.${t}`, label, group: 'Tools', keys, run: () => S().set({ tool: t }) })
 const edit = (m: EditMode, n: number): Command[] => [
@@ -233,6 +240,26 @@ export const commands: Command[] = [
   { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => void exportAs('obj') },
   { id: 'file.properties', label: 'Scene properties…', group: 'File', run: () => S().set({ propsOpen: true }) },
   { id: 'file.exit', label: 'Exit', group: 'File', run: () => void exitApp() },
+  // Paint actions for the command palette. Shortcuts stay off the model keys (B/E/G/M…) and off the UV editor's keys.
+  { id: 'paint.options', label: 'Show or hide extra paint options', group: 'Paint', keys: 'Alt+O', run: () => { togglePaintOptions(); S().set({ railTab: 'Paint' }) } },
+  { id: 'paint.shade', label: 'Shade the colour one step lighter or darker', group: 'Paint', keys: 'Alt+Shift+S', run: () => paintImageMode('shade') },
+  { id: 'paint.shadeWay', label: 'Shade toward light or toward dark', group: 'Paint', keys: 'Alt+Shift+K', run: () => { setPaintOptionsOpen(true); const next = !S().paint.shadeLight; S().setPaint({ shadeLight: next }); S().notify(next ? 'Shading lighter' : 'Shading darker') } },
+  { id: 'paint.marquee', label: 'Select a rectangle of pixels', group: 'Paint', keys: 'Alt+Shift+M', run: () => paintImageMode('marquee') },
+  { id: 'paint.lasso', label: 'Select pixels by drawing around them', group: 'Paint', keys: 'Alt+Shift+L', run: () => paintImageMode('lasso') },
+  { id: 'paint.wand', label: 'Select pixels of the same colour', group: 'Paint', keys: 'Alt+Shift+W', run: () => paintImageMode('wand') },
+  { id: 'paint.move', label: 'Move the selected pixels', group: 'Paint', keys: 'Alt+Shift+G', run: () => paintImageMode('move') },
+  { id: 'paint.deselect', label: 'Clear the pixel selection', group: 'Paint', keys: 'Alt+Shift+D', run: () => { setPaintOptionsOpen(true); clearPaintSelectionHere() } },
+  { id: 'paint.selectAll', label: 'Select every pixel of the image', group: 'Paint', keys: 'Alt+Shift+A', run: () => { setPaintOptionsOpen(true); selectAllPaintHere() } },
+  { id: 'paint.invertSel', label: 'Invert the pixel selection', group: 'Paint', keys: 'Alt+Shift+I', run: () => { setPaintOptionsOpen(true); invertPaintSelectionHere() } },
+  { id: 'paint.layerAdd', label: 'Add a paint layer above the current one', group: 'Paint', keys: 'Alt+Shift+N', run: () => { setPaintOptionsOpen(true); addPaintLayerHere() } },
+  { id: 'paint.layerDelete', label: 'Delete the active paint layer', group: 'Paint', keys: 'Alt+Shift+X', run: () => { setPaintOptionsOpen(true); deleteActivePaintLayer() } },
+  { id: 'paint.layerMerge', label: 'Merge the active layer into the one below', group: 'Paint', keys: 'Alt+Shift+E', run: () => { setPaintOptionsOpen(true); mergeActivePaintLayer() } },
+  { id: 'paint.layerFlatten', label: 'Flatten all paint layers into one', group: 'Paint', keys: 'Alt+Shift+F', run: () => { setPaintOptionsOpen(true); flattenPaintLayersHere() } },
+  { id: 'paint.layerUp', label: 'Move the active layer up', group: 'Paint', keys: 'Alt+Shift+ArrowUp', run: () => { setPaintOptionsOpen(true); moveActivePaintLayer(1) } },
+  { id: 'paint.layerDown', label: 'Move the active layer down', group: 'Paint', keys: 'Alt+Shift+ArrowDown', run: () => { setPaintOptionsOpen(true); moveActivePaintLayer(-1) } },
+  { id: 'paint.layerHide', label: 'Show or hide the active paint layer', group: 'Paint', keys: 'Alt+Shift+H', run: () => { setPaintOptionsOpen(true); toggleActivePaintLayer() } },
+  { id: 'paint.blend', label: 'Cycle the layer blend mode', group: 'Paint', keys: 'Alt+Shift+B', run: () => { setPaintOptionsOpen(true); cyclePaintBlend() } },
+  { id: 'paint.swatch', label: 'Save the brush colour as a swatch', group: 'Paint', keys: 'Alt+Shift+C', run: () => savePaintSwatch() },
 ]
 
 export const byId = Object.fromEntries(commands.map(c => [c.id, c]))

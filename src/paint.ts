@@ -4,8 +4,11 @@
 import * as THREE from 'three'
 import type { ViewCtx } from './components/Viewport'
 import { cornerColor, faceMat, newell, type Model, type Skin } from './model'
+import { shadeRamp, shadeTexels } from './layers'
 import * as P from './paintcore'
+import { focusPaintTex } from './paintlayers'
 import { sceneManager } from './scene'
+import { bary2, combineMask, getMask, lassoMask, maskFor, moveMasked, pointInPoly, rectMask, setMask, texelScreenMask, wandMask, type SelOp } from './selection'
 import { history, useStore } from './store'
 import { textures, type TexPatch } from './textures'
 import { ensureSkin, paintVertWeight } from './skin'
@@ -29,13 +32,32 @@ export function PS() {
 interface Hit { fi: number; uv: [number, number]; point: THREE.Vector3; normal: THREE.Vector3 }
 /** pixel modes: one run per brush (the stroke and its Mirror X twin): last stamped texel origin and the 1-px path for L-corner removal */
 interface TexRun { lastTexel?: [number, number]; path: [number, number][] }
-interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke; runs?: Map<string, TexRun> }
+interface TexStroke { id: string; layerId: string; img: ImageData; s: P.Stroke; runs?: Map<string, TexRun> }
 interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCtx; last: [number, number]; tex: Map<string, TexStroke>; /** a Shift+click line: later pointer moves do not paint */ lineOnly?: boolean }
 
 let cur: Active | null = null
 /** UV-editor stroke: paints directly in image space of a material. */
 interface UVActive { mat: number; lastUV: [number, number]; tex: Map<string, TexStroke>; side: number; lineOnly?: boolean }
 let uvcur: UVActive | null = null
+interface ShadeBuf { id: string; layerId: string; img: ImageData; before: P.Px; dirty: P.Rect | null; runs: Map<string, TexRun> }
+interface ShadeG { tex: Map<string, ShadeBuf>; lineOnly?: boolean; uv?: { mat: number; last: [number, number]; side: number }; screen?: { last: [number, number]; rayAt: Active['rayAt']; ctx: ViewCtx } }
+interface SelG {
+  kind: 'marquee' | 'lasso' | 'move'
+  op: SelOp
+  id: string
+  space: 'uv' | 'screen'
+  pts: [number, number][]
+  ctx?: ViewCtx
+  rayAt?: Active['rayAt']
+  layerId?: string
+  before?: ImageData
+  baseMask?: Uint8Array
+  origin?: [number, number]
+  /** Screen pixels per texel, sampled once so a pen drag moves whole texels. */
+  scale?: number
+}
+let shadeG: ShadeG | null = null
+let selG: SelG | null = null
 
 const S = () => useStore.getState()
 
@@ -114,24 +136,26 @@ function ensureTexture(fi: number): string | null {
 function strokeFor(a: Active, id: string): TexStroke | null {
   let t = a.tex.get(id)
   if (t) return t
-  const c = textures.canvas(id)
-  if (!c) return null
-  const g = c.getContext('2d', { willReadFrequently: true })!
-  const img = g.getImageData(0, 0, c.width, c.height)
-  const p = PS()
-  t = { id, g, img, s: P.beginStroke(img, P.hexToRgb(p.color), p.mode === 'erase', p.lockAlpha) }
+  const buf = textures.paintImage(id)
+  if (!buf) return null
+  focusPaintTex(id)
+  const img = buf.image, p = PS()
+  t = { id, layerId: buf.layerId, img, s: P.beginStroke(img, P.hexToRgb(p.color), p.mode === 'erase', p.lockAlpha) }
+  const sel = maskFor(id, img.width * img.height)
+  if (sel) t.s.limit = sel
   a.tex.set(id, t)
   return t
 }
 
 let redrawQueued = false
-function flush(t: TexStroke, r: P.Rect | null) {
-  if (!r) return
-  t.g.putImageData(t.img, 0, 0, r[0], r[1], r[2] - r[0], r[3] - r[1])
-  const tex = textures.three(t.id)
-  if (tex) tex.needsUpdate = true
+function pingTexture() {
   sceneManager.invalidate()
   if (!redrawQueued) { redrawQueued = true; requestAnimationFrame(() => { redrawQueued = false; window.dispatchEvent(new Event('texture-changed')) }) }
+}
+function flush(t: TexStroke, r: P.Rect | null) {
+  if (!r) return
+  textures.commitImage(t.id, t.layerId, t.img, r)
+  pingTexture()
 }
 
 /** World size of one screen pixel at a point. */
@@ -176,15 +200,14 @@ function dilateStroke(t: TexStroke) {
 
 function finish(a: Active, label: string) {
   const patches: TexPatch[] = []
-  const erased = PS().mode === 'erase'
   const crisp = texelMode() || S().paint.lockAlpha
   for (const t of a.tex.values()) {
-    // pixel art and lock alpha keep untouched texels as they are (no seam dilation)
-    if (!crisp) dilateStroke(t)
+    // pixel art, lock alpha and a selection keep untouched texels as they are (no seam dilation)
+    if (!crisp && !t.s.limit) dilateStroke(t)
     const b = P.cropBefore(t.s)
     if (!b) continue
-    patches.push({ id: t.id, x: b.x, y: b.y, data: new ImageData(new Uint8ClampedArray(b.px.data), b.px.width, b.px.height) })
-    if (erased) textures.markAlpha(t.id)
+    patches.push({ id: t.id, layer: t.layerId, x: b.x, y: b.y, data: new ImageData(new Uint8ClampedArray(b.px.data), b.px.width, b.px.height) })
+    textures.refreshAlpha(t.id)
   }
   if (!patches.length) return
   const s = S()
@@ -381,10 +404,11 @@ export function uvBrushOutline(mat: number, u: number, v: number, sidePx: number
 
 /** Start a paint stroke in the UV editor at UV (u, v). `sidePx` = on-screen size of the 0–1 UV square. */
 export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false, line?: { free: boolean }): boolean {
-  cur = null; vcur = null; uvcur = null
+  cur = null; vcur = null; uvcur = null; shadeG = null; selG = null
   const s = S(), mode = pickMod ? 'pick' : PS().mode
   if (PS().target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
   if (PS().target === 'weight') { s.notify('Weight painting is done in the 3D view'); return false }
+  if (mode === 'shade' || mode === 'marquee' || mode === 'lasso' || mode === 'wand' || mode === 'move') return imageGestureUV(mat, u, v, sidePx, mode, line)
   const id = ensureMatTexture(mat)
   if (!id) return false
   if (mode === 'pick') {
@@ -434,6 +458,8 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
 
 /** Continue a UV-editor stroke. */
 export function paintUVAt(u: number, v: number) {
+  if (selG?.space === 'uv') { selPointerUV(u, v); return }
+  if (shadeG?.uv && !shadeG.lineOnly) { shadePointerUV(u, v); return }
   const a = uvcur
   if (!a || a.lineOnly) return
   const stepU = Math.max(0.001, (PS().size / 4) / Math.max(1, a.side))
@@ -450,6 +476,8 @@ export function paintUVAt(u: number, v: number) {
 }
 
 export function paintUVEnd() {
+  if (shadeG?.uv) { endShade(); return }
+  if (selG?.space === 'uv') { endSel(); return }
   const a = uvcur
   uvcur = null
   if (!a) return
@@ -529,8 +557,9 @@ function weightStamp(st: WStroke, x: number, y: number) {
 
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false, line?: { free: boolean }): boolean {
-  cur = null; vcur = null; uvcur = null; wcur = null
+  cur = null; vcur = null; uvcur = null; wcur = null; shadeG = null; selG = null
   const mode0 = pickMod ? 'pick' : PS().mode
+  if (PS().target === 'image' && (mode0 === 'shade' || mode0 === 'marquee' || mode0 === 'lasso' || mode0 === 'wand' || mode0 === 'move')) return imageGesture3D(x, y, rayAt, ctx, mode0, line)
   if (line && PS().target === 'image' && (mode0 === 'brush' || mode0 === 'erase') && lastStamp3D && lastStamp3D.el === ctx?.el) {
     // Shift+click: a straight line on screen from the last stamp in this view, snapped to 15° (Ctrl+Shift: any angle)
     const { x: x0, y: y0 } = lastStamp3D
@@ -567,6 +596,8 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 
 /** Pointer move during a stroke: stamp along the screen path every size/4 px so fast strokes have no gaps. */
 export function paintAt(x: number, y: number) {
+  if (selG?.space === 'screen') { selPointerScreen(x, y); return }
+  if (shadeG?.screen && !shadeG.lineOnly) { shadePointerScreen(x, y); return }
   const a = cur ?? vcur ?? wcur
   if (!a || (a === cur && cur.lineOnly)) return
   const step = Math.max(1, PS().size / 4)
@@ -582,6 +613,8 @@ export function paintAt(x: number, y: number) {
 }
 
 export function paintStrokeEnd() {
+  if (shadeG?.screen) { endShade(); return }
+  if (selG?.space === 'screen') { endSel(); return }
   if (uvcur) { paintUVEnd(); return }
   const a = cur, v = vcur, w = wcur
   cur = null; vcur = null; wcur = null
@@ -590,7 +623,353 @@ export function paintStrokeEnd() {
   if (w) { if (w.changed) S().commit(); else S().cancelEdit() }
 }
 
-export const painting = () => !!(cur || vcur || uvcur || wcur)
+// ---------- shade, select, move (image target, UV editor and the 3D view) ----------
+/** Shift adds to the selection, Ctrl+Shift subtracts. Ctrl alone stays the eyedropper (the caller turns that into pick). */
+const selOpOf = (line?: { free: boolean }): SelOp => line?.free ? 'sub' : line ? 'add' : 'replace'
+const bumpView = () => useStore.setState(st => ({ texRev: st.texRev + 1 }))
+
+/** An image that already exists. Selecting or shading never creates one. */
+function imageOfMat(mat: number): string | null {
+  const id = S().model.materials[mat]?.texture
+  return id && textures.canvas(id) ? id : null
+}
+function imageOfActive(): string | null {
+  const id = S().model.materials[S().activeMat]?.texture
+  return id && textures.canvas(id) ? id : null
+}
+function noImage(): true {
+  S().notify('Paint on the model once to create an image')
+  return true
+}
+
+function projectFaceUV(fi: number, u: number, v: number, ctx: ViewCtx): [number, number] | null {
+  const f = S().model.faces[fi], Pz = sceneManager.posed
+  if (!f || f.uv.length < 3 || !Pz.length) return null
+  const uv0 = f.uv[0] as [number, number], p0 = Pz[f.v[0]]
+  if (!p0) return null
+  const ndc = new THREE.Vector3()
+  for (let i = 1; i < f.uv.length - 1; i++) {
+    const b = bary2(uv0, f.uv[i] as [number, number], f.uv[i + 1] as [number, number], [u, v])
+    if (!b || b[0] < -1e-3 || b[1] < -1e-3 || b[2] < -1e-3) continue
+    const pa = Pz[f.v[0]], pb = Pz[f.v[i]], pc = Pz[f.v[i + 1]]
+    if (!pa || !pb || !pc) return null
+    ndc.set(pa[0] * b[0] + pb[0] * b[1] + pc[0] * b[2], pa[1] * b[0] + pb[1] * b[1] + pc[1] * b[2], pa[2] * b[0] + pb[2] * b[1] + pc[2] * b[2])
+    ndc.project(ctx.camera)
+    if (ndc.z < -1 || ndc.z > 1) return null
+    return [(ndc.x * 0.5 + 0.5) * ctx.w, (-ndc.y * 0.5 + 0.5) * ctx.h]
+  }
+  return null
+}
+
+/** Screen position of a texel centre on this image, or null when no face shows it. */
+function projectTexel(id: string, tx: number, ty: number, ctx: ViewCtx): [number, number] | null {
+  const sz = textures.size(id)
+  if (!sz) return null
+  const u = (tx + 0.5) / sz.w, v = 1 - (ty + 0.5) / sz.h
+  for (const fi of facesOnImage(id)) {
+    const p = projectFaceUV(fi, u, v, ctx)
+    if (p) return p
+  }
+  return null
+}
+
+function screenTexelScale(id: string, ctx: ViewCtx, mask: Uint8Array): number {
+  const sz = textures.size(id)
+  if (!sz) return 8
+  let i = -1
+  for (let k = 0; k < mask.length; k++) if (mask[k]) { i = k; break }
+  if (i < 0) return 8
+  const x = i % sz.w, y = (i - x) / sz.w
+  const a = projectTexel(id, x, y, ctx)
+  const b = projectTexel(id, Math.min(sz.w - 1, x + 1), y, ctx)
+  if (!a || !b) return 8
+  const d = Math.hypot(b[0] - a[0], b[1] - a[1])
+  return d > 0.5 ? d : 8
+}
+
+function applyWand(id: string, x: number, y: number, op: SelOp) {
+  const buf = textures.paintImage(id)
+  if (!buf) return
+  const add = wandMask({ width: buf.image.width, height: buf.image.height, data: buf.image.data }, x, y, S().paint.wandTol)
+  setMask(id, combineMask(op === 'replace' ? null : getMask(id), add, op))
+  bumpView()
+}
+
+function texelDelta(g: SelG, x: number, y: number): [number, number] {
+  if (!g.origin) return [0, 0]
+  if (g.space === 'uv') return [Math.round(x - g.origin[0]), Math.round(y - g.origin[1])]
+  const scale = g.scale || 1
+  return [Math.round((x - g.origin[0]) / scale), Math.round((y - g.origin[1]) / scale)]
+}
+
+function previewMove(x: number, y: number) {
+  const g = selG
+  if (!g || g.kind !== 'move' || !g.before || !g.baseMask || !g.layerId) return
+  const [dx, dy] = texelDelta(g, x, y)
+  const moved = moveMasked({ width: g.before.width, height: g.before.height, data: g.before.data }, g.baseMask, dx, dy)
+  const img = new ImageData(moved.px.data, moved.px.width, moved.px.height)
+  textures.commitImage(g.id, g.layerId, img, [0, 0, img.width, img.height])
+  if (dx || dy) textures.markAlpha(g.id)
+  setMask(g.id, moved.mask)
+  g.pts = [[x, y]]
+  pingTexture()
+  bumpView()
+}
+
+function moveStart(id: string, space: 'uv' | 'screen', x: number, y: number, ctx?: ViewCtx): boolean {
+  const sz = textures.size(id)
+  const mask = sz ? maskFor(id, sz.w * sz.h) : null
+  if (!mask) { S().notify('Select pixels first'); return true }
+  const buf = textures.paintImage(id)
+  if (!buf) return true
+  selG = {
+    kind: 'move', op: 'replace', id, space, pts: [[x, y]], ctx, layerId: buf.layerId,
+    before: new ImageData(new Uint8ClampedArray(buf.image.data), buf.image.width, buf.image.height),
+    baseMask: mask, origin: [x, y], scale: space === 'screen' && ctx ? screenTexelScale(id, ctx, mask) : 1,
+  }
+  return true
+}
+
+function shadeBuf(map: Map<string, ShadeBuf>, id: string): ShadeBuf | null {
+  let t = map.get(id)
+  if (t) return t
+  const buf = textures.paintImage(id)
+  if (!buf) return null
+  focusPaintTex(id)
+  const img = buf.image
+  t = { id, layerId: buf.layerId, img, before: { width: img.width, height: img.height, data: new Uint8ClampedArray(img.data) }, dirty: null, runs: new Map() }
+  map.set(id, t)
+  return t
+}
+
+/** Whole-texel shading. Pen pressure scales the radius the same way it scales the brush. One stroke climbs one ramp step. */
+function shadeDab(t: ShadeBuf, cx: number, cy: number, r: number, channel = 'main') {
+  const p = S().paint, n = texelWidth(Math.max(0.5, r)), round = p.shape === 'round'
+  const o = P.texelOrigin(cx, cy, n)
+  let run = t.runs.get(channel)
+  if (!run) { run = { path: [] }; t.runs.set(channel, run) }
+  const prev = run.lastTexel, join = texelWidth(r) * 2 + 2
+  const pts = prev && Math.max(Math.abs(prev[0] - o[0]), Math.abs(prev[1] - o[1])) <= join ? P.texelLine(prev[0], prev[1], o[0], o[1]).slice(1) : [o]
+  if (!pts.length) return
+  if (!prev || pts[0] === o) run.path = []
+  run.lastTexel = o
+  const ramp = shadeRamp(P.hexToRgb(p.color), 3), dir: 1 | -1 = p.shadeLight ? 1 : -1
+  const limit = maskFor(t.id, t.img.width * t.img.height)
+  const out = { width: t.img.width, height: t.img.height, data: t.img.data }
+  for (const q of pts) {
+    const rect = shadeTexels(out, t.before, P.brushTexels(q[0], q[1], n, round), ramp, dir, 24, p.lockAlpha, limit)
+    t.dirty = P.unionRect(t.dirty, rect)
+    if (p.pixelPerfect && n === 1) {
+      const { dropped } = P.pixelPerfectStep(run.path, q)
+      if (dropped && !(dropped[0] === q[0] && dropped[1] === q[1])) {
+        const [dx, dy] = dropped
+        if (dx >= 0 && dy >= 0 && dx < t.img.width && dy < t.img.height) {
+          const i = (dy * t.img.width + dx) * 4
+          t.img.data.set(t.before.data.subarray(i, i + 4), i)
+          t.dirty = P.unionRect(t.dirty, [dx, dy, dx + 1, dy + 1])
+        }
+      }
+    }
+    if (t.dirty) textures.commitImage(t.id, t.layerId, t.img, t.dirty)
+  }
+  pingTexture()
+}
+
+function shadeStampUV(g: ShadeG, u: number, v: number) {
+  if (!g.uv) return
+  const id = imageOfMat(g.uv.mat)
+  if (!id) return
+  const t = shadeBuf(g.tex, id)
+  if (!t) return
+  const [x, y] = P.uvToPx(u, v, t.img.width, t.img.height)
+  lastStampUV = { mat: g.uv.mat, u, v }
+  shadeDab(t, x, y, Math.max(0.5, (PS().size / Math.max(1, g.uv.side)) * t.img.width))
+}
+
+function shadePointerUV(u: number, v: number) {
+  const g = shadeG
+  if (!g?.uv || g.lineOnly) return
+  const stepU = Math.max(0.001, (PS().size / 4) / Math.max(1, g.uv.side))
+  const [lu, lv] = g.uv.last, d = Math.hypot(u - lu, v - lv)
+  if (d < stepU) return
+  const n = Math.floor(d / stepU)
+  for (let i = 1; i <= n; i++) shadeStampUV(g, lu + ((u - lu) * i * stepU) / d, lv + ((v - lv) * i * stepU) / d)
+  const k = (n * stepU) / d
+  g.uv.last = [lu + (u - lu) * k, lv + (v - lv) * k]
+}
+
+function shadeDabAt(g: ShadeG, h: Hit, worldR: number, channel = 'main') {
+  const id = texOf(h.fi)
+  if (!id) return
+  const t = shadeBuf(g.tex, id)
+  if (!t) return
+  const m = S().model, f = m.faces[h.fi]
+  const r = P.brushRadiusTex(1, worldR, Math.abs(uvArea(f.uv)) * t.img.width * t.img.height, faceArea3D(m, h.fi))
+  const [x, y] = P.uvToPx(h.uv[0], h.uv[1], t.img.width, t.img.height)
+  shadeDab(t, x, y, r, channel)
+}
+
+function shadeStampScreen(g: ShadeG, x: number, y: number) {
+  if (!g.screen) return
+  const h = hitOf(g.screen.rayAt(x, y))
+  if (!h) return
+  const worldR = PS().size * worldPerPx(g.screen.ctx, h.point)
+  if (g.screen.ctx?.el) lastStamp3D = { el: g.screen.ctx.el, x, y }
+  shadeDabAt(g, h, worldR)
+  if (S().paint.mirror) { const mh = mirrorHit(h); if (mh) shadeDabAt(g, mh, worldR, 'mirror') }
+}
+
+function shadePointerScreen(x: number, y: number) {
+  const g = shadeG
+  if (!g?.screen || g.lineOnly) return
+  const step = Math.max(1, PS().size / 4)
+  const [lx, ly] = g.screen.last, d = Math.hypot(x - lx, y - ly)
+  if (d < step) return
+  const n = Math.floor(d / step)
+  for (let i = 1; i <= n; i++) shadeStampScreen(g, lx + ((x - lx) * i * step) / d, ly + ((y - ly) * i * step) / d)
+  const k = (n * step) / d
+  g.screen.last = [lx + (x - lx) * k, ly + (y - ly) * k]
+}
+
+function shadeStartUV(mat: number, id: string, u: number, v: number, sidePx: number, line?: { free: boolean }): boolean {
+  const from = line && lastStampUV?.mat === mat ? lastStampUV : null
+  shadeG = { tex: new Map(), uv: { mat, last: from ? [from.u, from.v] : [u, v], side: sidePx } }
+  if (from) {
+    const c = textures.canvas(id)!
+    const [x0, y0] = P.uvToPx(from.u, from.v, c.width, c.height), [x1, y1] = P.uvToPx(u, v, c.width, c.height)
+    const [sx, sy] = line!.free ? [x1, y1] : P.snapSegment(x0, y0, x1, y1, 15)
+    const to: [number, number] = [sx / c.width, 1 - sy / c.height]
+    shadeStampUV(shadeG, from.u, from.v)
+    shadePointerUV(to[0], to[1])
+    shadeStampUV(shadeG, to[0], to[1])
+    shadeG.uv!.last = to
+    shadeG.lineOnly = true
+    return true
+  }
+  shadeStampUV(shadeG, u, v)
+  return true
+}
+
+function shadeStart3D(x: number, y: number, rayAt: Active['rayAt'], ctx: ViewCtx, line?: { free: boolean }): boolean {
+  if (line && lastStamp3D && lastStamp3D.el === ctx?.el) {
+    const { x: x0, y: y0 } = lastStamp3D
+    const [tx, ty] = line.free ? [x, y] : P.snapSegment(x0, y0, x, y, 15)
+    shadeG = { tex: new Map(), screen: { last: [x0, y0], rayAt, ctx } }
+    shadeStampScreen(shadeG, x0, y0)
+    shadePointerScreen(tx, ty)
+    shadeStampScreen(shadeG, tx, ty)
+    shadeG.lineOnly = true
+    return true
+  }
+  shadeG = { tex: new Map(), screen: { last: [x, y], rayAt, ctx } }
+  shadeStampScreen(shadeG, x, y)
+  return true
+}
+
+function endShade() {
+  const g = shadeG
+  shadeG = null
+  if (!g) return
+  const patches: TexPatch[] = []
+  for (const t of g.tex.values()) {
+    if (!t.dirty) continue
+    const b = P.cropBefore({ before: t.before, out: { width: t.img.width, height: t.img.height, data: t.img.data }, mask: new Float32Array(0), color: [0, 0, 0], erase: false, dirty: t.dirty })
+    if (!b) continue
+    patches.push({ id: t.id, layer: t.layerId, x: b.x, y: b.y, data: new ImageData(new Uint8ClampedArray(b.px.data), b.px.width, b.px.height) })
+    textures.refreshAlpha(t.id)
+  }
+  if (!patches.length) return
+  history.pushTexture(S().model, patches, 'Shade')
+  for (const p of patches) textures.touch(p.id)
+  useStore.setState(st => ({ histRev: st.histRev + 1, texRev: st.texRev + 1 }))
+}
+
+function screenSelectMask(g: SelG): Uint8Array {
+  const sz = textures.size(g.id)!, faces = facesOnImage(g.id)
+  const a = g.pts[0], b = g.pts[g.pts.length - 1]
+  const inside = g.kind === 'lasso'
+    ? (x: number, y: number) => pointInPoly(x, y, g.pts)
+    : (x: number, y: number) => x >= Math.min(a[0], b[0]) && x < Math.max(a[0], b[0]) && y >= Math.min(a[1], b[1]) && y < Math.max(a[1], b[1])
+  return texelScreenMask(sz.w, sz.h, faces.map(fi => ({ poly: facePoly(fi, sz.w, sz.h) })), (faceIndex, x, y) => projectFaceUV(faces[faceIndex], (x + 0.5) / sz.w, 1 - (y + 0.5) / sz.h, g.ctx!), inside)
+}
+
+function endMove(g: SelG) {
+  if (!g.before || !g.origin || !g.layerId) return
+  const last = g.pts[g.pts.length - 1] ?? g.origin
+  const [dx, dy] = texelDelta(g, last[0], last[1])
+  if (!dx && !dy) return
+  history.pushTexture(S().model, [{ id: g.id, layer: g.layerId, x: 0, y: 0, data: g.before }], 'Move pixels')
+  textures.refreshAlpha(g.id)
+  textures.touch(g.id)
+  useStore.setState(st => ({ histRev: st.histRev + 1, texRev: st.texRev + 1 }))
+}
+
+function endSel() {
+  const g = selG
+  selG = null
+  if (!g) return
+  if (g.kind === 'move') { endMove(g); return }
+  const sz = textures.size(g.id)
+  if (!sz) return
+  let add: Uint8Array
+  if (g.space === 'screen') add = screenSelectMask(g)
+  else if (g.kind === 'lasso') add = lassoMask(sz.w, sz.h, g.pts)
+  else {
+    const a = g.pts[0], b = g.pts[g.pts.length - 1]
+    // a click (the pointer never moved) is an empty marquee: on replace it clears
+    add = a[0] === b[0] && a[1] === b[1] ? new Uint8Array(sz.w * sz.h) : rectMask(sz.w, sz.h, a[0], a[1], b[0], b[1])
+  }
+  setMask(g.id, combineMask(g.op === 'replace' ? null : getMask(g.id), add, g.op))
+  bumpView()
+}
+
+function selPointerUV(u: number, v: number) {
+  const g = selG
+  if (!g || g.space !== 'uv') return
+  const c = textures.canvas(g.id)
+  if (!c) return
+  const [x, y] = P.uvToPx(u, v, c.width, c.height)
+  if (g.kind === 'move') previewMove(x, y)
+  else g.pts.push([x, y])
+}
+
+function selPointerScreen(x: number, y: number) {
+  const g = selG
+  if (!g || g.space !== 'screen') return
+  if (g.kind === 'move') previewMove(x, y)
+  else g.pts.push([x, y])
+}
+
+function imageGestureUV(mat: number, u: number, v: number, sidePx: number, mode: string, line?: { free: boolean }): boolean {
+  const id = imageOfMat(mat)
+  if (!id) return noImage()
+  focusPaintTex(id)
+  const c = textures.canvas(id)!, [x, y] = P.uvToPx(u, v, c.width, c.height)
+  if (mode === 'wand') { applyWand(id, x, y, selOpOf(line)); return true }
+  if (mode === 'shade') return shadeStartUV(mat, id, u, v, sidePx, line)
+  if (mode === 'move') return moveStart(id, 'uv', x, y)
+  selG = { kind: mode === 'lasso' ? 'lasso' : 'marquee', op: selOpOf(line), id, space: 'uv', pts: [[x, y]] }
+  return true
+}
+
+function imageGesture3D(x: number, y: number, rayAt: Active['rayAt'], ctx: ViewCtx, mode: string, line?: { free: boolean }): boolean {
+  const h = hitOf(rayAt(x, y))
+  const id = (h && texOf(h.fi)) || imageOfActive()
+  if (!id) return noImage()
+  focusPaintTex(id)
+  if (mode === 'wand') {
+    if (!h || texOf(h.fi) !== id) { S().notify('Click the image to select a colour'); return true }
+    const c = textures.canvas(id)!, [px, py] = P.uvToPx(h.uv[0], h.uv[1], c.width, c.height)
+    applyWand(id, px, py, selOpOf(line))
+    return true
+  }
+  if (mode === 'shade') return shadeStart3D(x, y, rayAt, ctx, line)
+  if (mode === 'move') return moveStart(id, 'screen', x, y, ctx)
+  selG = { kind: mode === 'lasso' ? 'lasso' : 'marquee', op: selOpOf(line), id, space: 'screen', pts: [[x, y]], ctx, rayAt }
+  return true
+}
+
+export const painting = () => !!(cur || vcur || uvcur || wcur || shadeG || selG)
 
 /** Dev/e2e probe: what the brush would hit at a client point, and pixel statistics of an image. */
 export const paintDebug = {
@@ -633,6 +1012,16 @@ export const paintDebug = {
     return this.tipWeight()
   },
   hasAlpha: (id: string) => textures.hasAlpha(id),
+  /** Selected texels on an image (0 when there is no selection). */
+  selCount: (id: string) => {
+    const sz = textures.size(id)
+    if (!sz) return 0
+    const m = maskFor(id, sz.w * sz.h)
+    if (!m) return 0
+    let n = 0
+    for (const v of m) if (v) n++
+    return n
+  },
   /** Whether the textured viewport material for material `mi` blends alpha. */
   matTransparent: (mi: number) => {
     const mats = sceneManager.meshes.textured.material as THREE.MeshStandardMaterial[]

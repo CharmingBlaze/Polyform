@@ -1,0 +1,20 @@
+/* Paint tab only. Kept out of index.css so the rail styles stay shared. */
+.paint-panel .paint-modes button { min-height: 28px; padding: 4px 2px; }
+.paint-panel .swatch { height: 22px; }
+.paint-panel .paint-opt,
+.paint-options .btn-row button,
+.paint-options > button { min-height: 28px; }
+.paint-opt { align-self: flex-start; padding: 4px 10px; border-radius: 6px; }
+.paint-opt.on { background: var(--panel2); }
+.paint-options { display: flex; flex-direction: column; gap: 6px; }
+.paint-modes.cols4 { grid-template-columns: repeat(4, 1fr); }
+.paint-layers { max-height: 140px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.paint-layer { display: grid; grid-template-columns: 22px 1fr; gap: 4px; align-items: center; min-height: 26px; border-radius: 4px; padding: 1px 2px; }
+.paint-layer.on { background: var(--panel2); }
+.paint-layer input[type="checkbox"] { width: 16px; height: 16px; margin: 0; }
+.paint-layer input:not([type="checkbox"]) { width: 100%; min-width: 0; background: transparent; border: none; color: inherit; font: inherit; padding: 2px 4px; }
+.paint-ramp { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.paint-ramp button { height: 22px; min-height: 22px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, .2); padding: 0; }
+.paint-select-preview { width: 100%; height: 72px; image-rendering: pixelated; background: repeating-conic-gradient(#1a1c22 0% 25%, #12141a 0% 50%) 50% / 8px 8px; border-radius: 4px; object-fit: contain; }
+.paint-options .btn-row { margin-bottom: 0; }
+.paint-options .btn-row button { flex: 1; padding: 4px 6px; }
