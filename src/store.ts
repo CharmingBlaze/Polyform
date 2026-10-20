@@ -17,6 +17,8 @@ import * as UV from './uvops'
 import * as UVS from './uvsel'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
 import { textures as tex } from './textures'
+import * as IO from './imageops'
+import { hexToRgb } from './paintcore'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 
 /** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
@@ -255,6 +257,13 @@ interface State {
   addImages: (imgs: { id: string; name: string }[], assign?: boolean) => number[]
   /** remove an image (its material) from the library; faces using it fall back to the default material */
   removeImage: (mat: number) => void
+  /** Image menu (UV-12). New: blank (fill or transparent) or a UV template of the selected faces (all when none),
+   *  optionally packed first; the new image's material goes on those faces. One undo step. */
+  imageNew: (o: { name: string; w: number; h: number; fill: string | null; template: boolean; pack: boolean }) => number
+  /** Resize the material's image: scale pixels (nearest; UVs stay) or extend the canvas at a 9-grid anchor (UVs remapped). */
+  imageResize: (mat: number, w: number, h: number, mode: 'scale' | 'extend', anchor?: IO.Anchor) => void
+  /** Flip / rotate the material's image and every UV that uses it, so the model looks the same. */
+  imageTransform: (mat: number, op: IO.ImageOp) => void
   setImageFilter: (mat: number, filter: M.TexFilter) => void
   setImageWrap: (mat: number, wrap: M.TexWrap) => void
 }
@@ -1101,6 +1110,46 @@ export const useStore = create<State>((set, get) => ({
     }, faces.length ? 'Add image and assign' : 'Add image')
     set({ activeMat: out[0] })
     return out
+  },
+  imageNew: o => {
+    const s = get()
+    const w = Math.max(1, Math.min(4096, Math.round(o.w))), h = Math.max(1, Math.min(4096, Math.round(o.h)))
+    const visible = s.model.faces.map((f, i) => (f.hidden || s.model.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
+    const sel = s.activeFaces(), faces = o.template && !sel.length ? visible : sel
+    let mat = -1
+    s.edit(m => {
+      if (o.template && o.pack && faces.length) UV.keepPins(m, faces, () => { UV.packIslandsEx(m, faces, 0, { pixel: { tw: w, th: h }, padPx: get().ui.uvPack.pad, aspect: h / w }) })
+      const px = o.template ? IO.templatePx(m, faces, w, h) : IO.blankPx(w, h, o.fill ? [...hexToRgb(o.fill), 255] as [number, number, number, number] : [0, 0, 0, 0])
+      const id = tex.fromPixels(px)
+      const base = o.name.trim() || (o.template ? 'Template' : 'Image')
+      let name = base, k = 2
+      while (m.materials.some(mt => mt.name === name)) name = `${base} ${k++}`
+      mat = m.materials.length
+      m.materials.push({ ...M.newMaterial(name, '#ffffff'), texture: id })
+      for (const f of faces) { if (m.groups[m.faces[f].g].mat === mat) delete m.faces[f].mat; else m.faces[f].mat = mat }
+    }, o.template ? 'New UV template' : 'New image')
+    set({ activeMat: mat })
+    s.notify(`${o.template ? 'UV template' : 'Image'} ${w}×${h}${faces.length ? ` on ${faces.length} face${faces.length === 1 ? '' : 's'}` : ''}`)
+    return mat
+  },
+  imageResize: (mat, w, h, mode, anchor = [0, 0]) => {
+    const s = get(), id = s.model.materials[mat]?.texture, src = id ? tex.pixels(id) : null
+    if (!id || !src) return s.notify('This material has no image')
+    w = Math.max(1, Math.min(4096, Math.round(w))); h = Math.max(1, Math.min(4096, Math.round(h)))
+    if (w === src.width && h === src.height) return
+    const [ax, ay] = IO.anchorOffset(src.width, src.height, w, h, anchor)
+    const nid = tex.fromPixels(mode === 'scale' ? IO.scalePxNearest(src, w, h) : IO.extendPx(src, w, h, ax, ay))
+    s.edit(m => {
+      m.materials[mat].texture = nid
+      if (mode === 'extend') IO.remapUVs(m, IO.facesOfMat(m, mat), (u, v) => IO.extendUV(u, v, src.width, src.height, w, h, ax, ay))
+    }, mode === 'scale' ? 'Scale image' : 'Extend canvas')
+    s.notify(`${mode === 'scale' ? 'Scaled' : 'Extended'} ${src.width}×${src.height} → ${w}×${h}`)
+  },
+  imageTransform: (mat, op) => {
+    const s = get(), id = s.model.materials[mat]?.texture, src = id ? tex.pixels(id) : null
+    if (!id || !src) return s.notify('This material has no image')
+    const nid = tex.fromPixels(IO.transformPx(src, op))
+    s.edit(m => { m.materials[mat].texture = nid; IO.remapUVs(m, IO.facesOfMat(m, mat), (u, v) => IO.transformUV(u, v, op)) }, op.startsWith('flip') ? 'Flip image' : 'Rotate image')
   },
   setImageFilter: (mat, filter) => get().edit(m => { if (filter === 'linear') m.materials[mat].filter = 'linear'; else delete m.materials[mat].filter }, 'Image filtering'),
   setImageWrap: (mat, wrap) => get().edit(m => { if (wrap === 'repeat') delete m.materials[mat].wrap; else m.materials[mat].wrap = wrap }, 'Image wrap'),

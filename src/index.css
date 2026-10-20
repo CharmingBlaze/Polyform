@@ -440,3 +440,15 @@ button.danger { color: #ff9a9a; }
 .uv-actions .uv-tabs { margin-bottom: 6px; }
 .uv-actions .uv-tabs button { font-size: 11.5px; padding: 3px 10px; }
 .uv-editor.big .uv-actions { display: block; }
+/* Image menu dialogs (UV-12) */
+.img-dlg { display: flex; flex-direction: column; gap: 10px; }
+.img-size { display: flex; align-items: flex-end; gap: 6px; }
+.img-size .field { flex: 1; min-width: 0; }
+.img-size input { width: 100%; }
+.img-x { padding-bottom: 6px; color: var(--dim); }
+.img-row { display: flex; align-items: center; gap: 10px; }
+.img-check { display: flex; align-items: center; gap: 6px; }
+.img-anchor { display: grid; grid-template-columns: repeat(3, 18px); gap: 3px; flex: none; }
+.img-anchor button { width: 18px; height: 18px; padding: 0; min-height: 0; border-radius: 3px; }
+.img-anchor button.on { background: var(--accent); border-color: var(--accent); }
+.img-dlg .tip { margin: 0; color: var(--dim); font-size: 11.5px; line-height: 1.4; }

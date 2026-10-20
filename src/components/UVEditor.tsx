@@ -10,6 +10,7 @@ import * as UVS from '../uvsel'
 import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 import { viewCtx } from './Viewport'
+import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
 type Xf = 'move' | 'rotate' | 'scale'
@@ -112,6 +113,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
   /** right-click menu: canvas-local px */
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
+  const [imgMenu, setImgMenu] = useState<{ x: number; y: number } | null>(null)
+  const [imgDlg, setImgDlg] = useState<'new' | 'resize' | null>(null)
   const paintTexSize = useStore(s => s.paint.texSize)
   const version = useStore(s => s.version)
   const selFaces = useStore(s => s.selFaces)
@@ -853,6 +856,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
         </select>
+        <button data-testid="uv-image-menu" className={imgMenu ? 'on' : ''} title="Image: New (blank or UV template), Resize, Flip, Rotate" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setImgMenu(imgMenu ? null : { x: r.left, y: r.bottom + 2 }) }}>Image ▾</button>
         <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
           <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option>
         </select>
@@ -870,6 +874,17 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <button className="small" data-testid="uv-density-equalize" title="Scale the selected islands (or all) to the target" onClick={setDensity}>Equalize</button>
         </div>}
         <button className="uv-zoom ghost small" data-testid="uv-zoom" title="Zoom · click: show all (Home) · F frames the selection" onClick={() => frameSel(true)}>{Math.round(view.zoom * 100)}%</button>
+        {imgMenu && <UVMenu x={imgMenu.x} y={imgMenu.y} close={() => setImgMenu(null)} items={[
+          { id: 'img-new', label: 'New…', run: () => setImgDlg('new') },
+          { id: 'img-resize', label: 'Resize…', enabled: !!tw, run: () => setImgDlg('resize') },
+          'sep',
+          { id: 'img-flip-h', label: 'Flip horizontally', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipH') },
+          { id: 'img-flip-v', label: 'Flip vertically', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipV') },
+          { id: 'img-rot-cw', label: 'Rotate 90° CW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCW') },
+          { id: 'img-rot-ccw', label: 'Rotate 90° CCW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCCW') },
+        ]} />}
+        {imgDlg === 'new' && <NewImageDialog close={() => setImgDlg(null)} />}
+        {imgDlg === 'resize' && <ResizeImageDialog mat={shownMat} close={() => setImgDlg(null)} />}
         {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={[
           { id: 'rot-cw', label: 'Rotate 90° CW', keys: 'Shift+R', run: () => rotOp('cw') },
           { id: 'rot-ccw', label: 'Rotate 90° CCW', keys: 'Shift+Alt+R', run: () => rotOp('ccw') },

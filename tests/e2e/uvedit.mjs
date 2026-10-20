@@ -550,6 +550,71 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('UV hint documents Ctrl-drag', /Ctrl-drag box/.test(await p.textContent('.uv-hint')))
 }
 
+// UV-12: Image menu — New (blank / UV template), Resize (extend keeps the render), Flip / Rotate with the UVs
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  const mat = await addImage(32, 32, 'im32')
+  await gridLayout()
+  await S(mat => { const T = window.__polyformTextures, id = window.__polyform.getState().model.materials[mat].texture, c = T.canvas(id), g = c.getContext('2d'); for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) { g.fillStyle = `hsl(${(x * 37 + y * 101) % 360},70%,${35 + ((x + y) % 4) * 10}%)`; g.fillRect(x, y, 1, 1) } T.touch(id); const s = window.__polyform.getState(); s.selectNone(); s.setUVSelection([], 'verts') }, mat)
+  await p.addStyleTag({ content: '.toast { display: none !important }' })
+  await p.mouse.move(5, 5); await frame(300)
+  const pane = async () => { const bb = await p.locator('[data-testid="pane-1"]').boundingBox(); return (await p.screenshot({ clip: { x: bb.x + 2, y: bb.y + 28, width: bb.width - 4, height: bb.height - 30 } })).toString('base64') }
+  const diff = (a, b) => S(async ([a, b]) => {
+    const load = async s => { const i = new Image(); i.src = 'data:image/png;base64,' + s; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const g = c.getContext('2d'); g.drawImage(i, 0, 0); return g.getImageData(0, 0, c.width, c.height).data }
+    const A = await load(a), B = await load(b); let n = 0
+    for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 24) n++
+    return n / (A.length / 4)
+  }, [a, b])
+  const texOf = () => S(mat => { const m = window.__polyform.getState().model, id = m.materials[mat].texture; return { id, ...window.__polyformTextures.size(id) } }, mat)
+  const menu = async item => { await p.click('[data-testid="uv-image-menu"]'); await frame(); await p.click(`[data-testid="uvm-${item}"]`); await frame(200) }
+  const A = await pane()
+  const t0 = await texOf(), u0 = JSON.stringify(await uvs())
+  await menu('img-resize')
+  check('Resize dialog opens with the current size', await p.isVisible('[data-testid="img-resize"]') && (await p.inputValue('[data-testid="img-resize-w"]')) === '32')
+  await p.fill('[data-testid="img-resize-w"]', '64'); await p.fill('[data-testid="img-resize-h"]', '64'); await p.click('[data-testid="img-anchor-00"]'); await p.click('[data-testid="img-resize-ok"]'); await p.mouse.move(5, 5); await frame(300)
+  const t1 = await texOf()
+  const uv1 = await uvs()
+  check('Extend 32→64 (top-left): a new 64×64 image, UVs remapped into the top-left quarter', t1.w === 64 && t1.h === 64 && t1.id !== t0.id && uv1.flat().every(([u, v]) => u <= 0.5 + 1e-9 && v >= 0.5 - 1e-9), JSON.stringify(t1))
+  const dExt = await diff(A, await pane())
+  // (mip levels of the larger image mix the new transparent border into texels at the old edge: a few edge pixels may differ)
+  check('Extend leaves the 3D render the same', dExt < 0.006, String(dExt)); console.log('extend diff', dExt)
+  await p.keyboard.press('Control+z'); await frame(200)
+  check('one Ctrl+Z restores the 32 px image and the UVs', (await texOf()).id === t0.id && JSON.stringify(await uvs()) === u0)
+  for (const op of ['img-flip-h', 'img-flip-v', 'img-rot-cw', 'img-rot-ccw']) {
+    await menu(op); await p.mouse.move(5, 5); await frame(300)
+    const d = await diff(A, await pane())
+    check(`${op}: image and UVs together, the model looks the same`, (await texOf()).id !== t0.id && JSON.stringify(await uvs()) !== u0 && d < 0.003, String(d)); console.log(op, 'diff', d)
+  }
+  await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame(200)
+  check('undo walks back through the flips and turns', (await texOf()).id === t0.id && JSON.stringify(await uvs()) === u0)
+  await menu('img-resize'); await p.click('[data-testid="img-resize-scale"]'); await p.fill('[data-testid="img-resize-w"]', '16'); await p.fill('[data-testid="img-resize-h"]', '16'); await p.keyboard.press('Enter'); await frame(200)
+  check('Scale pixels: 16×16, UVs unchanged', (await texOf()).w === 16 && JSON.stringify(await uvs()) === u0)
+  await p.keyboard.press('Control+z'); await frame()
+  // New: UV template of every face (none selected), packed first
+  const n0 = await S(() => window.__polyform.getState().model.materials.length)
+  await menu('img-new')
+  await p.fill('[data-testid="img-new-name"]', 'Tmpl'); await p.click('[data-testid="img-new-template"]'); await p.fill('[data-testid="img-new-w"]', '64'); await p.fill('[data-testid="img-new-h"]', '64'); await p.check('[data-testid="img-new-pack"]')
+  await p.click('[data-testid="img-new-ok"]'); await frame(300)
+  const tpl = await S(n => {
+    const s = window.__polyform.getState(), m = s.model, mt = m.materials[n], c = window.__polyformTextures.canvas(mt.texture), g = c.getContext('2d')
+    const cols = new Set(m.faces.map(f => { const u = f.uv.reduce((a, q) => a + q[0], 0) / f.uv.length, v = f.uv.reduce((a, q) => a + q[1], 0) / f.uv.length; return [...g.getImageData(Math.floor(u * c.width), Math.floor((1 - v) * c.height), 1, 1).data].join(',') }))
+    return { n: m.materials.length, name: mt.name, w: c.width, all: m.faces.every(f => (f.mat ?? m.groups[f.g].mat) === n), cols: cols.size }
+  }, n0)
+  check('New UV template: 64 px material "Tmpl" on every face, a cube shows 6 colours', tpl.n === n0 + 1 && tpl.name === 'Tmpl' && tpl.w === 64 && tpl.all && tpl.cols === 6, JSON.stringify(tpl))
+  await p.keyboard.press('Control+z'); await frame()
+  check('New image is one undo step', (await S(() => window.__polyform.getState().model.materials.length)) === n0)
+  await p.keyboard.press('Control+Shift+z'); await frame(300)
+  await S(n => window.__polyform.getState().set({ activeMat: n }), n0); await frame(200)
+  await p.click('[data-testid="uv-image-menu"]'); await frame(200)
+  await p.screenshot({ path: '/workspace/shot-uv-image.png' })
+  await p.keyboard.press('Escape'); await frame()
+  // New blank, transparent, 16×32, on the selected face only
+  await selFace(0)
+  await menu('img-new'); await p.fill('[data-testid="img-new-w"]', '16'); await p.fill('[data-testid="img-new-h"]', '32'); await p.check('[data-testid="img-new-clear"]'); await p.click('[data-testid="img-new-ok"]'); await frame(200)
+  const blank = await S(() => { const m = window.__polyform.getState().model, n = m.materials.length - 1, T = window.__polyformTextures, id = m.materials[n].texture; return { sz: T.size(id), a: T.hasAlpha(id), f0: (m.faces[0].mat ?? m.groups[m.faces[0].g].mat) === n, f1: (m.faces[1].mat ?? m.groups[m.faces[1].g].mat) === n } })
+  check('New blank transparent 16×32 goes on the selected face only', blank.sz.w === 16 && blank.sz.h === 32 && blank.a && blank.f0 && !blank.f1, JSON.stringify(blank))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

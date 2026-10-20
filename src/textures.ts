@@ -121,6 +121,25 @@ class TextureStore {
     return nid
   }
 
+  /** A copy of the pixels (RGBA, rows top-down). */
+  pixels(id: string): { width: number; height: number; data: Uint8ClampedArray } | null {
+    const c = this.canvas(id)
+    if (!c) return null
+    const d = c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height)
+    return { width: d.width, height: d.height, data: d.data }
+  }
+
+  /** New texture from RGBA pixels (Image menu: New / Resize / Flip / Rotate make a new texture, swapped in by one undo step). */
+  fromPixels(px: { width: number; height: number; data: Uint8ClampedArray }, id = newId()): string {
+    const c = document.createElement('canvas')
+    c.width = px.width; c.height = px.height
+    c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0)
+    this.put(id, c)
+    this.scanAlpha(id)
+    this.touch(id)
+    return id
+  }
+
   /** Mark pixels as changed: re-upload to the GPU and notify listeners. */
   touch(id: string) {
     const e = this.map.get(id)
