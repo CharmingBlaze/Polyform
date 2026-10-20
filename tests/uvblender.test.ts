@@ -50,3 +50,13 @@ describe('Follow Active Quads', () => {
   })
 })
 
+describe('Lightmap Pack', () => {
+  it('lightmap: every face its own island inside 0..1 without overlaps', () => {
+    const m = emptyModel(), { faces } = addPrimitive(m, 'box')
+    expect(B.lightmapPack(m, faces, 0.02)).toBe(6)
+    expect(nIslands(m, faces)).toBe(6)
+    const bs = faces.map(fi => boxOf(m, [fi]))
+    expect(bs.every(b => b.minU >= -1e-9 && b.maxU <= 1 + 1e-9 && b.minV >= -1e-9 && b.maxV <= 1 + 1e-9)).toBe(true)
+    for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) expect(bs[i].maxU <= bs[j].minU + 1e-9 || bs[j].maxU <= bs[i].minU + 1e-9 || bs[i].maxV <= bs[j].minV + 1e-9 || bs[j].maxV <= bs[i].minV + 1e-9).toBe(true)
+  })
+})

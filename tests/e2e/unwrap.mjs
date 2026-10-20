@@ -131,6 +131,17 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
   check('…the active quad keeps its UVs', JSON.stringify(u[5].map(q => q.map(x => x.toFixed(4)))) === JSON.stringify([[0.4, 0.4], [0.5, 0.4], [0.5, 0.5], [0.4, 0.5]].map(q => q.map(x => x.toFixed(4)))))
 }
 
+// ---- Lightmap Pack: one island per face, no overlaps ----
+{
+  await S(() => window.__polyform.getState().selectNone()); await frame()
+  await tool('proj-lightmap'); await frame(300)
+  const n = await S(() => window.__polyform.getState().model.faces.length)
+  const boxes = (await uvs()).map(f => ({ u0: Math.min(...f.map(q => q[0])), u1: Math.max(...f.map(q => q[0])), v0: Math.min(...f.map(q => q[1])), v1: Math.max(...f.map(q => q[1])) }))
+  let overlap = 0
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; if (a.u0 < b.u1 - 1e-6 && b.u0 < a.u1 - 1e-6 && a.v0 < b.v1 - 1e-6 && b.v0 < a.v1 - 1e-6) overlap++ }
+  check('Lightmap Pack: every face its own island inside 0..1, none overlapping', (await ISL()).length === n && !overlap && boxes.every(b => b.u0 >= -1e-6 && b.u1 <= 1 + 1e-6 && b.v0 >= -1e-6 && b.v1 <= 1 + 1e-6), JSON.stringify({ isl: (await ISL()).length, n, overlap }))
+}
+
 // ---- Live Unwrap: dragging a pin re-solves its island ----
 {
   await p.click('[data-testid="uv-unwrap-live"]'); await frame()

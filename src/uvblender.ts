@@ -1,7 +1,7 @@
 // Blender UV operators that are not the seam unwrap itself: Smart UV Project, Follow Active Quads, Lightmap Pack,
 // Average Islands Scale, Minimize Stretch, Seams from Islands, seams by angle and Split. Pure functions on the model.
 import { edgeKey, faceNormal, type Model, type Vec2 } from './model'
-import { faceArea3D, uvArea } from './uvops'
+import { faceArea3D, packIslandsEx, uvArea } from './uvops'
 
 type V3 = [number, number, number]
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -121,5 +121,23 @@ export function followActiveQuads(m: Model, faces: number[], active: number, mod
     }
   }
   return done.size
+}
+
+// ---------- Lightmap Pack ----------
+/** Lightmap Pack: every face its own island (flattened on its plane, longest edge level), packed with a margin. */
+export function lightmapPack(m: Model, faces: number[], margin = 0.02): number {
+  const fs = faces.filter(fi => m.faces[fi]?.v.length >= 3)
+  for (const fi of fs) {
+    const f = m.faces[fi], { u, v } = frame(nrm(m, fi))
+    let uv = f.v.map(vi => { const p = m.verts[vi] as V3; return [dot(p, u), dot(p, v)] as Vec2 })
+    let bi = 0, bl = -1
+    uv.forEach((p, i) => { const q = uv[(i + 1) % uv.length], l = Math.hypot(q[0] - p[0], q[1] - p[1]); if (l > bl) { bl = l; bi = i } })
+    const p0 = uv[bi], p1 = uv[(bi + 1) % uv.length], t = -Math.atan2(p1[1] - p0[1], p1[0] - p0[0]), c = Math.cos(t), s = Math.sin(t)
+    uv = uv.map(([x, y]) => [x * c - y * s, x * s + y * c] as Vec2)
+    f.uv = uv
+  }
+  spread(m, fs.map(fi => [fi]))
+  packIslandsEx(m, fs, margin)
+  return fs.length
 }
 

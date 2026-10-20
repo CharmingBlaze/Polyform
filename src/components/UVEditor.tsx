@@ -993,6 +993,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <label title="Live Unwrap: dragging pinned UVs re-solves their island as you move them (needs 2+ pins)"><input type="checkbox" data-testid="uv-unwrap-live" checked={uw.live} onChange={e => setUW({ live: e.target.checked })} /> Live</label>
         <label title="Gap between islands when packing, in UV units (0–1 of the image width)">Margin <input data-testid="uv-unwrap-margin" type="number" min={0} max={0.25} step={0.005} value={uw.margin} onChange={e => setUW({ margin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
         <label title="Follow Active Quads: even steps, or steps that follow the 3D edge lengths">Follow <select data-testid="uv-follow-mode" value={uw.follow} onChange={e => setUW({ follow: e.target.value as 'even' | 'length_average' })}><option value="length_average">length average</option><option value="even">even</option></select></label>
+        <label title="Lightmap Pack: gap between the faces (UV units)">Lightmap gap <input data-testid="uv-lm-margin" type="number" min={0} max={0.25} step={0.005} value={uw.lmMargin} onChange={e => setUW({ lmMargin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
         <span className="uv-optrow" title="Smart UV Project">Smart: <label title="Angle limit: faces turning more than this get their own projection">∠ <input data-testid="uv-smart-angle" type="number" min={1} max={89} value={uw.smartAngle} onChange={e => setUW({ smartAngle: Math.max(1, Math.min(89, Math.round(+e.target.value || 66))) })} />°</label>
           <label title="Island margin (UV units)">gap <input data-testid="uv-smart-margin" type="number" min={0} max={0.25} step={0.005} value={uw.smartMargin} onChange={e => setUW({ smartMargin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
           <label title="Area weight 0–1: bigger faces pull the projection directions more">area <input data-testid="uv-smart-area" type="number" min={0} max={1} step={0.1} value={uw.smartArea} onChange={e => setUW({ smartArea: Math.max(0, Math.min(1, +e.target.value || 0)) })} /></label></span>
@@ -1044,6 +1045,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     { id: 'proj-sphere', label: 'Sphere', run: () => project('sphere') },
     'sep',
     { id: 'proj-follow', label: 'Follow active quads', run: () => runUnwrap('follow') },
+    { id: 'proj-lightmap', label: 'Lightmap pack', run: () => runUnwrap('lightmap') },
   ] : [
     { id: 'align-left', label: 'Align left', run: () => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min')) },
     { id: 'align-cu', label: 'Align centre', run: () => op('UV align', (m, ids) => U.align(m, ids, 'u', 'mid')) },
