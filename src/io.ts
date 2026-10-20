@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
+import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, parseProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
 import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
@@ -265,8 +265,8 @@ export async function importImage(file: File): Promise<string> {
 
 /** Load a project's JSON text: migrate, validate, restore images. */
 export async function openProjectText(text: string) {
-  const { model, textures: texData } = migrateProject(JSON.parse(text))
-  validateModel(model)
+  // parse + migrate + validate on a private copy first: a bad file throws a ProjectError and changes nothing
+  const { model, textures: texData } = parseProject(text)
   await textures.loadAll(texData)
   for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; for (const s of MAP_SLOTS) if (mt[s.k] && !textures.has(mt[s.k]!)) delete mt[s.k] }
   useStore.getState().loadModel(model)

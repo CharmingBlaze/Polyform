@@ -326,7 +326,13 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
   let version = (r.version === undefined ? 1 : r.version) as number
   if (!Number.isInteger(version) || (version as number) < 1) throw new Error('Unknown project format version')
   if ((version as number) > PROJECT_VERSION) throw new Error(`This project was saved by a newer Polyform (format ${version}); this version reads up to format ${PROJECT_VERSION}`)
-  while ((version as number) < PROJECT_VERSION) { r = MIGRATIONS[version as number](r); version = r.version as number }
+  while ((version as number) < PROJECT_VERSION) {
+    const step = MIGRATIONS[version as number]
+    if (!step) throw new Error(`No upgrade path from project format ${version}`)
+    try { r = step(r) } catch (e) { throw new Error(`Could not upgrade the project from format ${version}: ${(e as Error)?.message ?? e}`) }
+    if (r.version !== (version as number) + 1) throw new Error(`Upgrading from project format ${version} went wrong`)
+    version = r.version as number
+  }
   const textures: Record<string, string> = {}
   if (r.textures && typeof r.textures === 'object') {
     for (const [id, url] of Object.entries(r.textures)) if (typeof url === 'string' && url.startsWith('data:image/')) textures[id] = url
@@ -344,6 +350,33 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
   }
   const { verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs, props } = r as unknown as Model
   return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs: Array.isArray(refs) ? refs : [], props: sanitizeProps(props, Array.isArray(clips) ? clips.length : 1) }, textures }
+}
+
+/** A project file that cannot be opened; the message is meant for the user. */
+export class ProjectError extends Error {
+  constructor(message: string) { super(message); this.name = 'ProjectError' }
+}
+
+/**
+ * Parse, migrate and validate a project (its JSON text or already-parsed data) without touching any app state.
+ * Works on a private copy, so a failure never leaves anything half-loaded; every failure is a ProjectError with a
+ * readable message. Callers install the result (textures, then the store) only after this returns.
+ */
+export function parseProject(input: unknown): { model: Model; textures: Record<string, string> } {
+  let raw: unknown
+  if (typeof input === 'string') {
+    try { raw = JSON.parse(input) } catch { throw new ProjectError('Could not open project: the file is not valid JSON (it may be truncated or damaged)') }
+  } else {
+    try { raw = structuredClone(input) } catch { throw new ProjectError('Could not open project: Not a Polyform project') }
+  }
+  try {
+    const out = migrateProject(raw)
+    validateModel(out.model)
+    return out
+  } catch (e) {
+    if (e instanceof ProjectError) throw e
+    throw new ProjectError(`Could not open project: ${(e as Error)?.message ?? String(e)}`)
+  }
 }
 
 /** The JSON written to a .polyform.json file. */
@@ -370,6 +403,7 @@ export function validateModel(m: Model) {
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
   const num = (x: unknown, lo: number, hi: number) => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi
   const vec = (v: unknown, n: number) => Array.isArray(v) && v.length === n && v.every(x => typeof x === 'number' && Number.isFinite(x))
+  const easeOk = (e: unknown) => e === undefined || e === 'linear' || e === 'step' || e === 'easeIn' || e === 'easeOut' || e === 'easeInOut'
   m.verts.forEach((v, i) => { if (!vec(v, 3)) throw new Error(`Vertex ${i} is invalid`) })
   if (m.vbone.length !== nv) throw new Error('Vertex/bone table length mismatch')
 
@@ -416,6 +450,8 @@ export function validateModel(m: Model) {
     if (!x || !vec(x.pivot, 3) || !vec(x.pos, 3) || !vec(x.rot, 3) || !vec(x.scale, 3)) throw new Error(`Group ${i} has an invalid transform`)
   })
   m.wires.forEach((w, i) => {
+    if (!Array.isArray(w) || w.length !== 2 || !Number.isInteger(w[0]) || !Number.isInteger(w[1]) || w[0] < 0 || w[1] < 0 || w[0] >= nv || w[1] >= nv || w[0] === w[1]) throw new Error(`Wire edge ${i} is invalid`)
+  })
   m.refs.forEach((rf, i) => {
     if (!rf || typeof rf !== 'object') throw new Error(`Reference ${i} is invalid`)
     if (typeof rf.id !== 'string' || !rf.id) throw new Error(`Reference ${i} needs an id`)
@@ -424,8 +460,6 @@ export function validateModel(m: Model) {
     if (!vec(rf.pos, 3) || !vec(rf.rot, 3) || !vec(rf.size, 2)) throw new Error(`Reference ${i} has bad transform`)
     if (!num(rf.opacity, 0, 1)) throw new Error(`Reference ${i} opacity out of range`)
     if (typeof rf.visible !== 'boolean') throw new Error(`Reference ${i} visibility must be boolean`)
-  })
-    if (!Array.isArray(w) || w.length !== 2 || !Number.isInteger(w[0]) || !Number.isInteger(w[1]) || w[0] < 0 || w[1] < 0 || w[0] >= nv || w[1] >= nv || w[0] === w[1]) throw new Error(`Wire edge ${i} is invalid`)
   })
   const owner = new Int32Array(nv).fill(-1)
   m.faces.forEach((f, i) => {
@@ -468,7 +502,7 @@ export function validateModel(m: Model) {
       if (typeof frames !== 'object' || frames === null) throw new Error(`Clip "${c.name}": joint ${b} keys are invalid`)
       Object.entries(frames).forEach(([f, k]) => {
         if (!int(Number(f), 0, c.frames)) throw new Error(`Clip "${c.name}": joint ${b} has a key at invalid frame ${f}`)
-        if (!k || !vec(k.rot, 3) || !vec(k.pos, 3)) throw new Error(`Clip "${c.name}": joint ${b} frame ${f} has an invalid key`)
+        if (!k || !vec(k.rot, 3) || !vec(k.pos, 3) || !easeOk(k.ease)) throw new Error(`Clip "${c.name}": joint ${b} frame ${f} has an invalid key`)
       })
     })
     if (typeof c.okeys !== 'object' || c.okeys === null || Array.isArray(c.okeys)) throw new Error(`Clip "${c.name}": object keys are invalid`)
@@ -477,7 +511,7 @@ export function validateModel(m: Model) {
       if (typeof frames !== 'object' || frames === null) throw new Error(`Clip "${c.name}": group ${g} keys are invalid`)
       Object.entries(frames).forEach(([f, k]) => {
         if (!int(Number(f), 0, c.frames)) throw new Error(`Clip "${c.name}": group ${g} has a key at invalid frame ${f}`)
-        if (!k || !vec(k.pos, 3) || !vec(k.rot, 3) || !vec(k.scale, 3)) throw new Error(`Clip "${c.name}": group ${g} frame ${f} has an invalid key`)
+        if (!k || !vec(k.pos, 3) || !vec(k.rot, 3) || !vec(k.scale, 3) || !easeOk(k.ease)) throw new Error(`Clip "${c.name}": group ${g} frame ${f} has an invalid key`)
       })
     })
   })
