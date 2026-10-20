@@ -1,9 +1,9 @@
 import { openPicked } from '../fileActions'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
 import { openSideTab, setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
-import { byId, commands, type Command } from '../commands'
+import { byId, commands } from '../commands'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
@@ -327,49 +327,6 @@ function ParamField({ def, value, onChange }: { def: ParamDef; value: number; on
   )
 }
 
-export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [q, setQ] = useState('')
-  const [i, setI] = useState(0)
-  const input = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (open) { setQ(''); setI(0); setTimeout(() => input.current?.focus(), 0) } }, [open])
-  const list = useMemo(() => {
-    const s = q.toLowerCase().trim()
-    if (!s) return commands
-    return commands
-      .map(c => ({ c, score: fuzzy(`${c.group} ${c.label}`.toLowerCase(), s) }))
-      .filter(x => x.score > 0).sort((a, b) => b.score - a.score).map(x => x.c)
-  }, [q])
-  if (!open) return null
-  const run = (c: Command) => { onClose(); setTimeout(c.run, 0) }
-  return (
-    <div className="palette-bg" onMouseDown={onClose}>
-      <div className="palette" onMouseDown={e => e.stopPropagation()}>
-        <input ref={input} autoFocus value={q} placeholder="Type a command…" onChange={e => { setQ(e.target.value); setI(0) }}
-          onKeyDown={e => {
-            if (e.key === 'ArrowDown') { e.preventDefault(); setI(x => Math.min(list.length - 1, x + 1)) }
-            else if (e.key === 'ArrowUp') { e.preventDefault(); setI(x => Math.max(0, x - 1)) }
-            else if (e.key === 'Enter' && list[i]) run(list[i])
-            else if (e.key === 'Escape') onClose()
-          }} />
-        <div className="palette-list">
-          {list.map((c, k) => (
-            <div key={c.id} className={`palette-item ${k === i ? 'on' : ''}`} onMouseEnter={() => setI(k)} onClick={() => run(c)}>
-              <span className="pg">{c.group}</span><span className="pl">{c.label}</span>{c.keys && <kbd>{c.keys}</kbd>}
-            </div>
-          ))}
-          {!list.length && <div className="palette-empty">No matching commands</div>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function fuzzy(text: string, q: string) {
-  if (text.includes(q)) return 100 - text.indexOf(q)
-  let ti = 0, score = 0
-  for (const ch of q) { const f = text.indexOf(ch, ti); if (f < 0) return 0; score += f === ti ? 2 : 1; ti = f + 1 }
-  return score
-}
 
 /** Bottom bar: counts, selection, a short hint for the active tool (the full one in ? / F1). */
 /** The full hint for the active tool (status bar shows its first clause, the ? popover all of it). */

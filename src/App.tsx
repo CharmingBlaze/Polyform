@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Viewport } from './components/Viewport'
-import { Header, ToolRail, Palette, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
+import { Header, ToolRail, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
 import { SideIcons, Sidebar, Timeline } from './components/Panels'
 import { panelKey, sideHandle, useSides } from './useLayout'
 import { DialogHost } from './components/Modal'
@@ -10,6 +10,7 @@ import { PaintCanvas, PaintDivider } from './components/PaintCanvas'
 import { usePaintView } from './paintview'
 import { EmptyScene } from './components/Workspace'
 import { installShortcuts } from './commands'
+import { CommandPalette } from './components/CommandPalette'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
 import { addPrimitive } from './model'
@@ -101,7 +102,7 @@ export default function App() {
           : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><Sidebar><DrawPanel /><NumericPanel /></Sidebar></div>}
       </div>
       <StatusBar />
-      <Palette open={palette} onClose={() => setPalette(false)} />
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <HelpPopover />
       <PropertiesDialog />
       <DialogHost />
