@@ -89,6 +89,42 @@ check('UV editor: Shift+click on a selected face deselects it', !(await sel()).i
 await shiftClick(q1.x, q1.y)
 check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) && (await sel()).length === 3, JSON.stringify(await sel()))
 
+
+// ---- Live Unwrap: dragging a pin re-solves its island ----
+{
+  await p.click('[data-testid="uv-unwrap-live"]'); await frame()
+  check('Live option saved', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvUnwrap.live)) === true)
+  // the largest island: pin its two farthest-apart UV points
+  const info = await S(() => {
+    const s = window.__polyform.getState(), m = s.model
+    const isl = new Map(); m.faces.forEach((f, fi) => { const k = JSON.stringify(f.uv.map(q => q.map(x => Math.round(x * 1e5)))); void k })
+    // islands via shared UVs: union faces that share a vertex at the same UV
+    const par = m.faces.map((_, i) => i), find = x => { while (par[x] !== x) x = par[x] = par[par[x]]; return x }
+    const at = new Map()
+    m.faces.forEach((f, fi) => f.v.forEach((v, c) => { const k = `${v}:${Math.round(f.uv[c][0] * 1e6)}:${Math.round(f.uv[c][1] * 1e6)}`; if (at.has(k)) par[find(fi)] = find(at.get(k)); else at.set(k, fi) }))
+    m.faces.forEach((_, fi) => { const r = find(fi); isl.set(r, [...(isl.get(r) || []), fi]) })
+    const big = [...isl.values()].sort((a, b) => b.length - a.length)[0]
+    let best = null, bd = -1
+    const cs = big.flatMap(fi => m.faces[fi].uv.map((q, c) => [fi, c, q]))
+    for (const a of cs) for (const b of cs) { const d = Math.hypot(a[2][0] - b[2][0], a[2][1] - b[2][1]); if (d > bd) { bd = d; best = [a, b] } }
+    return { faces: big, a: best[0], b: best[1] }
+  })
+  const pinPoint = ([fi, c, q]) => S(([fi, c, q]) => window.__polyform.getState().edit(m => { const vi = m.faces[fi].v[c]; m.faces.forEach(f => f.v.forEach((v, k) => { if (v === vi && Math.hypot(f.uv[k][0] - q[0], f.uv[k][1] - q[1]) < 1e-9) f.pin = [...new Set([...(f.pin ?? []), k])] })) }, 'pin'), [fi, c, q])
+  await pinPoint(info.a); await pinPoint(info.b)
+  await S(([fi, c]) => { const s = window.__polyform.getState(); s.setSelectMode('vertex'); s.setUVSelection([fi * 1024 + c], 'verts') }, info.a); await frame()
+  const before = await uvs()
+  const pa = await S(([u, v]) => window.__polyformUV.toClient(u, v), info.a[2])
+  await p.mouse.move(pa.x, pa.y); await p.mouse.down(); await p.mouse.move(pa.x + 20, pa.y + 10, { steps: 4 }); await p.mouse.move(pa.x + 40, pa.y + 20, { steps: 4 }); await p.mouse.up(); await frame(200)
+  const after = await uvs()
+  const movedA = Math.hypot(after[info.a[0]][info.a[1]][0] - info.a[2][0], after[info.a[0]][info.a[1]][1] - info.a[2][1]) > 1e-4
+  const keptB = Math.hypot(after[info.b[0]][info.b[1]][0] - info.b[2][0], after[info.b[0]][info.b[1]][1] - info.b[2][1]) < 1e-6
+  const others = info.faces.filter(fi => fi !== info.a[0] && fi !== info.b[0] && JSON.stringify(after[fi]) !== JSON.stringify(before[fi])).length
+  const outside = after.map((u, i) => (JSON.stringify(u) !== JSON.stringify(before[i]) && !info.faces.includes(i) ? i : -1)).filter(i => i >= 0)
+  check('Live Unwrap: dragging a pin moves it, the other pin stays, the island follows; other islands untouched', movedA && keptB && others > 0 && !outside.length, JSON.stringify({ movedA, keptB, others, outside: outside.length }))
+  check('…as one undo step', await (async () => { await p.keyboard.press('Control+z'); await frame(); return JSON.stringify(await uvs()) === JSON.stringify(before) })())
+  await S(() => window.__polyform.getState().setSelectMode('face'))
+}
+
 check('no page errors', errs.length === 0, errs.join(' | '))
 await b.close()
 const bad = results.filter(r => !r[1])

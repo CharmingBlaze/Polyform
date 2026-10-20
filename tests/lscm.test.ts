@@ -94,3 +94,27 @@ describe('placing a re-unwrapped selection', () => {
     expect(ratio(sel) / ratio(others)).toBeLessThan(1.25)
   })
 })
+
+describe('Live Unwrap', () => {
+  it('dragging one of two pins re-solves the island: pins exact, the rest follows, still conformal', async () => {
+    const { liveCharts, liveSolve } = await import('../src/lscm')
+    const { m, faces } = cylStrip()
+    unwrapSeams(m, faces, 'conformal')
+    // pin two far corners (every corner of those points, so the island has exactly 2 pinned points)
+    const pinAt = (fi: number, c: number) => { const vi = m.faces[fi].v[c], uv = m.faces[fi].uv[c]; m.faces.forEach(f => f.v.forEach((v, k) => { if (v === vi && Math.hypot(f.uv[k][0] - uv[0], f.uv[k][1] - uv[1]) < 1e-9) f.pin = [...(f.pin ?? []), k] })) }
+    pinAt(faces[0], 0); pinAt(faces[63], 2)
+    const charts = liveCharts(m, faces)
+    expect(charts).toHaveLength(1)
+    const other = JSON.stringify(m.faces[faces[30]].uv)
+    // move the first pin
+    const to: Vec2 = [m.faces[faces[0]].uv[0][0] - 1, m.faces[faces[0]].uv[0][1] + 0.5]
+    m.faces.forEach(f => f.pin?.forEach(k => { if (f === m.faces[faces[0]] && k === 0) f.uv[k] = [...to] }))
+    const vi = m.faces[faces[0]].v[0]
+    m.faces.forEach(f => f.pin?.forEach(k => { if (f.v[k] === vi) f.uv[k] = [...to] }))
+    expect(liveSolve(m, charts, 'conformal')).toBe(1)
+    expect(m.faces[faces[0]].uv[0]).toEqual(to)
+    expect(JSON.stringify(m.faces[faces[30]].uv)).not.toBe(other)
+    expect(Math.max(...U.stretch(m, faces, 'angle'))).toBeLessThan(0.02)
+    expect(new Set(U.islands(m, faces).values()).size).toBe(1)
+  })
+})

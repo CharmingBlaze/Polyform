@@ -275,3 +275,39 @@ export function unwrapSeams(m: Model, faces: number[], method: UnwrapMethod): Un
   }
   return { charts: charts.length, pinnedFaces, failed }
 }
+
+// ---------- Live Unwrap ----------
+const same = (a: Vec2, b: Vec2) => Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6
+/** edges between two of `faces` where the UVs are apart (island borders) */
+export function islandBorderEdges(m: Model, faces: number[]): number[] {
+  const by = new Map<number, [number, number][]>()
+  for (const fi of faces) { const f = m.faces[fi]; f.v.forEach((a, c) => { const k = edgeKey(a, f.v[(c + 1) % f.v.length]); const l = by.get(k); if (l) l.push([fi, c]); else by.set(k, [[fi, c]]) }) }
+  const out: number[] = []
+  for (const [k, l] of by) {
+    if (l.length !== 2) continue
+    const [[f0, c0], [f1]] = l, A = m.faces[f0], B = m.faces[f1]
+    const a0 = A.v[c0], a1 = A.v[(c0 + 1) % A.v.length]
+    const uvB = (vi: number) => B.uv[B.v.indexOf(vi)]
+    if (!same(A.uv[c0], uvB(a0)) || !same(A.uv[(c0 + 1) % A.v.length], uvB(a1))) out.push(k)
+  }
+  return out
+}
+/**
+ * Live Unwrap: the charts (UV islands, cut at seams and UV borders) of `faces` that have 2+ pins; re-solve them with
+ * liveSolve while pins are dragged.
+ */
+export function liveCharts(m: Model, faces: number[]): Chart[] {
+  const border = new Set(islandBorderEdges(m, faces))
+  return buildCharts(m, faces, k => border.has(k)).filter(c => chartPins(m, c).size >= 2)
+}
+/** re-solve each chart from its pins' current UVs (pins stay exactly); returns the charts solved */
+export function liveSolve(m: Model, charts: Chart[], method: UnwrapMethod): number {
+  let n = 0
+  for (const c of charts) {
+    const pins = chartPins(m, c)
+    if (pins.size < 2) continue
+    const s = solveChart(c, method, pins)
+    if (s) { writeChart(m, s); n++ }
+  }
+  return n
+}

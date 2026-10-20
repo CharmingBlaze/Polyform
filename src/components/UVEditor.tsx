@@ -16,6 +16,7 @@ import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uv
 import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
 import { viewCtx } from './Viewport'
 import { runUnwrap } from '../uvunwrap'
+import { liveCharts, liveSolve } from '../lscm'
 import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
@@ -496,7 +497,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     let anchor: Vec2 = b.c, ad = Infinity
     orig.forEach(o => { const q = toPx(o), dd = (q.x - x) ** 2 + (q.y - y) ** 2; if (dd < ad) { ad = dd; anchor = o } })
     st.checkpoint(`UV ${kind}`)
-    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c, cp, bc: b.c, modal, anchor, handle: opt.handle, hAnchor, hPoint, w0: b.maxU - b.minU, h0: b.maxV - b.minV, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
+    // Live Unwrap: dragging pinned UVs re-solves their islands (2+ pins) as they move
+    const pinnedMoved = st.ui.uvUnwrap.live && [...ids].some(id => m.faces[cornerFace(id)]?.pin?.includes(cornerIdx(id)))
+    const live = pinnedMoved ? liveCharts(m, U.islandFaces(m, [...new Set([...ids].map(cornerFace))], uvFaces())) : null
+    drag.current = { kind: 'xf', live, liveT: 0, xf: kind, x0: x, y0: y, orig, c, cp, bc: b.c, modal, anchor, handle: opt.handle, hAnchor, hPoint, w0: b.maxU - b.minU, h0: b.maxV - b.minV, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
     return true
   }
   /** current grid cells per texel (0 = free) for these modifier keys */
@@ -531,6 +535,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         if (d.h0 > 1e-9 && (hy || shift)) sy = snapLen(d.h0 * sy, th, sub) / d.h0
       }
       U.setCorners(m, U.scaleAbout(d.orig, A, sx, sy))
+      liveStep(d, false)
       st.touch()
       return
     }
@@ -546,6 +551,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       else { const cs = Math.cos(ang), sn = Math.sin(ang), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
       m.faces[cornerFace(id)].uv[cornerIdx(id)] = u
     })
+    liveStep(d, false)
     st.touch()
   }
   /**
@@ -567,8 +573,18 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     d.echo = `${d.typed}${d.xf === 'move' ? ' px' : d.xf === 'rotate' ? '°' : '×'}`
     st.touch()
   }
+  /** Live Unwrap: re-solve the dragged pins' islands, at most every 30 ms while dragging (always at the end) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const liveStep = (d: any, final: boolean) => {
+    if (!d?.live?.length) return
+    const now = performance.now()
+    if (!final && now - d.liveT < 30) { d.livePending = true; return }
+    d.liveT = now; d.livePending = false
+    liveSolve(useStore.getState().model, d.live, useStore.getState().ui.uvUnwrap.method)
+  }
   const endXf = (cancel: boolean) => {
     const st = useStore.getState()
+    if (!cancel && drag.current?.livePending) liveStep(drag.current, true)
     drag.current = null
     if (cancel) st.cancelEdit(); else st.commit()
     force(n => n + 1)
@@ -973,6 +989,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     </div>
       {unwrapOpen && <div className="uv-packopts" data-testid="uv-unwrap-options">
         <select data-testid="uv-unwrap-method" value={uw.method} title="Angle based (ABF-style): angles made consistent first, best for organic shapes. Conformal (LSCM): straight from the 3D angles, faster" onChange={e => setUW({ method: e.target.value as 'angle' | 'conformal' })}><option value="angle">Angle based</option><option value="conformal">Conformal</option></select>
+        <label title="Live Unwrap: dragging pinned UVs re-solves their island as you move them (needs 2+ pins)"><input type="checkbox" data-testid="uv-unwrap-live" checked={uw.live} onChange={e => setUW({ live: e.target.checked })} /> Live</label>
         <label title="Gap between islands when packing, in UV units (0–1 of the image width)">Margin <input data-testid="uv-unwrap-margin" type="number" min={0} max={0.25} step={0.005} value={uw.margin} onChange={e => setUW({ margin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
       </div>}</>,
     transform: <div className="uv-grid">
@@ -1058,6 +1075,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           'sep',
           { id: 'unwrap', label: `Unwrap (${uw.method === 'angle' ? 'angle based' : 'conformal'})`, run: () => runUnwrap('unwrap') },
           'sep',
+          { id: 'live', label: uw.live ? '✓ Live Unwrap (drag pins)' : 'Live Unwrap (drag pins)', run: () => setUW({ live: !uw.live }) },
           { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },
           { id: 'paste', label: 'Paste UVs', keys: 'Ctrl+V', run: pasteUVs, enabled: !!uvClip },
           'sep',
