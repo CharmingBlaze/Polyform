@@ -269,6 +269,8 @@ interface State {
   imageResize: (mat: number, w: number, h: number, mode: 'scale' | 'extend', anchor?: IO.Anchor) => void
   /** Flip / rotate the material's image and every UV that uses it, so the model looks the same. */
   imageTransform: (mat: number, op: IO.ImageOp) => void
+  /** clear painted texels no face of this image uses (one undo step); returns how many */
+  imageClearUnused: (mat: number) => number
   setImageFilter: (mat: number, filter: M.TexFilter) => void
   setImageWrap: (mat: number, wrap: M.TexWrap) => void
 }
@@ -1158,6 +1160,17 @@ export const useStore = create<State>((set, get) => ({
     if (!id || !src) return s.notify('This material has no image')
     const nid = tex.fromPixels(IO.transformPx(src, op))
     s.edit(m => { m.materials[mat].texture = nid; IO.remapUVs(m, IO.facesOfMat(m, mat), (u, v) => IO.transformUV(u, v, op)) }, op.startsWith('flip') ? 'Flip image' : 'Rotate image')
+  },
+  imageClearUnused: mat => {
+    const s = get(), id = s.model.materials[mat]?.texture, src = id ? tex.pixels(id) : null
+    if (!id || !src) { s.notify('This material has no image'); return 0 }
+    const used = UV.usedTexels(s.model, IO.facesOfTexture(s.model, id), src.width, src.height)
+    const { px, n } = IO.clearUnusedPx(src, used)
+    if (!n) { s.notify('No unused painted pixels'); return 0 }
+    const nid = tex.fromPixels(px)
+    s.edit(m => m.materials.forEach(mt => { if (mt.texture === id) mt.texture = nid }), 'Clear unused pixels')
+    s.notify(`Cleared ${n} unused pixel${n === 1 ? '' : 's'}`)
+    return n
   },
   setImageFilter: (mat, filter) => get().edit(m => { if (filter === 'linear') m.materials[mat].filter = 'linear'; else delete m.materials[mat].filter }, 'Image filtering'),
   setImageWrap: (mat, wrap) => get().edit(m => { if (wrap === 'repeat') delete m.materials[mat].wrap; else m.materials[mat].wrap = wrap }, 'Image wrap'),

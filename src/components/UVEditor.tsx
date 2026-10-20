@@ -7,6 +7,7 @@ import { interaction, setHoverFace } from '../interaction'
 import { sceneManager } from '../scene'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
+import * as IO from '../imageops'
 import * as UVS from '../uvsel'
 import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
@@ -107,7 +108,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 })
   const [size, setSize] = useState({ w: 300, h: 300 })
   const [checker, setChecker] = useState(false)
-  const [heat, setHeat] = useState<'off' | U.StretchKind | 'overlap' | 'density'>('off')
+  const [heat, setHeat] = useState<'off' | U.StretchKind | 'overlap' | 'density' | 'unused'>('off')
   const [units, setUnits] = useState<'px' | '01'>('px')
   const [packOpen, setPackOpen] = useState(false)
   const packPrefs = useStore(s => s.ui.uvPack)
@@ -152,10 +153,25 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const w = tw || paintTexSize, h = th || paintTexSize, c = U.coverage(model, imageFaces(), w, h)
     const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h
     const g = cnv.getContext('2d')!, img = g.createImageData(w, h)
-    for (let i = 0; i < c.count.length; i++) if (c.count[i] >= 2) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 40; img.data[i * 4 + 2] = 40; img.data[i * 4 + 3] = 190 }
+    for (let i = 0; i < c.own.length; i++) if (c.own[i] >= 2) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 40; img.data[i * 4 + 2] = 40; img.data[i * 4 + 3] = 190 }
     g.putImageData(img, 0, 0)
     return { c, cnv }
   }, [heat, version, model, tw, th, paintTexSize, shownMat]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Unused overlay: texels no face of this image may sample (every face using the image, hidden ones too)
+  const unused = useMemo(() => {
+    if (heat !== 'unused' || !texId || !tw) return null
+    const px = textures.pixels(texId)
+    if (!px) return null
+    const used = U.usedTexels(model, IO.facesOfTexture(model, texId), tw, th), n = IO.unusedPainted(px, used)
+    const cnv = document.createElement('canvas'); cnv.width = tw; cnv.height = th
+    const g = cnv.getContext('2d')!, img = g.createImageData(tw, th)
+    for (let i = 0; i < used.length; i++) if (!used[i]) {
+      const painted = px.data[i * 4 + 3] > 0
+      img.data.set(painted ? [255, 60, 220, 200] : [0, 0, 0, 120], i * 4)
+    }
+    g.putImageData(img, 0, 0)
+    return { n, cnv }
+  }, [heat, version, model, tw, th, texId, texRev]) // eslint-disable-line react-hooks/exhaustive-deps
   const drag = useRef<Drag>(null)
   /** user-moved rotation pivot (UV); cleared when the selection changes */
   const pivot = useRef<Vec2 | null>(null)
@@ -238,8 +254,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
       const on = st.selFaces.has(fi) && (faceMode || f.uv.every((_, i) => sel.has(fi * 1024 + i)))
       g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : densVals ? U.densityColor(densVals[k], target) : on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
-      g.strokeStyle = on ? '#ffa04a' : overSet?.has(fi) ? '#ff5050' : '#7fb0ff'; g.stroke()
+      g.strokeStyle = on ? '#ffa04a' : overSet?.has(fi) ? '#ff5050' : overSet && f.uvShare ? '#5fd3c4' : '#7fb0ff'; g.stroke()
     })
+    if (unused) { const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false; g.drawImage(unused.cnv, originX, originY, side, side); g.imageSmoothingEnabled = sm }
     if (cov) { const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false; g.drawImage(cov.cnv, originX, originY, side, side); g.imageSmoothingEnabled = sm }
     // selected edges
     g.strokeStyle = '#ffa04a'; g.lineWidth = 2.2; g.beginPath()
@@ -928,8 +945,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
         </select>
         <button data-testid="uv-image-menu" className={imgMenu ? 'on' : ''} title="Image: New (blank or UV template), Resize, Flip, Rotate" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setImgMenu(imgMenu ? null : { x: r.left, y: r.bottom + 2 }) }}>Image ▾</button>
-        <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
-          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option>
+        <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share (faces marked Shared UVs are left out). Unused: pixels no face uses. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option><option value="unused">Unused pixels</option>
         </select>
         {globalTool === 'paint' && <B id="paint-uvs" label="UVs" on={paintUVs} tip="Show the UV wireframe over the image while painting" onClick={() => useStore.getState().setUI({ paintUVs: !paintUVs })} />}
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
@@ -941,6 +958,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
         {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
           {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
+        </div>}
+        {heat === 'unused' && <div className="uv-overlay-info" data-testid="uv-unused-info" title="Magenta: painted pixels no face uses · dark: empty unused pixels">
+          {!tw ? <span>Show an image first</span> : <><span className={unused?.n ? 'bad' : ''}>{unused?.n ? `${unused.n} unused painted px` : 'No unused paint'}</span><button className="small" data-testid="uv-unused-clear" disabled={!unused?.n} title="Make every pixel no face uses transparent (Ctrl+Z undoes)" onClick={() => useStore.getState().imageClearUnused(shownMat)}>Clear unused</button></>}
         </div>}
         {heat === 'density' && <div className="uv-overlay-info" data-testid="uv-density-legend" title="Face colour: px per unit against the project's texel density (File → Properties)">
           <span className="uv-legend" /><span>target {model.props.texelDensity} px/u{densNow ? ` · selection ${densNow} px/u` : ''}</span>
@@ -969,6 +989,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, ctx.x, ctx.y) },
           { id: 'straighten', label: 'Straighten', run: straighten },
           { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(ctx.x, ctx.y) },
+          (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
           { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
           'sep',
           { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },

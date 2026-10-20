@@ -902,29 +902,85 @@ export interface Coverage {
   w: number; h: number
   /** faces covering each texel (texel centres, image rows top-down) */
   count: Uint16Array
+  /** the same, counting only faces without Shared UVs (what the Overlap check looks at) */
+  own: Uint16Array
   /** the first face that covered each texel, -1 for none */
   first: Int32Array
-  /** faces sharing at least one texel with another face */
+  /** faces (without Shared UVs) sharing at least one texel with another such face */
   overlapping: number[]
-  /** texels covered twice or more */
+  /** texels covered twice or more by faces without Shared UVs */
   overlapPx: number
   /** texels covered at least once */
   coveredPx: number
 }
-/** Rasterize each face's UV polygon at image resolution (inside 0..1 only). */
+/** Rasterize each face's UV polygon at image resolution (inside 0..1 only). Faces marked Shared UVs never overlap. */
 export function coverage(m: Model, faces: number[], tw: number, th: number): Coverage {
-  const count = new Uint16Array(tw * th), first = new Int32Array(tw * th).fill(-1), over = new Set<number>()
+  const count = new Uint16Array(tw * th), own = new Uint16Array(tw * th), first = new Int32Array(tw * th).fill(-1), ownFirst = new Int32Array(tw * th).fill(-1), over = new Set<number>()
   let overlapPx = 0, coveredPx = 0
   for (const fi of faces) {
     const f = m.faces[fi]
     if (!f || f.uv.length < 3) continue
+    const shared = f.uvShare === true
     scanPolygon(tw, th, f.uv.map(([u, v]) => [u * tw, (1 - v) * th] as [number, number]), i => {
       const c = count[i]
       if (c < 65535) count[i] = c + 1
-      if (c === 0) { first[i] = fi; coveredPx++ } else { if (c === 1) overlapPx++; over.add(first[i]); over.add(fi) }
+      if (c === 0) { first[i] = fi; coveredPx++ }
+      if (shared) return
+      const o = own[i]
+      if (o < 65535) own[i] = o + 1
+      if (o === 0) ownFirst[i] = fi; else { if (o === 1) overlapPx++; over.add(ownFirst[i]); over.add(fi) }
     })
   }
-  return { w: tw, h: th, count, first, overlapping: [...over].sort((a, b) => a - b), overlapPx, coveredPx }
+  return { w: tw, h: th, count, own, first, overlapping: [...over].sort((a, b) => a - b), overlapPx, coveredPx }
+}
+
+/** Mark / unmark faces as Shared UVs (intentional overlap). Returns how many changed. */
+export function setShared(m: Model, faces: Iterable<number>, on: boolean): number {
+  let n = 0
+  for (const fi of faces) { const f = m.faces[fi]; if (!f || !!f.uvShare === on) continue; if (on) f.uvShare = true; else delete f.uvShare; n++ }
+  return n
+}
+
+// ---------- used texels (Unused overlay, Clear unused) ----------
+/** Does the polygon (px) overlap the texel square [x, x+1]×[y, y+1] with positive area? */
+function polyHitsTexel(poly: [number, number][], x: number, y: number): boolean {
+  const e = 1e-6, x0 = x + e, y0 = y + e, x1 = x + 1 - e, y1 = y + 1 - e
+  const inside = (px: number, py: number) => {
+    let c = false
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [ax, ay] = poly[i], [bx, by] = poly[j]
+      if ((ay > py) !== (by > py) && px < ((bx - ax) * (py - ay)) / (by - ay) + ax) c = !c
+    }
+    return c
+  }
+  if (inside(x0, y0) || inside(x1, y0) || inside(x1, y1) || inside(x0, y1) || inside(x + 0.5, y + 0.5)) return true
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length]
+    // Liang–Barsky: does the edge pass through the (slightly shrunk) open square?
+    let t0 = 0, t1 = 1
+    const dx = bx - ax, dy = by - ay
+    const clip = (p: number, q: number) => { if (Math.abs(p) < 1e-12) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r } else { if (r < t0) return false; if (r < t1) t1 = r } return true }
+    if (clip(-dx, ax - x0) && clip(dx, x1 - ax) && clip(-dy, ay - y0) && clip(dy, y1 - ay) && t1 > t0) return true
+  }
+  return false
+}
+/**
+ * Texels any of these faces may sample (1 = used): every texel whose square the UV polygon overlaps, so the
+ * edge texels nearest filtering can reach count too. UVs outside 0..1 (tiling) count as using the whole image.
+ */
+export function usedTexels(m: Model, faces: number[], tw: number, th: number): Uint8Array {
+  const used = new Uint8Array(tw * th)
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length < 3) continue
+    if (f.uv.some(([u, v]) => u < -1e-6 || u > 1 + 1e-6 || v < -1e-6 || v > 1 + 1e-6)) { used.fill(1); return used }
+    const poly = f.uv.map(([u, v]) => [u * tw, (1 - v) * th] as [number, number])
+    const xs = poly.map(q => q[0]), ys = poly.map(q => q[1])
+    const xa = Math.max(0, Math.floor(Math.min(...xs))), xb = Math.min(tw - 1, Math.ceil(Math.max(...xs)))
+    const ya = Math.max(0, Math.floor(Math.min(...ys))), yb = Math.min(th - 1, Math.ceil(Math.max(...ys)))
+    for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) if (!used[y * tw + x] && polyHitsTexel(poly, x, y)) used[y * tw + x] = 1
+  }
+  return used
 }
 /** Faces whose UVs cover texel (x, y) (image px, top-left origin). */
 export function facesAtTexel(m: Model, faces: number[], tw: number, th: number, x: number, y: number): number[] {

@@ -20,6 +20,8 @@ export interface Face {
   vc?: string[]
   /** Per-face material slot; overrides the group's material (used by "Assign image to selection"). */
   mat?: number
+  /** Shared UVs: this face reuses texels on purpose (mirrored / repeated detail); the Overlap check ignores it. */
+  uvShare?: true
 }
 
 /**
@@ -383,6 +385,7 @@ export function validateModel(m: Model) {
       if (o === -1) owner[v] = f.g
       else if (o !== f.g) throw new Error(`Vertex ${v} is shared by objects ${o} and ${f.g}; each object needs its own points`)
     })
+    if (f.uvShare !== undefined && f.uvShare !== true) delete f.uvShare
     if (f.pin !== undefined && !(Array.isArray(f.pin) && f.pin.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid pinned corners`)
     if (f.seam !== undefined && !(Array.isArray(f.seam) && f.seam.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid seams`)
     if (f.sharp !== undefined && !(Array.isArray(f.sharp) && f.sharp.every(c => int(c, 0, f.v.length)))) throw new Error(`Face ${i} has invalid sharp edges`)

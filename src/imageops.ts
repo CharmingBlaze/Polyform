@@ -120,3 +120,20 @@ export function templatePx(m: Model, faces: number[], w: number, h: number): Px 
   }
   return out
 }
+
+/** Faces of every material that shows this image (several materials may share one). */
+export const facesOfTexture = (m: Model, id: string) => m.faces.map((f, i) => (m.materials[faceMat(m, f)]?.texture === id ? i : -1)).filter(i => i >= 0)
+
+/** Painted texels (alpha > 0) no face uses. */
+export function unusedPainted(px: Px, used: Uint8Array): number {
+  let n = 0
+  for (let i = 0; i < used.length; i++) if (!used[i] && px.data[i * 4 + 3] > 0) n++
+  return n
+}
+/** A copy with every unused texel cleared to transparent black; `n` = texels that changed. */
+export function clearUnusedPx(px: Px, used: Uint8Array): { px: Px; n: number } {
+  const data = new Uint8ClampedArray(px.data)
+  let n = 0
+  for (let i = 0; i < used.length; i++) if (!used[i] && data[i * 4 + 3] > 0) { data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = data[i * 4 + 3] = 0; n++ }
+  return { px: { width: px.width, height: px.height, data }, n }
+}

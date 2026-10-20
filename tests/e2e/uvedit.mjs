@@ -760,6 +760,38 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('…and the UVs of the existing box are untouched throughout', (await pxBox([0, 1, 2, 3, 4, 5])).x === 120)
 }
 
+// Shared UVs (intentional overlap) and the Unused overlay with Clear unused
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  const mat = await addImage(16, 16, 'un16')
+  await gridLayout(); await S(() => window.__polyform.getState().selectNone()); await frame()
+  await p.selectOption('[data-testid="uv-stretch"]', 'unused'); await frame(200)
+  const info = () => p.textContent('[data-testid="uv-unused-info"]')
+  check('Unused overlay: counts the painted pixels no face uses (256 − 6 × 16)', (await info()).includes('160 unused painted px'), await info())
+  await p.screenshot({ path: '/workspace/shot-uv-unused.png' })
+  const alpha = (x, y) => S(([mat, x, y]) => { const m = window.__polyform.getState().model, c = window.__polyformTextures.canvas(m.materials[mat].texture); return c.getContext('2d').getImageData(x, y, 1, 1).data[3] }, [mat, x, y])
+  await p.click('[data-testid="uv-unused-clear"]'); await frame(200)
+  check('Clear unused: unused pixels transparent, used ones kept', (await alpha(0, 0)) === 0 && (await alpha(15, 15)) === 0 && (await alpha(2, 13)) === 255 && (await info()).includes('No unused paint'), `${await alpha(0, 0)} ${await alpha(2, 13)} ${await info()}`)
+  await p.keyboard.press('Control+z'); await frame(200)
+  check('Ctrl+Z brings the cleared pixels back', (await alpha(0, 0)) === 255 && (await info()).includes('160'))
+  // overlap: face 1 on top of face 0, then mark face 1 Shared UVs from the right-click menu
+  await S(() => window.__polyform.getState().edit(m => { m.faces[1].uv = m.faces[0].uv.map(q => [...q]) }, 'overlap'))
+  await p.selectOption('[data-testid="uv-stretch"]', 'overlap'); await frame(200)
+  const oinfo = () => p.textContent('[data-testid="uv-overlap-info"]')
+  check('Overlap overlay finds the two faces', (await oinfo()).includes('2 faces overlap'), await oinfo())
+  await selFace(1); await frame()
+  const c1 = await uvC(...await centroid(1))
+  await p.mouse.click(c1.x, c1.y, { button: 'right' }); await frame()
+  await p.click('[data-testid="uvm-share"]'); await frame(200)
+  check('Shared UVs (right-click): face 1 flagged, the overlap check ignores it', (await S(() => window.__polyform.getState().model.faces[1].uvShare)) === true && (await oinfo()).includes('No overlaps'), await oinfo())
+  await p.mouse.click(c1.x, c1.y, { button: 'right' }); await frame()
+  const lbl = await p.textContent('[data-testid="uvm-share"]')
+  check('the menu item shows the flag (✓) and toggles it off again', lbl.includes('✓'), lbl)
+  await p.click('[data-testid="uvm-share"]'); await frame(200)
+  check('unshared: the overlap is reported again', (await oinfo()).includes('2 faces overlap'))
+  await p.selectOption('[data-testid="uv-stretch"]', 'off')
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }
