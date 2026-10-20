@@ -177,6 +177,16 @@ export const moveActivePaintLayer = (dir: 1 | -1) => withTex(id => { const lid =
 export const duplicateActivePaintLayer = () => withTex(duplicatePaintLayer)
 export const toggleActivePaintLayer = () => withTex(id => { const lid = activeId(id); if (lid) togglePaintLayer(id, lid) })
 
+/** Set the active layer's blend in one undo step. Reads the active layer at call time. */
+export function setPaintBlend(id: string, blend: Blend) {
+  const L = textures.layersOf(id).find(l => l.active)
+  if (!L || L.blend === blend) return
+  const before = textures.captureStack(id, false)
+  if (!before || !textures.setLayer(id, L.id, { blend })) return
+  focusPaintTex(id)
+  pushStack(id, before, 'Layer blend')
+}
+
 /** One step through the short blend list. The bottom layer still shows its own pixels until something is under it. */
 export function cyclePaintBlend(id?: string) {
   const tex = id ?? shownPaintTex()
