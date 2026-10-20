@@ -2,7 +2,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scissors, Shrink, SlidersHorizontal, WandSparkles, type LucideIcon } from 'lucide-react'
+import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scissors, Shrink, SlidersHorizontal, Sparkles, WandSparkles, type LucideIcon } from 'lucide-react'
 import { useHost } from '../portalhost'
 import * as THREE from 'three'
 import { useStore } from '../store'
@@ -980,6 +980,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const groups: Record<ToolGroup, React.ReactNode> = {
     unwrap: <><div className="uv-grid">
       <T id="unwrap" icon={Scissors} label="Unwrap" tip={`Unwrap from seams: ${uw.method === 'angle' ? 'angle based' : 'conformal'}, pins kept; the selected faces only (all when none)`} onClick={() => runUnwrap('unwrap')} />
+      <T id="smart" icon={Sparkles} label="Smart UV" tip={`Smart UV Project: flat projections split where faces turn more than ${uw.smartAngle}° (angle limit, island margin and area weight in Options)`} onClick={() => runUnwrap('smart')} />
       <T id="auto" icon={WandSparkles} label="Auto UV" tip="Auto UV: unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
       <T id="auto-px" icon={Grid3x3} label="Auto px" tip="Auto px: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
       <T id="proj-cross" icon={Box} label="Box cross" tip="Box cross (Minecraft layout): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
@@ -991,6 +992,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <select data-testid="uv-unwrap-method" value={uw.method} title="Angle based (ABF-style): angles made consistent first, best for organic shapes. Conformal (LSCM): straight from the 3D angles, faster" onChange={e => setUW({ method: e.target.value as 'angle' | 'conformal' })}><option value="angle">Angle based</option><option value="conformal">Conformal</option></select>
         <label title="Live Unwrap: dragging pinned UVs re-solves their island as you move them (needs 2+ pins)"><input type="checkbox" data-testid="uv-unwrap-live" checked={uw.live} onChange={e => setUW({ live: e.target.checked })} /> Live</label>
         <label title="Gap between islands when packing, in UV units (0–1 of the image width)">Margin <input data-testid="uv-unwrap-margin" type="number" min={0} max={0.25} step={0.005} value={uw.margin} onChange={e => setUW({ margin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
+        <span className="uv-optrow" title="Smart UV Project">Smart: <label title="Angle limit: faces turning more than this get their own projection">∠ <input data-testid="uv-smart-angle" type="number" min={1} max={89} value={uw.smartAngle} onChange={e => setUW({ smartAngle: Math.max(1, Math.min(89, Math.round(+e.target.value || 66))) })} />°</label>
+          <label title="Island margin (UV units)">gap <input data-testid="uv-smart-margin" type="number" min={0} max={0.25} step={0.005} value={uw.smartMargin} onChange={e => setUW({ smartMargin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
+          <label title="Area weight 0–1: bigger faces pull the projection directions more">area <input data-testid="uv-smart-area" type="number" min={0} max={1} step={0.1} value={uw.smartArea} onChange={e => setUW({ smartArea: Math.max(0, Math.min(1, +e.target.value || 0)) })} /></label></span>
       </div>}</>,
     transform: <div className="uv-grid">
       <T id="xf-rot-ccw" icon={RotateCcw} label="Rotate ⟲" tip="Rotate 90° counter-clockwise · Shift+Alt+R" onClick={() => rotOp('ccw')} />

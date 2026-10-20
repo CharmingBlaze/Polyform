@@ -5,10 +5,11 @@ import { faceMat, type Vec2 } from './model'
 import { useStore } from './store'
 import * as U from './uvops'
 import { unwrapSeams } from './lscm'
+import { smartProject } from './uvblender'
 import { placeUnwrapped, type PlaceResult } from './uvplace'
 
 export type ProjKind = 'front' | 'top' | 'side' | 'box' | 'cyl' | 'sphere'
-export type UnwrapKind = 'unwrap' | ProjKind | 'view'
+export type UnwrapKind = 'unwrap' | 'smart' | ProjKind | 'view'
 
 /** faces to work on, whether that is all of them, and the other faces sharing their images */
 export function unwrapTargets() {
@@ -32,7 +33,7 @@ export function runUnwrap(kind: UnwrapKind, proj?: (p: readonly number[]) => Vec
   const img = st.imageSizeOf(faces), dens = st.model.props.texelDensity
   const place = { margin: o.margin, img: img ? { tw: img.w, th: img.h, density: dens } : undefined }
   let msg = ''
-  const label = kind === 'unwrap' ? `Unwrap (${o.method === 'angle' ? 'angle based' : 'conformal'})` : kind === 'view' ? 'UV project from view' : 'UV project'
+  const label = kind === 'smart' ? 'Smart UV Project' : kind === 'unwrap' ? `Unwrap (${o.method === 'angle' ? 'angle based' : 'conformal'})` : kind === 'view' ? 'UV project from view' : 'UV project'
   st.edit(m => {
     const before = faces.map(fi => m.faces[fi].uv.map(p => [p[0], p[1]] as Vec2))
     if (kind === 'unwrap') {
@@ -40,6 +41,14 @@ export function runUnwrap(kind: UnwrapKind, proj?: (p: readonly number[]) => Vec
       const pinned = new Set(r.pinnedFaces), free = faces.filter(fi => !pinned.has(fi))
       const pr = placeUnwrapped(m, free, others, before.filter((_, k) => !pinned.has(faces[k])), all, place)
       msg = `Unwrapped ${faces.length} face${faces.length === 1 ? '' : 's'} (${o.method === 'angle' ? 'angle based' : 'conformal'}): ${r.charts} island${r.charts === 1 ? '' : 's'}${pinned.size ? ' · pinned islands stay on their pins' : ''}${r.failed ? ` · ${r.failed} failed` : ''}${where(pr)}`
+      return
+    }
+    if (kind === 'smart') {
+      U.keepPins(m, faces, () => {
+        const g = smartProject(m, faces, o.smartAngle, o.smartArea)
+        const pr = placeUnwrapped(m, faces, others, before, all, { ...place, margin: o.smartMargin })
+        msg = `Smart UV Project: ${g.length} island${g.length === 1 ? '' : 's'} (angle limit ${o.smartAngle}°)${where(pr)}`
+      })
       return
     }
     U.keepPins(m, faces, () => {

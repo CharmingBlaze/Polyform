@@ -487,3 +487,4 @@ button.danger { color: #ff9a9a; }
 .uv-selcard .dim { color: var(--dim); }
 .uv-selcard b { font-weight: 600; }
 .uv-actions .uv-grid { margin-top: 2px; }
+.uv-optrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; width: 100%; }

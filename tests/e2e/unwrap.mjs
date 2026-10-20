@@ -15,6 +15,11 @@ await S(() => window.__polyform.getState().openSample('character')); await frame
 await p.click('[data-testid="ws-uv"]'); await frame(400)
 await S(() => { const s = window.__polyform.getState(); s.set({ tool: 'select' }); s.setSelectMode('face'); s.selectNone() }); await frame()
 const uvs = () => S(() => window.__polyform.getState().model.faces.map(f => f.uv.map(q => q.map(x => Math.round(x * 1e6) / 1e6))))
+const ISL = () => S(() => {
+  const m = window.__polyform.getState().model, par = m.faces.map((_, i) => i), find = x => { while (par[x] !== x) x = par[x] = par[par[x]]; return x }, at = new Map(), r = x => Math.round(x * 1e6)
+  m.faces.forEach((f, fi) => f.v.forEach((a, c) => { const d = (c + 1) % f.v.length, b = f.v[d]; const [p, q] = a < b ? [[a, f.uv[c]], [b, f.uv[d]]] : [[b, f.uv[d]], [a, f.uv[c]]]; const k = `${p[0]}_${q[0]}:${r(p[1][0])},${r(p[1][1])}:${r(q[1][0])},${r(q[1][1])}`; if (at.has(k)) par[find(fi)] = find(at.get(k)); else at.set(k, fi) }))
+  const g = new Map(); m.faces.forEach((_, fi) => { const k = find(fi); g.set(k, [...(g.get(k) || []), fi]) }); return [...g.values()]
+})
 const sel = () => S(() => [...window.__polyform.getState().selFaces].sort((a, b) => a - b))
 const pane = await S(() => window.__polyform.getState().maximized ?? 1)
 const centres = () => S(pane => { const c = window.__polyformViews[pane], m = window.__polyform.getState().model, V = c.camera.position.constructor, r = c.el.getBoundingClientRect(); return m.faces.map(f => { const q = new V(...[0, 1, 2].map(k => f.v.reduce((a, v) => a + m.verts[v][k], 0) / f.v.length)).project(c.camera); return { x: r.left + (q.x * .5 + .5) * c.w, y: r.top + (-q.y * .5 + .5) * c.h, z: q.z } }) }, pane)
@@ -90,28 +95,45 @@ await shiftClick(q1.x, q1.y)
 check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) && (await sel()).length === 3, JSON.stringify(await sel()))
 
 
+// ---- Smart UV Project: angle limit splits; the selection only ----
+{
+  const islandsOf = async () => (await ISL()).length
+  // a smooth shape: one UV sphere (the character is made of boxes, every face its own direction)
+  await S(() => { const s = window.__polyform.getState(), m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().runOp('add.sphere', {}); window.__polyform.getState().selectNone() }); await frame(200)
+  await p.fill('[data-testid="uv-smart-angle"]', '80'); await frame()
+  await p.click('[data-testid="uv-smart"]'); await frame(300)
+  const n80 = await islandsOf()
+  await p.fill('[data-testid="uv-smart-angle"]', '20'); await frame()
+  await p.click('[data-testid="uv-smart"]'); await frame(300)
+  const n20 = await islandsOf()
+  check('Smart UV Project: a smaller angle limit gives more islands; all inside 0..1', n20 > n80 && n80 > 1 && (await uvs()).flat().every(([u, v]) => u >= -1e-6 && u <= 1 + 1e-6 && v >= -1e-6 && v <= 1 + 1e-6), JSON.stringify([n80, n20]))
+  check('Smart UV options saved', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvUnwrap.smartAngle)) === 20)
+  const pick3 = [3, 10, 20]
+  await S(fs => window.__polyform.getState().setSelection({ faces: fs }), pick3); await frame()
+  const b0 = await uvs()
+  await p.click('[data-testid="uv-smart"]'); await frame(300)
+  const a0 = await uvs()
+  const ch = a0.map((u, i) => (JSON.stringify(u) !== JSON.stringify(b0[i]) ? i : -1)).filter(i => i >= 0)
+  check('Smart UV Project on 3 selected faces changes only those', ch.length > 0 && ch.every(i => pick3.includes(i)), JSON.stringify(ch))
+}
+
 // ---- Live Unwrap: dragging a pin re-solves its island ----
 {
   await p.click('[data-testid="uv-unwrap-live"]'); await frame()
   check('Live option saved', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvUnwrap.live)) === true)
   // the largest island: pin its two farthest-apart UV points
-  const info = await S(() => {
-    const s = window.__polyform.getState(), m = s.model
-    const isl = new Map(); m.faces.forEach((f, fi) => { const k = JSON.stringify(f.uv.map(q => q.map(x => Math.round(x * 1e5)))); void k })
-    // islands via shared UVs: union faces that share a vertex at the same UV
-    const par = m.faces.map((_, i) => i), find = x => { while (par[x] !== x) x = par[x] = par[par[x]]; return x }
-    const at = new Map()
-    m.faces.forEach((f, fi) => f.v.forEach((v, c) => { const k = `${v}:${Math.round(f.uv[c][0] * 1e6)}:${Math.round(f.uv[c][1] * 1e6)}`; if (at.has(k)) par[find(fi)] = find(at.get(k)); else at.set(k, fi) }))
-    m.faces.forEach((_, fi) => { const r = find(fi); isl.set(r, [...(isl.get(r) || []), fi]) })
-    const big = [...isl.values()].sort((a, b) => b.length - a.length)[0]
+  await S(() => window.__polyform.getState().selectNone()); await p.click('[data-testid="uv-smart"]'); await frame(300)
+  const big = (await ISL()).sort((a, b) => b.length - a.length)[0]
+  const info = await S(big => {
+    const m = window.__polyform.getState().model
     let best = null, bd = -1
     const cs = big.flatMap(fi => m.faces[fi].uv.map((q, c) => [fi, c, q]))
     for (const a of cs) for (const b of cs) { const d = Math.hypot(a[2][0] - b[2][0], a[2][1] - b[2][1]); if (d > bd) { bd = d; best = [a, b] } }
     return { faces: big, a: best[0], b: best[1] }
-  })
+  }, big)
   const pinPoint = ([fi, c, q]) => S(([fi, c, q]) => window.__polyform.getState().edit(m => { const vi = m.faces[fi].v[c]; m.faces.forEach(f => f.v.forEach((v, k) => { if (v === vi && Math.hypot(f.uv[k][0] - q[0], f.uv[k][1] - q[1]) < 1e-9) f.pin = [...new Set([...(f.pin ?? []), k])] })) }, 'pin'), [fi, c, q])
   await pinPoint(info.a); await pinPoint(info.b)
-  await S(([fi, c]) => { const s = window.__polyform.getState(); s.setSelectMode('vertex'); s.setUVSelection([fi * 1024 + c], 'verts') }, info.a); await frame()
+  await S(([fi, c]) => { const s = window.__polyform.getState(); s.setUI({ uvSync: 'uv' }); s.setSelectMode('vertex'); s.setUVSelection([fi * 1024 + c], 'verts') }, info.a); await frame()
   const before = await uvs()
   const pa = await S(([u, v]) => window.__polyformUV.toClient(u, v), info.a[2])
   await p.mouse.move(pa.x, pa.y); await p.mouse.down(); await p.mouse.move(pa.x + 20, pa.y + 10, { steps: 4 }); await p.mouse.move(pa.x + 40, pa.y + 20, { steps: 4 }); await p.mouse.up(); await frame(200)
