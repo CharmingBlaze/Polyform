@@ -773,7 +773,10 @@ export function clampSeg(k: PrimitiveKind, v: number): number {
  * Add a primitive stretched to fit exactly inside the box min..max (world). Flat primitives (plane, disc) sit at the
  * box's middle on their flat axis. The sphere's rings follow its sides so the wheel refines it evenly.
  */
-export function fitPrimitive(m: Model, kind: PrimitiveKind, min: Vec3, max: Vec3, seg: number) {
+export function fitPrimitive(m: Model, kind: PrimitiveKind, a: Vec3, b: Vec3, seg: number) {
+  // A box dragged right-to-left (or bottom-to-top) arrives with min > max on some axes. Mapping onto that
+  // mirrors the mesh, and an odd number of mirrored axes flips every face inside out, so order each axis first.
+  const min = [0, 1, 2].map(i => Math.min(a[i], b[i])) as Vec3, max = [0, 1, 2].map(i => Math.max(a[i], b[i])) as Vec3
   const params: Params = {}
   const key = SEG_KEY[kind]
   if (key) params[key] = clampSeg(kind, seg)
