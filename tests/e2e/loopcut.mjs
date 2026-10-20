@@ -1,4 +1,4 @@
-// E2E: loop cut (Ctrl+R, build step 3). Clicks land inside panes. Hover previews the ring, wheel / typed number set the
+// E2E: loop cut (Ctrl+R). Clicks land inside panes. Hover previews the ring, wheel / typed number set the
 // cut count, click cuts, the mouse slides the loop along the edges, click confirms, right-click centers. One undo step.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'

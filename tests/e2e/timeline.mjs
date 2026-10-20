@@ -1,4 +1,4 @@
-// E2E: timeline polish (build step 4). Editable frame field, start/end, prev/next key, click a key to jump.
+// E2E: timeline polish. Editable frame field, start/end, prev/next key, click a key to jump.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'
 const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })

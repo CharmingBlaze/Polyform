@@ -1,4 +1,4 @@
-import { ArrowRight, Box, Check, Circle, Cylinder, FolderOpen, PersonStanding, Wind } from 'lucide-react'
+import { Box, Check, Circle, Cylinder, FolderOpen, PersonStanding, Wind } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { byId } from '../commands'
 import { useStore, WORKSPACES, type Workspace } from '../store'
@@ -23,7 +23,7 @@ export function flowState(m: Model) {
   return { faces, noUV, images, vcolor, painted: images > 0 || vcolor, joints, points: used.size, bound, keyed, clips: m.clips.length }
 }
 
-/** Header tabs: Model → UV → Paint → Rig → Animate → Export, numbered to show the order. */
+/** Header tabs: one per workspace; switching is free and each keeps its own layout. */
 export function WorkspaceTabs() {
   const mode = useStore(s => s.mode)
   const ws = useStore(s => s.workspace)
@@ -31,9 +31,9 @@ export function WorkspaceTabs() {
   const cur = shownWorkspace(ws, mode)
   return (
     <div className="seg ws-tabs" data-testid="workspaces">
-      {WORKSPACES.map((w, i) => (
+      {WORKSPACES.map(w => (
         <button key={w} className={cur === w ? 'on' : ''} data-testid={`ws-${w}`} title={`${WS_LABEL[w]} workspace`} onClick={() => setWorkspace(w)}>
-          <span className="ws-n">{i + 1}</span>{WS_LABEL[w]}
+          {WS_LABEL[w]}
         </button>
       ))}
     </div>
@@ -43,11 +43,8 @@ export function WorkspaceTabs() {
 const Act = ({ cmd, label, testid, primary, onClick }: { cmd?: string; label: string; testid: string; primary?: boolean; onClick?: () => void }) => (
   <button className={`hint-act ${primary ? 'primary' : ''}`} data-testid={testid} onClick={() => (onClick ? onClick() : cmd && byId[cmd]?.run())}>{label}</button>
 )
-const Next = ({ to }: { to: Workspace }) => (
-  <button className="hint-act next" data-testid="hint-next" onClick={() => useStore.getState().setWorkspace(to)}>Next: {WS_LABEL[to]} <ArrowRight size={13} /></button>
-)
 
-/** One line under the header: what to do now in this workspace, with the next step one click away. */
+/** One line under the header: what this workspace sees in the model, with a one-click action when one helps. */
 export function HintBar() {
   const mode = useStore(s => s.mode)
   const ws = shownWorkspace(useStore(s => s.workspace), mode)
@@ -58,25 +55,25 @@ export function HintBar() {
   let text: ReactNode, acts: ReactNode = null
   if (ws === 'model') {
     if (!f.faces) { text = 'Start with a primitive from the Create tab, a sample, or open a file.'; acts = <><Act onClick={() => useStore.getState().addPrimitive('box')} label="Add box" testid="hint-box" primary /><Act cmd="sample.character" label="Sample character" testid="hint-sample" /><Act cmd="file.open" label="Open…" testid="hint-open" /></> }
-    else { text = <>Shape it: <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> point · edge · face, <kbd>E</kbd> extrude, <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform.</>; acts = <Next to="uv" /> }
+    else { text = <><kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> point · edge · face, <kbd>E</kbd> extrude, <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform.</> }
   } else if (ws === 'uv') {
     if (!f.faces) text = 'Nothing to unwrap yet: add a shape in Model first.'
     else if (f.noUV) { text = `${f.noUV} face${f.noUV === 1 ? ' has' : 's have'} no UVs. Auto UV unwraps everything in one click.`; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
-    else { text = 'UVs ready. Selection is shared with 3D; G/R/S move islands.'; acts = <Next to="paint" /> }
+    else { text = 'UVs ready. Selection is shared with 3D; G/R/S move islands.' }
   } else if (ws === 'paint') {
     if (!f.faces) text = 'Nothing to paint yet: add a shape in Model first.'
     else if (f.noUV) { text = 'Paint needs UVs to paint into an image (Vertex painting works without).'; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
     else if (!f.painted) text = 'Drag on the model to paint; the first stroke creates the image.'
-    else if (!f.images && f.vcolor) { text = 'Vertex colours are set. Paint an image or continue.'; acts = <Next to="rig" /> }
-    else { text = 'Painted. [ ] resize the brush.'; acts = <Next to="rig" /> }
+    else if (!f.images && f.vcolor) { text = 'Vertex colours are set. Paint an image too, or keep the vertex colours.' }
+    else { text = 'Painted. [ ] resize the brush.' }
   } else if (ws === 'rig') {
     if (!f.joints) { text = 'Click in a view with the Joint tool to place a root joint.'; acts = <Act cmd="tool.joint" label="Joint tool" testid="hint-joint" primary /> }
     else if (f.bound < f.points) { text = `${f.points - f.bound} of ${f.points} points are not bound to a joint. Auto bind gives each point its nearest bone.`; acts = <Act cmd="joint.autobind" label="Auto bind" testid="hint-autobind" primary /> }
-    else { text = `Rigged: ${f.joints} joint${f.joints === 1 ? '' : 's'}, every point bound.`; acts = <Next to="animate" /> }
+    else { text = `Rigged: ${f.joints} joint${f.joints === 1 ? '' : 's'}, every point bound.` }
   } else if (ws === 'animate') {
     if (!f.keyed) { text = <>Pick a joint or object, move to a frame and pose it with <kbd>R</kbd> / <kbd>G</kbd>. {autoKey ? 'Auto-key (●) is on: every pose becomes a key.' : <>Press <kbd>I</kbd> to key, or turn on auto-key (●).</>}</>; acts = !autoKey ? <Act cmd="anim.autokey" label="Turn on auto-key" testid="hint-autokey" primary /> : null }
-    else if (f.joints) { text = <>Animated. <kbd>Space</kbd> plays.</>; acts = <Next to="export" /> }
-    else { text = <>Animated (object). <kbd>Space</kbd> plays; pick an object in the Outliner.</>; acts = <Next to="export" /> }
+    else if (f.joints) { text = <>Animated. <kbd>Space</kbd> plays.</> }
+    else { text = <>Animated (object). <kbd>Space</kbd> plays; pick an object in the Outliner.</> }
   } else {
     const item = (ok: boolean, label: string, opt = false) => <span className={`chk ${ok ? 'ok' : opt ? 'opt' : 'no'}`}>{ok ? <Check size={12} /> : <Circle size={10} />} {label}</span>
     text = <span className="checklist" data-testid="export-checklist">

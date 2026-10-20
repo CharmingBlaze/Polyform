@@ -1,4 +1,4 @@
-// E2E: 3D painting (build step 6, spec H): brush strokes on the model into the face's image, size / strength / colour,
+// E2E: 3D painting (spec H): brush strokes on the model into the face's image, size / strength / colour,
 // eyedropper, fill, mirror X, one undo step per stroke, seam dilation.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'

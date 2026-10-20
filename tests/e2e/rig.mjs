@@ -1,4 +1,4 @@
-// E2E: section G QA journey through the UI (build step 4). Clicks land inside panes.
+// E2E: section G QA journey through the UI. Clicks land inside panes.
 // J tool: click a root joint, E grows a child that follows the mouse (twice) -> 3-joint chain; auto-bind; Animate:
 // key frames 0 and 20 (I, R 45 Enter); export .glb -> validator 0 errors, one clip, skin with 3 joints, 20-frame track.
 // Object animation without bones: keys on an unbound object export as node TRS animation, validator 0 errors.

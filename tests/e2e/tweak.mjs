@@ -1,4 +1,4 @@
-// E2E: click-drag tweak flow (build step 2, spec F2).
+// E2E: click-drag tweak flow (spec F2).
 // Click selects; dragging an element past 4 px moves it (one undo step, no marquee); a small wobble changes nothing;
 // dragging empty space draws the marquee; clicking empty space deselects; Object mode selects and moves whole objects.
 import { chromium } from 'playwright-core'

@@ -232,13 +232,10 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .brush-cursor { position: absolute; pointer-events: none; border: 1.5px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6); border-radius: 50%; transform: translate(-50%, -50%); z-index: 3; }
 /* workspaces */
 .ws-tabs button { padding: 4px 10px; display: flex; align-items: center; gap: 5px; }
-.ws-tabs .ws-n { font-size: 10px; width: 15px; height: 15px; border-radius: 50%; display: inline-grid; place-items: center; background: rgba(255,255,255,.07); color: var(--dim); }
-.ws-tabs button.on .ws-n { background: var(--accent, #7c6cf0); color: #fff; }
 .hint-bar { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: linear-gradient(90deg, rgba(124,108,240,.13), rgba(124,108,240,.03)); border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .hint-bar .hint-text { overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .hint-bar kbd { font-size: 10.5px; padding: 0 4px; }
 .hint-act { padding: 2px 10px; font-size: 12px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; }
-.hint-act.primary, .hint-act.next { background: var(--accent, #7c6cf0); border-color: transparent; color: #fff; }
 .checklist { display: inline-flex; gap: 12px; }
 .chk { display: inline-flex; align-items: center; gap: 4px; }
 .chk.ok { color: #6fd08c; } .chk.opt { color: var(--dim); } .chk.no { color: #ff8a8a; }
@@ -371,5 +368,4 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
   .brand { font-size: 0; gap: 0; }
   .brand .logo { font-size: 15px; }
   .header .primary .lbl { display: none; }
-  .ws-n { display: none; }
 }

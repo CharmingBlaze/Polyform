@@ -1,4 +1,4 @@
-import { useStore, type EditMode, type Tool } from './store'
+import { useStore, WORKSPACES, type EditMode, type Tool, type Workspace } from './store'
 import { exportGLB, exportOBJ, saveProject } from './io'
 import { pairs as xPairs } from './xmirror'
 import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
@@ -9,6 +9,7 @@ import { isModalActive, overUV } from './interaction'
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
 const S = () => useStore.getState()
+const WS_NAME: Record<Workspace, string> = { model: 'Model', uv: 'UV', paint: 'Paint', rig: 'Rig', animate: 'Animate', export: 'Export' }
 const openFile = () => document.getElementById('file-open')?.click()
 const tool = (t: Tool, label: string, keys: string): Command => ({ id: `tool.${t}`, label, group: 'Tools', keys, run: () => S().set({ tool: t }) })
 const edit = (m: EditMode, n: number): Command[] => [
@@ -209,6 +210,7 @@ export const commands: Command[] = [
     s.notify(`Pivot: ${next}`)
   } },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
+  ...WORKSPACES.map(w => ({ id: `ws.${w}`, label: `Workspace: ${WS_NAME[w]}`, group: 'View', run: () => S().setWorkspace(w) })),
   { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
   { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },
   { id: 'sample.windmill', label: 'Open sample: Windmill (animated prop)', group: 'File', run: () => S().openSample('windmill') },

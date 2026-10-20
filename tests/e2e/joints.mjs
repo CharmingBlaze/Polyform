@@ -1,4 +1,4 @@
-// E2E: joints and binding polish (build step 4). Clicks land inside panes.
+// E2E: joints and binding polish. Clicks land inside panes.
 // Shift+right-click places the 3D cursor (surface under the mouse, else the view plane); Shift+A adds a joint there
 // (parented to the selected joint); Shift+C resets the cursor.
 import { chromium } from 'playwright-core'

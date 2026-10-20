@@ -1,4 +1,4 @@
-// E2E: UV workspace and images (build step 5). Auto UV runs xatlas in a Web Worker.
+// E2E: UV workspace and images. Auto UV runs xatlas in a Web Worker.
 import { chromium } from 'playwright-core'
 import validator from 'gltf-validator'
 import fs from 'node:fs'

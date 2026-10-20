@@ -1,4 +1,4 @@
-// E2E: our own gizmo + modal G/R/S (build step 2).
+// E2E: our own gizmo + modal G/R/S.
 // Rules: gizmo hit-tested first with that pane's camera (no selection change, camera still); edit mode at the selection
 // centroid, Object mode at the pivot; local/global; Ctrl snaps grid / 15° / 0.1; one drag = one undo step;
 // Esc / right-click cancel; works in all four panes; modal G/R/S with axis keys and typed values.

@@ -15,7 +15,7 @@ npm run test:e2e   # needs `npm run dev` in another terminal
 ## What "working" looks like
 
 1. **Empty scene** → click **Character + walk** (or Create → Character). The app jumps to Animate; **Space** plays the walk cycle; **Ctrl+Z** returns to your previous scene.
-2. **Model → UV → Paint → Rig → Animate → Export** workspace tabs (numbered) guide the happy path. The hint bar under the header always suggests the next step.
+2. **Model, UV, Paint, Rig, Animate, Export** workspace tabs. Switch freely in any order; each workspace keeps its own layout, tools and panels. The hint bar under the header says what the current workspace sees in your model and offers a one-click action when one helps (Auto UV, Auto bind…).
 3. Four viewports (Top, Perspective, Front, Side). Left-drag uses the active tool, right-drag orbits (3D) or pans (2D), the wheel zooms, double-click maximizes a view.
 4. **Model:** primitives (drag-a-box or double-click), **1 / 2 / 3** = point / edge / face, **4** = joints, **Tab** = object mode. **G / R / S** modal grab / rotate / scale; **E** extrude, **Ctrl+R** loop cut, **K** knife, **I** inset, **Ctrl+B** bevel, **F** fill, **M** merge. Each drag is one undo step (**Ctrl+Z** / **Ctrl+Shift+Z**).
 5. **UV:** Auto UV, seams, pack, pin, stitch; **Palette** snaps selected faces to a paint-colour swatch on a palette image.

@@ -1,4 +1,4 @@
-// E2E: Blender-style extrude (build step 3). Every click lands inside a pane ([data-testid="pane-N"]).
+// E2E: Blender-style extrude. Every click lands inside a pane ([data-testid="pane-N"]).
 // E extrudes and follows the mouse along the normal; click/Enter confirms (one undo step); Esc/right-click cancels the
 // whole extrude; typed distance; X/Y/Z constraint; Alt+E menu (individual faces); edge mode -> faces; vertex mode -> wires.
 import { chromium } from 'playwright-core'

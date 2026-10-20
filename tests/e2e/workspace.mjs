@@ -16,24 +16,25 @@ const visible = sel => p.locator(sel).isVisible()
 
 await S(() => window.__polyform.getState().set({ maximized: null }))
 // 1. Model workspace by default
-check('six workspace tabs, numbered in flow order', (await p.locator('[data-testid="workspaces"] button').allTextContents()).join('|') === '1Model|2UV|3Paint|4Rig|5Animate|6Export')
+check('six plain workspace tabs (no step numbers)', (await p.locator('[data-testid="workspaces"] button').allTextContents()).join('|') === 'Model|UV|Paint|Rig|Animate|Export')
+check('no next-step buttons anywhere', (await p.locator('[data-testid="hint-next"]').count()) === 0 && !/Next:|Step \d|Shape it/.test(await p.textContent('body')))
 check('Model is the starting workspace; its hint lists the shaping keys', await on('ws-model') && /extrude/.test(await hint()))
 check('the header fits the window (no sideways scroll)', await S(() => { const h = document.querySelector('.header'); return h.scrollWidth <= h.clientWidth && document.documentElement.scrollWidth <= innerWidth }))
 await p.screenshot({ path: '/workspace/shot-ws-model.png' })
 
-// 2. Next → UV: split with the UV editor, Map tools, Images panel; zero UVs → Auto UV hint button
+// 2. UV tab: split with the UV editor, Map tools, Images panel; zero UVs → Auto UV hint button
 await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = f.uv.map(() => [0, 0]))), 'zero UVs') })
-await p.click('[data-testid="hint-next"]'); await frame()
+await p.click('[data-testid="ws-uv"]'); await frame()
 let s = await st()
-check('Next: UV opens the UV workspace (split view, Map tab, Images panel)', s.ws === 'uv' && s.uv && s.rail === 'Map' && s.side === 'uv' && await visible('[data-testid="uv-pane"]') && await on('tab-uv') && await on('side-uv'), JSON.stringify(s))
+check('the UV tab opens the UV workspace (split view, Map tab, Images panel)', s.ws === 'uv' && s.uv && s.rail === 'Map' && s.side === 'uv' && await visible('[data-testid="uv-pane"]') && await on('tab-uv') && await on('side-uv'), JSON.stringify(s))
 check('UV hint: faces without UVs → Auto UV button', /no UVs/.test(await hint()) && await visible('[data-testid="hint-autouv"]'))
 await p.click('[data-testid="hint-autouv"]')
 await p.waitForFunction(() => window.__polyform.getState().model.faces.every(f => f.uv.some(u => u[0] || u[1])), null, { timeout: 15000 }).catch(() => {})
 await frame()
-check('after Auto UV the hint says UVs are ready and offers Next: Paint', /UVs ready/.test(await hint()) && /Paint/.test(await p.textContent('[data-testid="hint-next"]')))
+check('after Auto UV the hint says UVs are ready (no next-step button)', /UVs ready/.test(await hint()) && (await p.locator('[data-testid="hint-next"]').count()) === 0)
 
 // 3. Paint: paint tool, one big textured perspective view, Paint tab
-await p.click('[data-testid="hint-next"]'); await frame()
+await p.click('[data-testid="ws-paint"]'); await frame()
 s = await st()
 check('Paint workspace: paint tool, perspective maximized and textured, Paint tab, UV split closed', s.ws === 'paint' && s.tool === 'paint' && s.max === 1 && !s.uv && s.rail === 'Paint' && await S(() => window.__polyform.getState().panes[1].shade === 'textured'), JSON.stringify(s))
 check('Paint hint before the first stroke', /first stroke creates the image/.test(await hint()))
@@ -48,10 +49,10 @@ await frame()
 check('with a joint but unbound points the hint offers Auto bind', /not bound/.test(await hint()) && await visible('[data-testid="hint-autobind"]'))
 await S(() => window.__polyform.getState().set({ selBones: new Set([0]) }))
 await p.click('[data-testid="hint-autobind"]'); await frame()
-check('after Auto bind: rigged, Next: Animate', /Rigged/.test(await hint()) && /Animate/.test(await p.textContent('[data-testid="hint-next"]')), await hint())
+check('after Auto bind: rigged', /Rigged/.test(await hint()), await hint())
 
 // 5. Animate: animate mode; Ctrl+Tab back to model highlights Model
-await p.click('[data-testid="hint-next"]'); await frame()
+await p.click('[data-testid="ws-animate"]'); await frame()
 s = await st()
 check('Animate workspace switches to Animate mode, Animate tab, Joints panel', s.mode === 'animate' && s.rail === 'Animate' && s.side === 'joints' && await on('ws-animate'), JSON.stringify(s))
 check('Animate hint explains posing and auto-key', /auto-key/i.test(await hint()))

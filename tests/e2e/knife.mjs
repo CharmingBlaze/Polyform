@@ -1,4 +1,4 @@
-// E2E: knife (K in Model mode, build step 3). Every click lands inside a pane. Click points on edges / points / faces
+// E2E: knife (K in Model mode). Every click lands inside a pane. Click points on edges / points / faces
 // with snapping (Ctrl = midpoint), Enter cuts (one undo step), Esc / right-click cancel, only visible faces are cut.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'
