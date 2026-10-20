@@ -92,6 +92,8 @@ export const commands: Command[] = [
   } },
   { id: 'paint.pick', label: 'Paint: colour picker', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'pick' } }) },
   { id: 'paint.fill', label: 'Paint: fill face', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'fill' } }) },
+  { id: 'paint.pressureSize', label: 'Paint: pen pressure → size (toggle)', group: 'Paint', run: () => S().setUI({ pressureSize: !S().ui.pressureSize }) },
+  { id: 'paint.pressureStrength', label: 'Paint: pen pressure → strength (toggle)', group: 'Paint', run: () => S().setUI({ pressureStrength: !S().ui.pressureStrength }) },
   { id: 'paint.mirror', label: 'Paint: toggle mirror X', group: 'Paint', run: () => S().setPaint({ mirror: !S().paint.mirror }) },
   { id: 'tool.paint', label: 'Paint tool', group: 'Tools', run: () => S().set({ tool: 'paint', mode: 'model' }) },
   { id: 'tool.off', label: 'Play / pause (Animate) · tool off (Model)', group: 'Tools', keys: 'Space', run: () => {

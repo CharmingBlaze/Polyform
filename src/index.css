@@ -339,3 +339,4 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .refs-fold { flex: none; max-height: 50%; overflow: auto; padding: 0 0 8px; }
 .refs-fold .ol-head { margin: 0 2px; }
 .refs-fold .ol-head .meta { margin-left: auto; }
+.pen-row { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }

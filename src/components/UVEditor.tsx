@@ -7,6 +7,7 @@ import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
+import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
 export type UVTool = 'select' | 'move' | 'rotate' | 'scale'
 type Xf = 'move' | 'rotate' | 'scale'
@@ -294,15 +295,34 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const el = cv.current
     return () => { if (interaction.uvCanvas === el) interaction.uvCanvas = null }
   }, [])
+  // pinch arrives as Ctrl+wheel: keep the browser from zooming the page
+  useEffect(() => {
+    const el = cv.current
+    if (!el) return
+    const stop = (e: WheelEvent) => { if (e.ctrlKey || e.metaKey) e.preventDefault() }
+    el.addEventListener('wheel', stop, { passive: false })
+    return () => el.removeEventListener('wheel', stop)
+  }, [])
 
   const down = (e: React.PointerEvent) => {
+    notePointer(e)
+    if (palmRejected(e)) return
     cv.current!.setPointerCapture(e.pointerId)
     const { x, y } = loc(e)
-    if (drag.current?.modal) { endXf(e.button !== 0); return }
-    if (e.button === 1 || e.button === 2) { drag.current = { kind: 'pan', x, y }; return }
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x, y })
+      if (touches.current.size >= 2) { if (drag.current?.kind === 'paint') paintUVEnd(); drag.current = null; gesture.current = twoFinger(); return }
+    }
+    // pen eraser end / barrel button: paint with Erase
+    const penPaint = globalTool === 'paint' && penErases(e)
+    const btn = penPaint ? 0 : e.button
+    if (drag.current?.modal) { endXf(btn !== 0); return }
+    if (btn === 1 || btn === 2) { drag.current = { kind: 'pan', x, y }; return }
     // Paint tool (Paint workspace): stamp into the shown image at this UV
-    if (globalTool === 'paint' && e.button === 0) {
+    if (globalTool === 'paint' && btn === 0) {
       const [u, v] = toUV(x, y)
+      notePen(e, true)
+      if (penPaint) input.erase = true
       if (paintUVStart(shownMat, u, v, side, e.ctrlKey || e.metaKey)) {
         drag.current = { kind: 'paint' }
         return
@@ -322,21 +342,45 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, moved: false }
   }
+  const touches = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{ mx: number; my: number; dist: number } | null>(null)
+  const twoFinger = () => {
+    const [a, b] = [...touches.current.values()]
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }
+  }
   const move = (e: React.PointerEvent) => {
+    notePointer(e)
     const { x, y } = loc(e)
+    if (e.pointerType === 'touch') {
+      if (!touches.current.has(e.pointerId)) return
+      touches.current.set(e.pointerId, { x, y })
+      const g = gesture.current
+      if (g) {
+        if (touches.current.size < 2) return
+        const n = twoFinger()
+        zoomAt(n.mx, n.my, n.dist / g.dist)
+        setView(v => ({ ...v, ox: v.ox + n.mx - g.mx, oy: v.oy + n.my - g.my }))
+        gesture.current = n
+        return
+      }
+    }
     mouse.current = { x, y }
     const d = drag.current
     if (!d) return
-    if (d.kind === 'paint') { const [u, v] = toUV(x, y); paintUVAt(u, v); return }
+    if (d.kind === 'paint') { notePen(e); const [u, v] = toUV(x, y); paintUVAt(u, v); return }
     if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
     if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e.ctrlKey) } return }
     if (d.kind === 'xf') updateXf(x, y, e.ctrlKey)
   }
   const up = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      if (!touches.current.delete(e.pointerId)) return
+      if (gesture.current) { if (!touches.current.size) gesture.current = null; drag.current = null; return }
+    }
     const d = drag.current
     if (!d || d.modal) return
-    if (d.kind === 'paint') { drag.current = null; paintUVEnd(); force(n => n + 1); return }
+    if (d.kind === 'paint') { drag.current = null; paintUVEnd(); input.erase = false; force(n => n + 1); return }
     if (d.kind === 'xf') return endXf(false)
     drag.current = null
     // a plain click on an already selected element selects only it
@@ -346,9 +390,14 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     applyHit(pickRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)), d.add, d.sub)
     void e
   }
+  // trackpad: two-finger scroll pans, pinch (Ctrl+wheel) zooms; a mouse-wheel notch zooms at the cursor
   const wheel = (e: React.WheelEvent) => {
     const { x, y } = loc(e)
-    const k = Math.exp(-e.deltaY * 0.0015)
+    const w = wheelIntent(e)
+    if (w.kind === 'pan') { setView(v => ({ ...v, ox: v.ox - w.dx, oy: v.oy - w.dy })); return }
+    zoomAt(x, y, 1 / w.k)
+  }
+  const zoomAt = (x: number, y: number, k: number) => {
     setView(v => {
       const zoom = THREE.MathUtils.clamp(v.zoom * k, 0.2, 40)
       const r = zoom / v.zoom
@@ -404,7 +453,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       </div>
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
         <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click/drag select · G R S · L island · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">

@@ -10,6 +10,21 @@ import { history, useStore } from './store'
 import { textures, type TexPatch } from './textures'
 import { ensureSkin, paintVertWeight } from './skin'
 import { faceArea3D, uvArea } from './uvops'
+import { input } from './input'
+
+/**
+ * Paint settings for the stroke in progress: pen pressure scales the size and/or strength (Paint tab toggles;
+ * a mouse counts as full pressure), and the pen's eraser end / barrel button turns Brush into Erase.
+ */
+export function PS() {
+  const st = useStore.getState(), p = st.paint, k = input.pressure
+  return {
+    ...p,
+    size: st.ui.pressureSize ? Math.max(1, p.size * k) : p.size,
+    opacity: st.ui.pressureStrength ? p.opacity * k : p.opacity,
+    mode: input.erase && (p.mode === 'brush' || p.mode === 'erase') ? 'erase' as const : p.mode,
+  }
+}
 
 interface Hit { fi: number; uv: [number, number]; point: THREE.Vector3; normal: THREE.Vector3 }
 interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke }
@@ -51,7 +66,7 @@ function ensureTexture(fi: number): string | null {
   if (have) return have
   const s = S(), m = s.model, mat = faceMat(m, m.faces[fi]), mt = m.materials[mat]
   if (!mt) return null
-  const size = s.paint.texSize
+  const size = PS().texSize
   const id = textures.create(size, size, mt.color)
   s.edit(mm => { mm.materials[mat].texture = id }, 'New paint image')
   s.notify(`${mt.name} now has a ${size}×${size} image to paint into`)
@@ -65,7 +80,7 @@ function strokeFor(a: Active, id: string): TexStroke | null {
   if (!c) return null
   const g = c.getContext('2d', { willReadFrequently: true })!
   const img = g.getImageData(0, 0, c.width, c.height)
-  const p = S().paint
+  const p = PS()
   t = { id, g, img, s: P.beginStroke(img, P.hexToRgb(p.color), p.mode === 'erase') }
   a.tex.set(id, t)
   return t
@@ -96,14 +111,14 @@ function dabAt(a: Active, h: Hit, worldR: number) {
   const m = S().model, f = m.faces[h.fi], { width: w, height: hh } = t.img
   const r = P.brushRadiusTex(1, worldR, Math.abs(uvArea(f.uv)) * w * hh, faceArea3D(m, h.fi))
   const [x, y] = P.uvToPx(h.uv[0], h.uv[1], w, hh)
-  const p = S().paint
+  const p = PS()
   flush(t, P.dab(t.s, x, y, r, p.opacity, p.hardness))
 }
 
 function stampScreen(a: Active, x: number, y: number) {
   const h = hitOf(a.rayAt(x, y))
   if (!h) return
-  const p = S().paint
+  const p = PS()
   const worldR = p.size * worldPerPx(a.ctx, h.point)
   dabAt(a, h, worldR)
   if (p.mirror) { const mh = mirrorHit(h); if (mh) dabAt(a, mh, worldR) }
@@ -122,7 +137,7 @@ function dilateStroke(t: TexStroke) {
 
 function finish(a: Active, label: string) {
   const patches: TexPatch[] = []
-  const erased = S().paint.mode === 'erase'
+  const erased = PS().mode === 'erase'
   for (const t of a.tex.values()) {
     dilateStroke(t)
     const b = P.cropBefore(t.s)
@@ -141,7 +156,7 @@ function finish(a: Active, label: string) {
 function pick(h: Hit): boolean {
   const id = texOf(h.fi)
   const s = S()
-  if (!id) { s.setPaint({ color: s.model.materials[faceMat(s.model, s.model.faces[h.fi])]?.color ?? s.paint.color }); return true }
+  if (!id) { s.setPaint({ color: s.model.materials[faceMat(s.model, s.model.faces[h.fi])]?.color ?? PS().color }); return true }
   const c = textures.canvas(id)!
   const [x, y] = P.uvToPx(h.uv[0], h.uv[1], c.width, c.height)
   const px = c.getContext('2d', { willReadFrequently: true })!.getImageData(Math.min(c.width - 1, Math.floor(x)), Math.min(c.height - 1, Math.floor(y)), 1, 1)
@@ -151,13 +166,13 @@ function pick(h: Hit): boolean {
 
 /** Fill the clicked face, or every selected face when the clicked one is selected (and their mirrors). */
 function fill(a: Active, h: Hit) {
-  const s = S(), faces = fillFaces(h)
+  const faces = fillFaces(h)
   for (const fi of faces) {
     const id = texOf(fi)
     if (!id) continue
     const t = strokeFor(a, id)
     if (!t) continue
-    flush(t, P.fillPolygon(t.s, facePoly(fi, t.img.width, t.img.height), s.paint.opacity))
+    flush(t, P.fillPolygon(t.s, facePoly(fi, t.img.width, t.img.height), PS().opacity))
   }
   finish(a, 'Fill')
 }
@@ -182,14 +197,14 @@ function paintCorner(m: Model, fi: number, c: number, a: number, st: VStroke | n
 }
 
 const vTarget = (m: Model) => {
-  const p = S().paint, brush = P.hexToRgb(p.color)
+  const p = PS(), brush = P.hexToRgb(p.color)
   // the eraser paints back toward the material colour
   return p.mode === 'erase' ? (fi: number) => P.hexToRgb(m.materials[faceMat(m, m.faces[fi])]?.color ?? '#ffffff') : () => brush
 }
 
 /** Paint every corner within the brush sphere around a hit (faces turned well away from the hit are skipped). */
 function vdab(st: VStroke, h: Hit, worldR: number) {
-  const m = S().model, Pz = sceneManager.posed, p = S().paint, target = vTarget(m)
+  const m = S().model, Pz = sceneManager.posed, p = PS(), target = vTarget(m)
   const hp = [h.point.x, h.point.y, h.point.z]
   for (const fi of sceneManager.visibleFaces) {
     const f = m.faces[fi]
@@ -207,7 +222,7 @@ function vdab(st: VStroke, h: Hit, worldR: number) {
 function vstamp(st: VStroke, x: number, y: number) {
   const h = hitOf(st.rayAt(x, y))
   if (!h) return
-  const p = S().paint, worldR = p.size * worldPerPx(st.ctx, h.point)
+  const p = PS(), worldR = p.size * worldPerPx(st.ctx, h.point)
   vdab(st, h, worldR)
   if (p.mirror) { const mh = mirrorHit(h); if (mh) vdab(st, mh, worldR) }
   S().touch()
@@ -217,7 +232,7 @@ function vstamp(st: VStroke, x: number, y: number) {
 function fillFaces(h: Hit): number[] {
   const s = S(), sel = s.mode === 'model' && s.selFaces.has(h.fi) ? [...s.selFaces] : [h.fi]
   const faces = new Set(sel)
-  if (s.paint.mirror) for (const fi of sel) {
+  if (PS().mirror) for (const fi of sel) {
     const f = s.model.faces[fi], P3 = sceneManager.posed
     if (!f || !P3.length) continue
     const c = new THREE.Vector3()
@@ -240,11 +255,11 @@ function vertexStart(x: number, y: number, h: Hit, rayAt: (x: number, y: number)
     return false
   }
   if (mode === 'fill') {
-    const faces = fillFaces(h), op = s.paint.opacity
+    const faces = fillFaces(h), op = PS().opacity
     s.edit(mm => { const target = vTarget(mm); for (const fi of faces) mm.faces[fi].v.forEach((_v, c) => paintCorner(mm, fi, c, op, null, target)) }, 'Fill vertex colours')
     return false
   }
-  s.checkpoint(s.paint.mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint')
+  s.checkpoint(PS().mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint')
   vcur = { ctx, rayAt, last: [x, y], before: new Map(), mask: new Map(), changed: false }
   vstamp(vcur, x, y)
   return true
@@ -256,7 +271,7 @@ function ensureMatTexture(mat: number): string | null {
   const s = S(), mt = s.model.materials[mat]
   if (!mt) return null
   if (mt.texture && textures.canvas(mt.texture)) return mt.texture
-  const size = s.paint.texSize
+  const size = PS().texSize
   const id = textures.create(size, size, mt.color)
   s.edit(mm => { mm.materials[mat].texture = id }, 'New paint image')
   s.notify(`${mt.name} now has a ${size}×${size} image to paint into`)
@@ -279,7 +294,7 @@ function stampUV(a: UVActive, u: number, v: number) {
   if (!t) return
   const { width: w, height: h } = t.img
   const [x, y] = P.uvToPx(u, v, w, h)
-  const p = S().paint
+  const p = PS()
   const r = Math.max(0.5, (p.size / Math.max(1, a.side)) * w)
   flush(t, P.dab(t.s, x, y, r, p.opacity, p.hardness))
 }
@@ -287,9 +302,9 @@ function stampUV(a: UVActive, u: number, v: number) {
 /** Start a paint stroke in the UV editor at UV (u, v). `sidePx` = on-screen size of the 0–1 UV square. */
 export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false): boolean {
   cur = null; vcur = null; uvcur = null
-  const s = S(), mode = pickMod ? 'pick' : s.paint.mode
-  if (s.paint.target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
-  if (s.paint.target === 'weight') { s.notify('Weight painting is done in the 3D view'); return false }
+  const s = S(), mode = pickMod ? 'pick' : PS().mode
+  if (PS().target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
+  if (PS().target === 'weight') { s.notify('Weight painting is done in the 3D view'); return false }
   const id = ensureMatTexture(mat)
   if (!id) return false
   if (mode === 'pick') {
@@ -310,7 +325,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
     const a: Active = { rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: new Map() }
     const t = strokeFor(a, id)
     if (!t) return false
-    flush(t, P.fillPolygon(t.s, facePoly(hit, t.img.width, t.img.height), s.paint.opacity))
+    flush(t, P.fillPolygon(t.s, facePoly(hit, t.img.width, t.img.height), PS().opacity))
     finish(a, 'Fill')
     return false
   }
@@ -324,7 +339,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
 export function paintUVAt(u: number, v: number) {
   const a = uvcur
   if (!a) return
-  const stepU = Math.max(0.001, (S().paint.size / 4) / Math.max(1, a.side))
+  const stepU = Math.max(0.001, (PS().size / 4) / Math.max(1, a.side))
   const [lu, lv] = a.lastUV
   const d = Math.hypot(u - lu, v - lv)
   if (d < stepU) return
@@ -342,7 +357,7 @@ export function paintUVEnd() {
   uvcur = null
   if (!a) return
   const active: Active = { rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: a.tex }
-  finish(active, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
+  finish(active, PS().mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
 }
 
 
@@ -364,7 +379,7 @@ function weightStart(x: number, y: number, h: Hit | null, rayAt: (x: number, y: 
     else s.editVerts().forEach(v => verts.add(v))
     if (!verts.size && h) s.model.faces[h.fi].v.forEach(v => verts.add(v))
     if (!verts.size) { s.notify('Nothing to fill: hit a face or select points'); return false }
-    const a = s.paint.opacity
+    const a = PS().opacity
     s.edit(m => {
       ensureSkin(m)
       for (const v of verts) m.skin[v] = paintVertWeight(m.skin[v], bone, a, 'replace')
@@ -379,7 +394,7 @@ function weightStart(x: number, y: number, h: Hit | null, rayAt: (x: number, y: 
 }
 
 function weightDab(st: WStroke, h: Hit, worldR: number) {
-  const s = S(), m = s.model, Pz = sceneManager.posed, p = s.paint
+  const s = S(), m = s.model, Pz = sceneManager.posed, p = PS()
   ensureSkin(m)
   const mode = p.mode === 'erase' ? 'subtract' : 'add'
   const hp = [h.point.x, h.point.y, h.point.z]
@@ -409,7 +424,7 @@ function weightDab(st: WStroke, h: Hit, worldR: number) {
 function weightStamp(st: WStroke, x: number, y: number) {
   const h = hitOf(st.rayAt(x, y))
   if (!h) return
-  const p = S().paint, worldR = p.size * worldPerPx(st.ctx, h.point)
+  const p = PS(), worldR = p.size * worldPerPx(st.ctx, h.point)
   weightDab(st, h, worldR)
   if (p.mirror) { const mh = mirrorHit(h); if (mh) weightDab(st, mh, worldR) }
   S().touch()
@@ -419,16 +434,16 @@ function weightStamp(st: WStroke, x: number, y: number) {
 export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false): boolean {
   cur = null; vcur = null; uvcur = null; wcur = null
   const h = hitOf(rayAt(x, y))
-  const s = S(), mode = pickMod ? 'pick' : s.paint.mode
-  if (s.paint.target === 'weight') return weightStart(x, y, h, rayAt, ctx, mode)
+  const s = S(), mode = pickMod ? 'pick' : PS().mode
+  if (PS().target === 'weight') return weightStart(x, y, h, rayAt, ctx, mode)
   if (!h) {
     // strokes may start off the model and paint once they reach it
     if (mode !== 'brush' && mode !== 'erase') return false
-    if (s.paint.target === 'vertex') { s.checkpoint(mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint'); vcur = { ctx, rayAt, last: [x, y], before: new Map(), mask: new Map(), changed: false } }
+    if (PS().target === 'vertex') { s.checkpoint(mode === 'erase' ? 'Erase vertex colours' : 'Vertex paint'); vcur = { ctx, rayAt, last: [x, y], before: new Map(), mask: new Map(), changed: false } }
     else cur = { rayAt, ctx, last: [x, y], tex: new Map() }
     return true
   }
-  if (s.paint.target === 'vertex') return vertexStart(x, y, h, rayAt, ctx, mode)
+  if (PS().target === 'vertex') return vertexStart(x, y, h, rayAt, ctx, mode)
   if (mode === 'pick') { pick(h); return false }
   const f = s.model.faces[h.fi]
   if (Math.abs(uvArea(f.uv)) < 1e-9) { s.notify('This face has no UVs: run Auto UV (Map tab) first'); return false }
@@ -444,7 +459,7 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 export function paintAt(x: number, y: number) {
   const a = cur ?? vcur ?? wcur
   if (!a) return
-  const step = Math.max(1, S().paint.size / 4)
+  const step = Math.max(1, PS().size / 4)
   const [lx, ly] = a.last, d = Math.hypot(x - lx, y - ly)
   if (d < step) return
   const n = Math.floor(d / step)
@@ -460,7 +475,7 @@ export function paintStrokeEnd() {
   if (uvcur) { paintUVEnd(); return }
   const a = cur, v = vcur, w = wcur
   cur = null; vcur = null; wcur = null
-  if (a) finish(a, S().paint.mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
+  if (a) finish(a, PS().mode === 'erase' ? 'Erase stroke' : 'Paint stroke')
   if (v) { if (v.changed) S().commit(); else S().cancelEdit() }
   if (w) { if (w.changed) S().commit(); else S().cancelEdit() }
 }

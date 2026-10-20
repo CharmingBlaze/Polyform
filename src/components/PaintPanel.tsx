@@ -13,6 +13,8 @@ export function PaintPanel() {
   const tool = useStore(s => s.tool)
   const p = useStore(s => s.paint)
   const setPaint = useStore(s => s.setPaint)
+  const ui = useStore(s => s.ui)
+  const setUI = useStore(s => s.setUI)
   const range = (key: 'size' | 'opacity' | 'hardness', label: string, min: number, max: number, step: number, fmt: (v: number) => string) => (
     <label className="paint-range">
       <span>{label}</span>
@@ -48,6 +50,10 @@ export function PaintPanel() {
       {range('opacity', 'Strength', 0.01, 1, 0.01, v => `${Math.round(v * 100)}%`)}
       {range('hardness', 'Hardness', 0, 1, 0.01, v => `${Math.round(v * 100)}%`)}
       <label className="check"><input type="checkbox" checked={p.mirror} data-testid="paint-mirror" onChange={e => setPaint({ mirror: e.target.checked })} /> Mirror X</label>
+      <div className="pen-row" title="Pen pressure (a mouse counts as full pressure); the pen's eraser end or barrel button erases">
+        <label className="check"><input type="checkbox" checked={ui.pressureSize} data-testid="pressure-size" onChange={e => setUI({ pressureSize: e.target.checked })} /> Pressure → Size</label>
+        <label className="check"><input type="checkbox" checked={ui.pressureStrength} data-testid="pressure-strength" onChange={e => setUI({ pressureStrength: e.target.checked })} /> Pressure → Strength</label>
+      </div>
       <label className="paint-range">
         <span>New image</span>
         <select value={p.texSize} data-testid="paint-texsize" onChange={e => setPaint({ texSize: Number(e.target.value) })}>

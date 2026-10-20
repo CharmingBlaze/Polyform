@@ -6,6 +6,7 @@ import { useStore, type Shading, type ViewType } from '../store'
 import { faceCenter, faceNormal, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
 import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
+import { input, notePen, notePointer, palmRejected, penErases, pickRadius, wheelIntent } from '../input'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction } from '../interaction'
@@ -242,7 +243,8 @@ export function Viewport({ pane }: { pane: number }) {
   /** Nearest visible edge within 8 px. */
   const pickEdge = (x: number, y: number, radius = 8): number => {
     const P = sceneManager.posed
-    let best = -1, bd = radius * radius
+    const r = pickRadius(radius)
+    let best = -1, bd = r * r
     for (const [a, b] of sceneManager.edges) {
       const pa = project(P[a]), pb = project(P[b])
       if (pa.z < -1 || pa.z > 1 || pb.z < -1 || pb.z > 1) continue
@@ -259,7 +261,7 @@ export function Viewport({ pane }: { pane: number }) {
   }
   const pickVert = (x: number, y: number): number => {
     const P = sceneManager.posed
-    let best = -1, bd = 100
+    let best = -1, bd = pickRadius(10) ** 2
     sceneManager.visibleVerts.forEach(i => {
       const p = project(P[i]); const d = (p.x - x) ** 2 + (p.y - y) ** 2
       if (d < bd && p.z > -1 && p.z < 1 && !occluded(new THREE.Vector3(...P[i]))) { bd = d; best = i }
@@ -967,27 +969,57 @@ export function Viewport({ pane }: { pane: number }) {
     }
   })
 
+  /** fingers on this view: one finger uses the tool, two pan + pinch-zoom */
+  const touches = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{ mx: number; my: number; dist: number } | null>(null)
+  /** selection before the first finger landed: a second finger turns the touch into a gesture and restores it */
+  const touchSel = useRef<Pick<ReturnType<typeof useStore.getState>, 'selVerts' | 'selEdges' | 'selFaces' | 'selBones'> | null>(null)
+  const twoFinger = () => {
+    const [a, b] = [...touches.current.values()]
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }
+  }
+  /** a second finger landed: drop whatever the first one started (paint stroke ends, a drag is cancelled) */
+  const abandonDrag = () => {
+    const d = drag.current
+    if (d?.kind === 'paint') paintStrokeEnd()
+    if (d?.kind === 'xf' && d.src !== 'modal') endXf(d, false)
+    drag.current = null; setRect(null)
+    if (touchSel.current) { useStore.setState(touchSel.current); touchSel.current = null; sceneManager.invalidate() }
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
+    notePointer(e)
+    if (palmRejected(e)) return
     const c = ctx.current!
     const { x, y } = local(e)
     const st = useStore.getState()
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x, y })
+      hit.current!.setPointerCapture(e.pointerId)
+      if (touches.current.size >= 2) { abandonDrag(); gesture.current = twoFinger(); return }
+      const { selVerts, selEdges, selFaces, selBones } = st
+      touchSel.current = { selVerts, selEdges, selFaces, selBones }
+    }
+    // pen: the eraser end / barrel button paints with Erase; otherwise it acts as the left button
+    const penPaint = st.tool === 'paint' && penErases(e)
+    const btn = penPaint ? 0 : e.button
     // a running modal transform: left confirms, right cancels
-    if (activeXf?.down && e.button !== 1 && !(e.altKey && e.button === 0)) {
+    if (activeXf?.down && btn !== 1 && !(e.altKey && btn === 0)) {
       // modal tool: its own clicks (middle / Alt+drag still navigate)
       e.preventDefault()
-      if (activeXf.pane === pane) activeXf.down(e.button, x, y, e.ctrlKey || e.metaKey)
+      if (activeXf.pane === pane) activeXf.down(btn, x, y, e.ctrlKey || e.metaKey)
       return
     }
     if (activeXf && !activeXf.down) {
       e.preventDefault()
-      if (e.button === 2) activeXf.cancel(); else if (e.button === 0) activeXf.confirm()
+      if (btn === 2) activeXf.cancel(); else if (btn === 0) activeXf.confirm()
       return
     }
     hit.current!.setPointerCapture(e.pointerId)
-    if (e.button === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
-    if (e.button === 1 || (e.button === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(e.button === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
-    if (e.button === 2 || (e.button === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
-    if (e.button !== 0) return
+    if (btn === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
+    if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
+    if (btn === 2 || (btn === 0 && e.altKey && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
+    if (btn !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still
     const h: Handle | null = gizmo.current.hit(ray(x, y))
@@ -999,6 +1031,8 @@ export function Viewport({ pane }: { pane: number }) {
     const tool = st.tool
     if (tool === 'paint') {
       if (st.mode !== 'model') st.set({ mode: 'model' })
+      notePen(e, true)
+      if (penPaint) input.erase = true
       if (paintStrokeStart(x, y, ray, c, e.ctrlKey || e.metaKey)) drag.current = { kind: 'paint' }
       return
     }
@@ -1061,7 +1095,21 @@ export function Viewport({ pane }: { pane: number }) {
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
+    notePointer(e)
     const { x, y } = local(e)
+    if (e.pointerType === 'touch') {
+      if (!touches.current.has(e.pointerId)) return
+      touches.current.set(e.pointerId, { x, y })
+      const g = gesture.current
+      if (g) {
+        if (touches.current.size < 2) return
+        const n = twoFinger()
+        pan(n.mx - g.mx, n.my - g.my)
+        zoom(g.dist / n.dist)
+        gesture.current = n
+        return
+      }
+    }
     interaction.hoverPane = pane
     interaction.mouse[pane] = { x, y }
     if (brushRef.current) { brushRef.current.style.left = `${x}px`; brushRef.current.style.top = `${y}px`; brushRef.current.style.display = 'block' }
@@ -1079,8 +1127,9 @@ export function Viewport({ pane }: { pane: number }) {
     if (d.kind === 'orbit') { orbit(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'pan') { pan(x - d.x, y - d.y); d.x = x; d.y = y; return }
     if (d.kind === 'zoom') { zoom(Math.exp((y - d.y) * 0.01)); d.x = x; d.y = y; return }
-    if (d.kind === 'paint') { paintAt(x, y); return }
+    if (d.kind === 'paint') { notePen(e); paintAt(x, y); return }
     if (d.kind === 'rect') {
+      if (d.alt && Math.hypot(x - d.x0, y - d.y0) > TWEAK_PX) { setRect(null); drag.current = { kind: isPersp ? 'orbit' : 'pan', x, y }; return }
       d.x1 = x; d.y1 = y
       if (Math.abs(x - d.x0) > TWEAK_PX || Math.abs(y - d.y0) > TWEAK_PX) setRect({ x: Math.min(d.x0, x), y: Math.min(d.y0, y), w: Math.abs(x - d.x0), h: Math.abs(y - d.y0) })
       return
@@ -1105,6 +1154,11 @@ export function Viewport({ pane }: { pane: number }) {
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') {
+      if (!touches.current.delete(e.pointerId)) return
+      if (gesture.current) { if (!touches.current.size) gesture.current = null; drag.current = null; return }
+      touchSel.current = null
+    }
     const d = drag.current
     if (d?.kind === 'pan' && d.cursorAt) {
       // Shift+right-click without dragging: place the 3D cursor on the surface under the mouse, else on the view plane
@@ -1134,7 +1188,7 @@ export function Viewport({ pane }: { pane: number }) {
     drag.current = null
     setRect(null)
     const st = useStore.getState()
-    if (d?.kind === 'paint') { paintStrokeEnd(); return }
+    if (d?.kind === 'paint') { paintStrokeEnd(); input.erase = false; return }
     if (!d || d.kind !== 'rect') return
     void e
     selectRect(d, st)
@@ -1228,7 +1282,22 @@ export function Viewport({ pane }: { pane: number }) {
     return best
   }
 
-  const onWheel = (e: React.WheelEvent) => { const dr = useStore.getState().draw; if (dr?.has) { useStore.getState().drawSeg(dr.seg + (e.deltaY < 0 ? 1 : -1)); return } if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return } zoom(Math.exp(e.deltaY * 0.0012)) }
+  const onWheel = (e: React.WheelEvent) => {
+    const dr = useStore.getState().draw
+    if (dr?.has) { useStore.getState().drawSeg(dr.seg + (e.deltaY < 0 ? 1 : -1)); return }
+    if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return }
+    // trackpad: two-finger scroll pans, pinch (Ctrl+wheel) zooms; a mouse-wheel notch zooms
+    const w = wheelIntent(e)
+    if (w.kind === 'zoom') zoom(w.k); else pan(-w.dx, -w.dy)
+  }
+  // pinch arrives as Ctrl+wheel: keep the browser from zooming the page (React wheel listeners are passive)
+  useEffect(() => {
+    const el = hit.current
+    if (!el) return
+    const stop = (e: WheelEvent) => { if (e.ctrlKey || e.metaKey) e.preventDefault() }
+    el.addEventListener('wheel', stop, { passive: false })
+    return () => el.removeEventListener('wheel', stop)
+  }, [])
 
   const frameSelection = (all = false) => {
     const c = ctx.current!
@@ -1274,7 +1343,7 @@ export function Viewport({ pane }: { pane: number }) {
   const setPane = (p: Partial<typeof cfg>) => set({ panes: useStore.getState().panes.map((x, i) => (i === pane ? { ...x, ...p } : x)) })
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>
-      <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onWheel={onWheel}
+      <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel}
         onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none' }}
         onDoubleClick={() => set({ maximized: maximized !== null ? null : pane })} />
       {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none' }} />}
