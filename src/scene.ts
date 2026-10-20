@@ -4,6 +4,7 @@ import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, applyWrap, textures } from './textures'
+import { usesAlpha } from './alphause'
 import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
@@ -120,7 +121,10 @@ class SceneManager {
     grid(LAYER.gridZY, g => g.rotateZ(Math.PI / 2))
     const axes = new THREE.AxesHelper(1.2)
     axes.layers.enableAll()
+    // overlays drawn on top are in the transparent pass (after every mesh, opaque or alpha-blended), so a
+    // texture gaining alpha (Extend canvas, the eraser) never changes what covers what
     ;(axes.material as THREE.Material).depthTest = false
+    ;(axes.material as THREE.Material).transparent = true
     axes.renderOrder = 1
     s.add(axes)
 
@@ -164,7 +168,7 @@ class SceneManager {
     this.refsGroup.layers.enableAll(); s.add(this.refsGroup)
 
     // 3D cursor: a small red/white crosshair, always on top
-    const cur = new THREE.LineSegments(this.cursorGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false }))
+    const cur = new THREE.LineSegments(this.cursorGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }))
     cur.layers.enableAll(); cur.renderOrder = 8; cur.frustumCulled = false; s.add(cur)
 
     // tool overlay (loop cut preview, knife path): on top in every pane
@@ -277,7 +281,7 @@ class SceneManager {
     const mats = st.model.materials
     const vcm = vcMaterials(st.model)
     const weightMode = st.tool === 'paint' && st.paint.target === 'weight'
-    const alphaKey = mats.map(mt => textures.hasAlpha(mt.texture) ? '1' : '0').join('')
+    const alphaKey = mats.map((_mt, mi) => usesAlpha(st.model, mi, st.version) ? '1' : '0').join('')
     const key = JSON.stringify(mats) + '|' + st.showTexture + '|' + textures.version + '|' + alphaKey + '|' + (weightMode ? 'w' : '') + '|' + [...vcm].join()
     if (key === this.matKey) return
     this.matKey = key
@@ -288,7 +292,7 @@ class SceneManager {
       if (own) { applyFilter(own, mt.filter); applyWrap(own, mt.wrap) }
       // the UV checker previews unmapped materials, but would hide vertex colours; weight paint hides maps so the heat map reads
       const map = tex && !weightMode ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
-      const alpha = !!(own && textures.hasAlpha(mt.texture))
+      const alpha = !!own && alphaKey[mi] === '1'
       return new THREE.MeshStandardMaterial({
         color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, roughness: mt.roughness, metalness: mt.metalness, flatShading: flat, side: THREE.DoubleSide,
         transparent: alpha, depthWrite: !alpha,

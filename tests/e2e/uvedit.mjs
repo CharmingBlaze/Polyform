@@ -567,7 +567,11 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   }, [a, b])
   const texOf = () => S(mat => { const m = window.__polyform.getState().model, id = m.materials[mat].texture; return { id, ...window.__polyformTextures.size(id) } }, mat)
   const menu = async item => { await p.click('[data-testid="uv-image-menu"]'); await frame(); await p.click(`[data-testid="uvm-${item}"]`); await frame(200) }
+  // settle the reference render (selection overlays from the setup must be gone), then take it
+  await S(() => window.__polyformScene.invalidate()); await frame(300)
+  const A0 = await pane(); await S(() => window.__polyformScene.invalidate()); await frame(300)
   const A = await pane()
+  check('reference render is stable', (await diff(A0, A)) === 0)
   const t0 = await texOf(), u0 = JSON.stringify(await uvs())
   await menu('img-resize')
   check('Resize dialog opens with the current size', await p.isVisible('[data-testid="img-resize"]') && (await p.inputValue('[data-testid="img-resize-w"]')) === '32')
@@ -576,14 +580,15 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   const uv1 = await uvs()
   check('Extend 32→64 (top-left): a new 64×64 image, UVs remapped into the top-left quarter', t1.w === 64 && t1.h === 64 && t1.id !== t0.id && uv1.flat().every(([u, v]) => u <= 0.5 + 1e-9 && v >= 0.5 - 1e-9), JSON.stringify(t1))
   const dExt = await diff(A, await pane())
-  // (mip levels of the larger image mix the new transparent border into texels at the old edge: a few edge pixels may differ)
-  check('Extend leaves the 3D render the same', dExt < 0.006, String(dExt)); console.log('extend diff', dExt)
+  // the new border is transparent but no face uses it: the material stays opaque (same pass, same silhouettes)
+  check('Extend leaves the 3D render the same (0 px differ)', dExt < 0.0005, String(dExt))
+  check('the extended image is not alpha-blended (only unused texels are transparent)', !(await S(mat => window.__polyformPaint.matTransparent(mat), mat)))
   await p.keyboard.press('Control+z'); await frame(200)
   check('one Ctrl+Z restores the 32 px image and the UVs', (await texOf()).id === t0.id && JSON.stringify(await uvs()) === u0)
   for (const op of ['img-flip-h', 'img-flip-v', 'img-rot-cw', 'img-rot-ccw']) {
     await menu(op); await p.mouse.move(5, 5); await frame(300)
     const d = await diff(A, await pane())
-    check(`${op}: image and UVs together, the model looks the same`, (await texOf()).id !== t0.id && JSON.stringify(await uvs()) !== u0 && d < 0.003, String(d)); console.log(op, 'diff', d)
+    check(`${op}: image and UVs together, the model looks the same`, (await texOf()).id !== t0.id && JSON.stringify(await uvs()) !== u0 && d < 0.0005, String(d))
   }
   await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame(200)
   check('undo walks back through the flips and turns', (await texOf()).id === t0.id && JSON.stringify(await uvs()) === u0)

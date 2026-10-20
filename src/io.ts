@@ -7,6 +7,7 @@ import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, applyWrap, textures } from './textures'
+import { usesAlpha } from './alphause'
 import { ensureSkin } from './skin'
 import { useStore } from './store'
 import { importGLTF } from './gltfImport'
@@ -41,7 +42,7 @@ export function buildExportScene(m: Model) {
     // per-material sampler: clone shares the image, so the exporter still embeds it once
     const src = textures.three(mt.texture)
     const tex = src ? applyWrap(applyFilter(src.clone(), mt.filter), mt.wrap) : null
-    const alpha = !!(tex && textures.hasAlpha(mt.texture))
+    const alpha = !!tex && usesAlpha(m, mi, null)
     const mat = new THREE.MeshStandardMaterial({
       color: baseColor({ color: mt.color, texture: tex ? 'y' : null }, vcm.has(mi)),
       vertexColors: vcm.has(mi), roughness: mt.roughness, metalness: mt.metalness, map: tex,
