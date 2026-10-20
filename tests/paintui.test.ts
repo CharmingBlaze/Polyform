@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatGpl, parseGpl } from '../src/gpl'
+import { paintStatusHint } from '../src/painthint'
 import { hexToHsv, hsvToHex } from '../src/hsv'
 import { mirrorPoints, shapeSamples } from '../src/paintshape'
 
@@ -24,6 +25,16 @@ describe('hsv', () => {
     const hsv = hexToHsv('#e05050')
     expect(hsv.h).toBe(0)
     expect(hsvToHex(hsv.h, hsv.s, hsv.v)).toBe('#e05050')
+  })
+})
+
+describe('paint status hint', () => {
+  const base = { color: '#e05050', size: 12, hardness: 1, opacity: 1, mode: 'brush' as const, texSize: 32, mirror: false, swatches: [], target: 'image' as const, paletteCols: 0, paletteRows: 0, shape: 'round' as const, pixelPerfect: false, lockAlpha: false, fillScope: 'face' as const, shadeLight: true, wandTol: 0, secondary: '#000', mirrorY: false, shapeFill: false }
+  it('names the active paint tool', () => {
+    expect(paintStatusHint({ ...base, mode: 'shade' }).startsWith('Image: click to step the colour lighter')).toBe(true)
+    expect(paintStatusHint({ ...base, mode: 'marquee' }).startsWith('Image: drag a box')).toBe(true)
+    expect(paintStatusHint({ ...base, mode: 'line' }).startsWith('Image: drag a straight line')).toBe(true)
+    expect(paintStatusHint({ ...base, mode: 'brush' }).split(' · ')[0]).toBe('Image: drag on the model or the texture')
   })
 })
 

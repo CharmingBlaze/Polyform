@@ -34,7 +34,8 @@ await S(() => window.__polyform.getState().set({ railTab: 'Paint', tool: 'paint'
 await p.click('[data-testid="tab-paint"]')
 await frame()
 
-check('tool strip, colour and layers are on screen', await p.locator('[data-testid="paint-brush"]').isVisible() && await p.locator('[data-testid="paint-shade"]').isVisible() && await p.locator('[data-testid="paint-marquee"]').isVisible() && await p.locator('[data-testid="paint-layer-add"]').isVisible() && await p.locator('[data-testid="paint-pane"]').isVisible())
+await p.click('[data-testid="paint-tab-layers"]')
+check('tool strip, colour and layers are on screen', await p.locator('[data-testid="paint-brush"]').isVisible() && await p.locator('[data-testid="paint-shade"]').isVisible() && await p.locator('[data-testid="paint-marquee"]').isVisible() && await p.locator('[data-testid="paint-layer-add"]').isVisible() && await p.locator('[data-testid="paint-pane"]').isVisible() && await p.locator('[data-testid="paint-tab-colour"]').isVisible())
 const square = await p.locator('[data-testid="paint-brush"]').evaluate(el => getComputedStyle(el).borderRadius)
 check('paint tools are square-cornered', square === '0px', square)
 const pageOverflow = await S(() => {
@@ -60,6 +61,7 @@ await p.keyboard.press('Control+z')
 await frame()
 check('undo add layer leaves the single layer', (await S(id => window.__polyformTextures.layersOf(id).length, tex)) === 1)
 
+await p.click('[data-testid="paint-tab-brush"]')
 await p.locator('[data-testid="paint-size"]').fill('1')
 await p.click('[data-testid="paint-shade"]')
 await frame()

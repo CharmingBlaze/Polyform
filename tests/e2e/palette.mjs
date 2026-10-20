@@ -30,6 +30,7 @@ await S(() => {
 await frame()
 
 await S(() => window.__polyform.getState().set({ railTab: 'Paint' })); await p.click('[data-testid="tab-paint"]'); await frame()
+await p.click('[data-testid="paint-tab-colour"]'); await frame()
 check('palette cols UI', await p.locator('[data-testid="palette-cols"]').isVisible())
 check('snap faces button', await p.locator('[data-testid="palette-snap-faces"]').isVisible())
 

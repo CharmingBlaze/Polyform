@@ -9,6 +9,7 @@ import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type 
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
 import { WorkspaceTabs, shownWorkspace } from './Workspace'
+import { paintStatusHint } from '../painthint'
 import { WS_TABS, WS_TIPS } from '../wsconfig'
 import { ClipsPanel } from './ClipsPanel'
 import { MenuBar } from './MenuBar'
@@ -333,18 +334,7 @@ function ParamField({ def, value, onChange }: { def: ParamDef; value: number; on
 function toolHint(s: ReturnType<typeof useStore.getState>): string {
   const { xMirror, paint, ik, ikDepth, mode, tool, modalInfo } = s
   const mir = xMirror ? ' · X-mirror on' : ''
-  const paintHint = (() => {
-    const base = paint.target === 'weight' ? 'Weight paint' : paint.target === 'vertex' ? 'Vertex colours' : 'Image'
-    if (paint.target === 'weight') {
-      if (paint.mode === 'erase') return 'Weight: erase subtracts the selected joint · select a joint first · heat map shows its influence'
-      if (paint.mode === 'fill') return 'Weight: fill sets the selected joint to Strength on the brushed points'
-      return 'Weight: brush adds the selected joint · Erase subtracts · heat map = influence · select a joint first'
-    }
-    if (paint.mode === 'erase') return `${base}: erase → transparent · drag on the model or UV editor · [ ] size`
-    if (paint.mode === 'fill') return `${base}: click a face to fill · selected faces fill together · Ctrl+click picks`
-    if (paint.mode === 'pick') return 'Click the model (or UV editor) to pick a colour'
-    return `${base}: drag on the model or UV editor · Ctrl+click picks · [ ] size · Mirror X in the Paint tab`
-  })()
+  const paintHint = paintStatusHint(paint)
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Ctrl-drag box (+Shift add, +Alt remove) · Shift-click add · Ctrl-click toggle · Alt+click edge/face loop · L / Ctrl+L linked · Ctrl+/- grow/shrink',
     move: (ik && mode === 'animate' ? `IK on (depth ${ikDepth}): drag the tip joint — parents rotate to reach · ` : '') + 'Drag a gizmo arrow (or the center) to move · G modal · Ctrl snaps to grid' + mir,

@@ -10,6 +10,7 @@ const results = []
 const check = (name, ok, info = '') => results.push([name, !!ok, info])
 const S = (fn, arg) => p.evaluate(fn, arg)
 const frame = () => p.waitForTimeout(90)
+const paintTab = async (id) => { await p.click(`[data-testid="paint-tab-${id}"]`); await frame() }
 const PANE = 1
 const screen = w => S(([pane, w]) => { const c = window.__polyformViews[pane]; const V = c.camera.position.constructor; const q = new V(...w).project(c.camera); const r = c.el.getBoundingClientRect(); return { x: r.left + (q.x * .5 + .5) * c.w, y: r.top + (-q.y * .5 + .5) * c.h } }, [PANE, w])
 const probe = pt => S(([pane, pt]) => window.__polyformPaint.at(window.__polyformViews[pane], pt.x, pt.y), [PANE, pt])
@@ -72,9 +73,9 @@ const tex = await S(() => window.__polyform.getState().model.materials[0].textur
 
 // 2. brush size and strength; colour from a swatch
 const dabAt = async pt => { await p.mouse.move(pt.x, pt.y); await p.mouse.down(); await p.mouse.up(); await frame() }
-await p.click('[data-testid="swatch-6"]')
+await paintTab('colour'); await p.click('[data-testid="swatch-6"]')
 const blue = await S(() => window.__polyform.getState().paint.color)
-await p.locator('[data-testid="paint-size"]').fill('4')
+await paintTab('brush'); await p.locator('[data-testid="paint-size"]').fill('4')
 const nSmall0 = await S(([t, c]) => window.__polyformPaint.count(t, c), [tex, blue])
 await dabAt({ x: C.x - 30, y: C.y + 35 })
 const nSmall = (await S(([t, c]) => window.__polyformPaint.count(t, c), [tex, blue])) - nSmall0
@@ -86,7 +87,7 @@ await p.keyboard.press(']')
 check('] grows the brush while painting (and does not touch the selection)', (await S(() => window.__polyform.getState().paint.size)) === 25)
 await p.keyboard.press('['); await p.locator('[data-testid="paint-size"]').fill('10')
 await p.locator('[data-testid="paint-opacity"]').fill('0.5')
-await p.click('[data-testid="swatch-0"]')
+await paintTab('colour'); await p.click('[data-testid="swatch-0"]')
 const halfPt = { x: C.x + 30, y: C.y - 35 }
 const bg = (await probe(halfPt)).rgba
 await dabAt(halfPt)
@@ -94,7 +95,7 @@ await dabAt(halfPt)
   const a = (await probe(halfPt)).rgba, dark = [0x1b, 0x1b, 0x22]
   check('strength 50%: the dab centre is halfway between the old pixel and the colour', a.slice(0, 3).every((v, i) => Math.abs(v - (bg[i] + dark[i]) / 2) <= 6), JSON.stringify({ bg, a }))
 }
-await p.locator('[data-testid="paint-opacity"]').fill('1')
+await paintTab('brush'); await p.locator('[data-testid="paint-opacity"]').fill('1')
 
 // 3. eyedropper: Pick mode, and Alt+click
 await p.click('[data-testid="paint-pick"]')
@@ -138,7 +139,7 @@ check('Ctrl+click with the brush picks too (the blue dab)', (await S(() => windo
   await S(prev => window.__polyform.getState().setPaint({ ...prev, pixelPerfect: false }), prev)
 }
 // 4. fill: the clicked face only, one undo step
-await p.click('[data-testid="swatch-5"]')
+await paintTab('colour'); await p.click('[data-testid="swatch-5"]')
 const green = await S(() => window.__polyform.getState().paint.color)
 await p.click('[data-testid="paint-fill"]')
 const others = await S(([t, c]) => window.__polyformPaint.count(t, c), [tex, matColor])
@@ -156,9 +157,9 @@ await dabAt(C)
 
 // 5. mirror X: a dab at +x lands at -x too
 await p.click('[data-testid="paint-brush"]')
-await p.click('[data-testid="swatch-7"]')
+await paintTab('colour'); await p.click('[data-testid="swatch-7"]')
 const purple = await S(() => window.__polyform.getState().paint.color)
-await p.click('[data-testid="paint-mirror"]')
+await paintTab('brush'); await p.click('[data-testid="paint-mirror"]')
 {
   // a point on the front face at +x and its mirror at -x (same y, z)
   const at = (sx) => { const q = [...front.ctr]; const ax = front.n.map(Math.abs).indexOf(Math.max(...front.n.map(Math.abs))); void ax; q[0] = front.ctr[0] + sx; q[1] = front.ctr[1] - 0.3; return q }
@@ -169,7 +170,7 @@ await p.click('[data-testid="paint-mirror"]')
   check('mirror X: the dab lands on both sides of the model', near(r.rgba, purple) && near(l.rgba, purple), JSON.stringify({ r: r.rgba, l: l.rgba, fr: front.n }))
   check('mirrored dab is still one undo step', (await steps()) === hm + 1)
   await p.click('[data-testid="paint-mirror"]')
-  await p.click('[data-testid="swatch-3"]')
+  await paintTab('colour'); await p.click('[data-testid="swatch-3"]')
   const R2 = await screen(at(0.3).map((v, k) => (k === 1 ? v + 0.15 : v))), L2 = await screen(at(-0.3).map((v, k) => (k === 1 ? v + 0.15 : v)))
   await dabAt(R2)
   check('mirror off: only one side', near((await probe(R2)).rgba, '#f2a541') && !near((await probe(L2)).rgba, '#f2a541'))
@@ -177,7 +178,7 @@ await p.click('[data-testid="paint-mirror"]')
 
 // 6. seam dilation: a stroke that reaches the face's UV border bleeds a few px into unused texture
 {
-  await p.click('[data-testid="swatch-4"]'); await p.locator('[data-testid="paint-size"]').fill('30')
+  await paintTab('colour'); await p.click('[data-testid="swatch-4"]'); await paintTab('brush'); await p.locator('[data-testid="paint-size"]').fill('30')
   const yel = await S(() => window.__polyform.getState().paint.color)
   const E = await screen(front.P[0].map((v, k) => (v + front.P[1][k]) / 2))
   await p.mouse.move(C.x, C.y); await p.mouse.down(); await p.mouse.move(E.x, E.y, { steps: 8 }); await p.mouse.up(); await frame()
@@ -228,8 +229,8 @@ await p.screenshot({ path: '/workspace/shot-paint.png' })
 {
   await p.click('[data-testid="ws-paint"]')
   await p.click('[data-testid="paint-brush"]')
-  await p.click('[data-testid="swatch-7"]') // purple
-  await p.locator('[data-testid="paint-size"]').fill('28')
+  await paintTab('colour'); await p.click('[data-testid="swatch-7"]') // purple
+  await paintTab('brush'); await p.locator('[data-testid="paint-size"]').fill('28')
   const purple = await S(() => window.__polyform.getState().paint.color)
   await p.waitForSelector('[data-testid="paint-canvas"]', { timeout: 5000 })
   const atUV = await S(() => {

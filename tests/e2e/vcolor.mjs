@@ -17,6 +17,7 @@ const steps = () => S(() => { window.__polyform.getState().commit(); return wind
 const vc = () => S(() => window.__polyform.getState().model.faces.map(f => f.vc ?? null))
 const dabAt = async pt => { await p.mouse.move(pt.x, pt.y); await p.mouse.down(); await p.mouse.up(); await frame() }
 const color = () => S(() => window.__polyform.getState().paint.color)
+const paintTab = async (id) => { await p.click(`[data-testid="paint-tab-${id}"]`); await frame() }
 
 await S(() => {
   const s = window.__polyform.getState()
@@ -46,7 +47,7 @@ await p.click('[data-testid="paint-target-vertex"]')
 check('Paint tab: Image / Vertex target toggle', await S(() => window.__polyform.getState().paint.target === 'vertex'))
 
 // 1. fill: a flat-coloured face, one undo step, untinted, shown via the colour attribute
-await p.click('[data-testid="swatch-5"]'); const green = await color()
+await paintTab('colour'); await p.click('[data-testid="swatch-5"]'); const green = await color()
 await p.click('[data-testid="paint-fill"]')
 let h = await steps()
 await dabAt(C)
@@ -65,8 +66,8 @@ await dabAt(C)
 }
 
 // 2. brush: corners inside the brush sphere around a vertex, in every face sharing it; one undo step
-await p.click('[data-testid="paint-brush"]'); await p.click('[data-testid="swatch-2"]'); const red = await color()
-await p.locator('[data-testid="paint-size"]').fill('20')
+await p.click('[data-testid="paint-brush"]'); await paintTab('colour'); await p.click('[data-testid="swatch-2"]'); const red = await color()
+await paintTab('brush'); await p.locator('[data-testid="paint-size"]').fill('20')
 const corner = await screen(front.P[0].map((v, k) => v * 0.97 + front.ctr[k] * 0.03))
 h = await steps()
 await p.mouse.move(corner.x - 3, corner.y); await p.mouse.down(); await p.mouse.move(corner.x + 3, corner.y, { steps: 3 }); await p.mouse.up(); await frame()
@@ -87,8 +88,8 @@ await p.keyboard.down('Control'); await dabAt(corner); await p.keyboard.up('Cont
 check('Ctrl+click picks too', (await color()) === red)
 
 // 4. mirror X: the mirrored vertex gets painted in the same stroke
-await p.click('[data-testid="paint-brush"]'); await p.click('[data-testid="swatch-6"]'); const blue = await color()
-await p.click('[data-testid="paint-mirror"]')
+await p.click('[data-testid="paint-brush"]'); await paintTab('colour'); await p.click('[data-testid="swatch-6"]'); const blue = await color()
+await paintTab('brush'); await p.click('[data-testid="paint-mirror"]')
 {
   const m = await S(() => window.__polyform.getState().model)
   // a front-face vertex with x > 0 and its mirror (-x, y, z)

@@ -26,7 +26,7 @@ Blockbench is GPL-3.0. The notes below are ideas and workflow only. No Blockbenc
 
 | Feature | Where it works | Notes |
 | --- | --- | --- |
-| Artist layout | Paint workspace | Square tool strip (B E G I L R O M V, shade). Options row for the active tool. Primary / secondary, HSV square, swatches, .gpl save and load. Layer list with thumbnails, drag reorder, duplicate. |
+| Artist layout | Paint workspace | Slim tool strip, names and shortcuts in the tooltip. Image / Vertex / Weight and the new-image size sit at the top. Round / Square follow the brush sliders. Pressure is a square icon beside Size and Strength. Mirror, pixel, and lock alpha sit on the texture bar and stay on one line. Colour is a swatch pair, hex, and swatches; the UV grid fields appear once the grid is on. Brush, Colour, and Layers are separate panels. The long help line is a ? tooltip and the status hint. |
 | Texture canvas | Beside the 3D view | Split and swap. Checkerboard, pixel grid from 8× zoom, zoom presets, brush outline, X/Y guides at the image centre. Unwrap tools stay off this workspace. |
 | Layer stack | 2D and 3D | Visibility, opacity, six blends, add / duplicate / reorder / merge / flatten. Max 16. One undo step. |
 | Marquee, lasso, wand, move | Texture canvas and the 3D view | Shift adds, Ctrl+Shift subtracts. Brush, fill and shade obey the selection. |
@@ -157,11 +157,10 @@ Undo of a move restores pixels and does not restore the selection mask. The mask
 
 | | |
 | --- | --- |
-| Now | The Paint workspace is a tool strip, one options row, colour, and layers. Fill's scope appears only while Fill is on. Rectangle fill appears only for the rectangle and the ellipse. Every new action is in the command registry (see below). [ ] still changes brush size. Hold Alt to pick a colour. |
-| Must | The hint bar in the status strip still describes the brush for every paint mode. That strip lives in a file this work does not edit. When that file is free, one short line per mode is enough. |
+| Now | The Paint workspace is a slim tool strip, Brush / Colour / Layers panels, and mirror, pixel, and lock alpha on the texture bar. The status line names the active tool. Fill's scope appears only while Fill is on. [ ] still changes brush size. Hold Alt to pick a colour. |
 | Nice | Nothing that adds a toolbar. |
 | Blockbench has, we don't | Pan, gradient, and a dozen brush modes always on the column. |
-| We already do better | Ten tools, letters on the buttons, and the options row changes with the tool. The letters work only while painting, so the model keys stay put. |
+| We already do better | Ten tools, the shortcut in the tooltip, and a panel that changes with the tool. The letters work only while painting, so the model keys stay put. |
 | How we beat all four | Faster to start than Photoshop (no tool presets), clearer than Aseprite's icon grid, less hunting than Blockbench's painter, and the 3D view is the canvas Lightcube cannot share with a UV editor. |
 | Leave out | Customizable workspaces inside Paint, radial menus, and nested "Paint preferences" dialogs. The strip is fixed on purpose. |
 
@@ -206,6 +205,6 @@ While a selection tool is active: Shift adds, Ctrl+Shift subtracts, a marquee cl
 4. **Image menu ops** (flip, rotate, resize) replace the stack with one flattened layer. That matches "these ops rewrite the bitmap."
 5. **paintcore** gained an optional `Stroke.limit` (texels that are 0 stay as they were). `TexPatch` gained an optional `layer` id and an optional `stack` snapshot. `beginStroke` is unchanged. Both additions are backward compatible.
 6. **glTF** already exports `textures.three` of the composite. Layers are not a second image. Validator target stays zero errors.
-7. **Status-bar copy** was left alone on purpose (that component is owned elsewhere). New modes fall through to the brush hint until that line is updated.
+7. **Status-bar copy** names the active paint mode. The short line is the first clause. `Chrome.tsx` only calls `paintStatusHint`.
 8. **Marching ants** are a tint on the texture canvas and a thumbnail in the layer column. The 3D view does not draw ants (that overlay belongs to the viewport owner). The tint is not baked into the image, so export stays clean.
 9. **Layout touched, narrowly.** `App.tsx` adds a paint split (class `paint-pane`, test id `paint-pane`) when the workspace is Paint and does not set `uvSpace`. `Panels.tsx` hides the small UV editor card in that workspace. `Viewport.tsx` lets Alt pick a colour instead of orbiting while the paint tool is active, and draws the symmetry guide plus the shape preview. Paint CSS stays in `src/paint.css`.

@@ -8,6 +8,7 @@ import { setPaintView, usePaintView } from '../paintview'
 import { useStore } from '../store'
 import { textures } from '../textures'
 import type { ShapeKind } from '../paintshape'
+import { PaintFlags } from './PaintFlags'
 
 interface Lay { x: number; y: number; dw: number; dh: number; scale: number; iw: number; ih: number }
 interface ShapeDetail { kind: ShapeKind; space: string; a: [number, number]; b: [number, number] }
@@ -118,10 +119,11 @@ export function PaintCanvas() {
   const box = lay.current
   return (
     <div className="paint-canvas" data-testid="paint-canvas">
-      <div className="paint-zoom">
+      <div className="paint-zoom" data-testid="paint-options-bar">
         {([['fit', 'Fit'], [1, '1:1'], [2, '2×'], [4, '4×'], [8, '8×']] as const).map(([z, label]) => (
           <button key={label} type="button" className={zoom.current === z ? 'on' : ''} data-testid={`paint-zoom-${z === 'fit' ? 'fit' : z}`} onClick={() => setZoom(z)}>{label}</button>
         ))}
+        <PaintFlags />
         <span>{zoomLabel}</span>
       </div>
       <div className="paint-stage" ref={stage} data-testid="paint-stage"
@@ -167,6 +169,7 @@ export function PaintCanvas() {
         onPointerUp={() => { if (drag.current?.kind === 'paint') paintUVEnd(); drag.current = null }}
         onPointerLeave={() => setRing(s => ({ ...s, show: false }))}>
         <div className="paint-checker" style={{ left: box.x, top: box.y, width: box.dw, height: box.dh }} />
+        <div className="paint-frame" data-testid="paint-tex-frame" style={{ left: box.x, top: box.y, width: box.dw, height: box.dh }} />
         <canvas ref={view} />
         <canvas ref={over} />
         {mirror && <div className="paint-guide x" data-testid="paint-guide-x" style={{ left: box.x + box.dw / 2, top: box.y, height: box.dh }} />}
