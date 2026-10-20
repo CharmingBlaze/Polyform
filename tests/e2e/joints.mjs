@@ -75,7 +75,7 @@ await reset(); await frame()
 }
 // 3. bind polish: Ctrl+P keeps the edit selection while the Joint tool is on, counts, highlight, Alt+P
 {
-  await p.click('[data-testid="side-joints"]')
+  await S(() => window.__polyform.getState().set({ sideTab: 'joints' })); await frame()
   // top face selected in Face mode, then pick joint "head" in the panel (switches to the Joint tool)
   await S(() => {
     const s = window.__polyform.getState(), m = s.model

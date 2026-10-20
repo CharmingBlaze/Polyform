@@ -255,17 +255,16 @@ export function NumericPanel() {
   const lo = useStore(s => s.lastOp)
   const version = useStore(s => s.version)
   const set = useStore(s => s.set)
-  if (!open) return null
   const op = lo ? opById[lo.id] : undefined
   const live = !!lo && lo.rev === version
+  // only while a tool's values are live: no empty "No active tool" card taking sidebar space
+  if (!open || !op || !live) return null
   return (
     <div className="numeric" data-testid="numeric">
-      <div className="numeric-head"><b>Numeric</b> <span className="muted">{op ? op.label : 'No active tool'}</span><span className="grow" /><button className="icon-btn" onClick={() => set({ numericOpen: false })}><X size={14} /></button></div>
-      {op && live ? <>
-        {op.params.map(p => <ParamField key={p.key} def={p} value={lo!.params[p.key]} onChange={v => useStore.getState().updateOp({ [p.key]: v })} />)}
-        {!op.params.length && <p className="muted">No parameters.</p>}
-        {lo!.note && <p className="muted">{lo!.note}</p>}
-      </> : <p className="muted">Run a tool (Create, Multiply, Construct…) to edit its values here.</p>}
+      <div className="numeric-head"><b>Numeric</b> <span className="muted">{op.label}</span><span className="grow" /><button className="icon-btn" onClick={() => set({ numericOpen: false })}><X size={14} /></button></div>
+      {op.params.map(p => <ParamField key={p.key} def={p} value={lo!.params[p.key]} onChange={v => useStore.getState().updateOp({ [p.key]: v })} />)}
+      {!op.params.length && <p className="muted">No parameters.</p>}
+      {lo!.note && <p className="muted">{lo!.note}</p>}
     </div>
   )
 }

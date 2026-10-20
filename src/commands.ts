@@ -120,7 +120,11 @@ export const commands: Command[] = [
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
   ...OPS.filter(o => !o.id.startsWith('prim.')).map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
-  { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => S().set({ numericOpen: !S().numericOpen }) },
+  { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => {
+    const s = S(), live = !!s.lastOp && s.lastOp.rev === s.version
+    if (!s.numericOpen && !live) s.notify('Numeric: run a tool (Create, Multiply, Construct…) and its values show up here')
+    s.set({ numericOpen: !s.numericOpen })
+  } },
   { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', run: () => S().deleteSelection() },
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
   { id: 'edit.undo', label: 'Undo', group: 'Edit', keys: 'Ctrl+Z', run: () => S().doUndo() },

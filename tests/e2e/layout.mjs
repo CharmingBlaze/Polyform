@@ -65,6 +65,20 @@ await p.click('[data-testid="ws-model"]'); await frame()
 await S(() => window.__polyform.getState().set({ railTab: 'Setup' })); await frame()
 check('a command jumping to another tab keeps it visible', (await railTabs()) === 'create,modify,multiply,construct,rig')
 
+// sidebar sections per workspace
+const sideTabs = () => p.locator('.sidebar .tabs button').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
+const SIDES = { model: 'scene', uv: 'scene,uv', paint: 'scene,uv', rig: 'scene,joints', animate: 'scene,joints', export: 'scene' }
+for (const [ws, want] of Object.entries(SIDES)) {
+  await p.click(`[data-testid="ws-${ws}"]`); await frame()
+  const got = await sideTabs()
+  check(`sidebar sections in ${ws}: ${want}`, got === want, got)
+}
+await p.click('[data-testid="ws-model"]'); await frame()
+check('Model: References panel under the Outliner', await p.locator('[data-testid="refs-panel"]').count() === 1)
+await S(() => window.__polyform.getState().set({ numericOpen: true, lastOp: null })); await frame()
+check('no Numeric card without an active tool', (await p.locator('[data-testid="numeric"]').count()) === 0)
+await S(() => window.__polyform.getState().set({ numericOpen: false }))
+
 // Space plays only in Animate; Model Space = tool toggle; I in Model ≠ key
 await S(() => window.__polyform.getState().set({ playing: false }))
 await p.click('[data-testid="ws-model"]'); await frame()

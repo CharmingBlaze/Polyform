@@ -159,6 +159,8 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .rail { align-items: stretch; padding: 0; gap: 0; }
 .rail .tabs { flex-wrap: wrap; padding: 6px 6px 0; }
 .rail .tabs button { padding: 4px 6px; font-size: 11.5px; border-radius: 5px 5px 0 0; }
+.sidebar .tabs.n1 { border-bottom: none; padding: 10px 12px 0; }
+.sidebar .tabs.n1 button, .sidebar .tabs.n1 button.on { background: transparent; color: var(--dim); cursor: default; text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; padding: 2px 0; }
 .rail .tabs.n1 { border-bottom: none; padding: 10px 10px 2px; }
 .rail .tabs.n1 button, .rail .tabs.n1 button.on { background: transparent; color: var(--dim); cursor: default; text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; padding: 2px 4px; }
 .tool-list { display: flex; flex-direction: column; gap: 2px; padding: 6px; overflow-y: auto; }
