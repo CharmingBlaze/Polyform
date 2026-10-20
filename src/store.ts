@@ -1061,7 +1061,7 @@ export const useStore = create<State>((set, get) => ({
       let res: { shrunk: boolean; scale: number } | null = null
       get().edit(m => UV.keepPins(m, faces, () => {
         applyAtlas(m, inp, out)
-        if (img) res = UV.packIslandsEx(m, faces, 1 / img.w, { fixed: dens / img.w, aspect: img.h / img.w })
+        if (img) res = UV.packIslandsEx(m, faces, 0, { fixed: dens / img.w, pixel: { tw: img.w, th: img.h }, padPx: get().ui.uvPack.pad })
       }), 'Auto UV')
       const r = res as { shrunk: boolean; scale: number } | null
       get().notify(`Auto UV: unwrapped ${faces.length} faces` + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit` : ` at ${dens} px/unit`) : ''))

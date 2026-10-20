@@ -479,22 +479,38 @@ export const faceArea3D = (m: Model, fi: number) => newell(m.verts, m.faces[fi].
 export interface PackOpts {
   /** keep this many UV-width units per world unit (texel density / image width) when everything fits; else fit */
   fixed?: number
+  /** with `fixed`: never shrink. When it doesn't fit, nothing moves and `fits` is false */
+  keepDensity?: boolean
   /** image height / width: islands are packed in square pixels on a non-square image */
   aspect?: number
   /** never turn islands 90° (pixel art stays upright) */
   noRotate?: boolean
+  /** pixel mode: whole-texel island sizes and origins on a tw×th image, `padPx` texels apart (default 2) */
+  pixel?: { tw: number; th: number }
+  padPx?: number
+  /** pack into this UV rectangle instead of 0..1 */
+  region?: { minU: number; minV: number; maxU: number; maxV: number }
 }
-/**
- * Pack islands into 0..1 with equal texel density and no overlaps. Returns the number of islands; `fitted` on the
- * result tells whether a fixed density had to shrink to fit (see packIslandsEx).
- */
+export interface PackResult { islands: number; /** UV-width units per world unit */ scale: number; shrunk: boolean; fits: boolean; /** used area / region area */ fill: number }
+/** Pack islands into 0..1 (or a region) with equal texel density and no overlaps. Returns the number of islands. */
 export function packIslands(m: Model, faces: number[], padding = 0.01, o: PackOpts = {}): number { return packIslandsEx(m, faces, padding, o).islands }
-export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: PackOpts = {}): { islands: number; scale: number; shrunk: boolean } {
-  const aspect = o.aspect && o.aspect > 0 ? o.aspect : 1
+/**
+ * Shelf packing, tried with several island orders (tallest, widest, largest, longest side first); the order that
+ * fits the largest scale wins. Islands are measured at equal texel density (world size), turned 90° when taller
+ * than wide unless `noRotate`.
+ */
+export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: PackOpts = {}): PackResult {
+  const aspect = o.pixel ? o.pixel.th / o.pixel.tw : o.aspect && o.aspect > 0 ? o.aspect : 1
+  const r = o.region ?? { minU: 0, minV: 0, maxU: 1, maxV: 1 }
+  const rw = Math.max(1e-9, r.maxU - r.minU), rh = Math.max(1e-9, r.maxV - r.minV)
+  const px = o.pixel
+  // region in placement units: pixels (pixel mode), else region widths
+  const RW = px ? Math.round(rw * px.tw) : 1, RH = px ? Math.round(rh * px.th) : (aspect * rh) / rw
+  const pad = px ? Math.max(0, Math.round(o.padPx ?? 2)) : padding / rw
   const isl = islands(m, faces)
   const groups = new Map<number, number[]>()
   for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
-  type Item = { faces: number[]; w: number; h: number; x0: number; y0: number; k: number; rot: boolean; x?: number; y?: number }
+  type Item = { faces: number[]; w: number; h: number; x0: number; y0: number; k: number; rot: boolean; x: number; y: number }
   const items: Item[] = []
   for (const fs of groups.values()) {
     const a3 = fs.reduce((a, f) => a + faceArea3D(m, f), 0)
@@ -502,45 +518,58 @@ export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: Pack
     const k = auv > 1e-12 && a3 > 1e-12 ? Math.sqrt(a3 / (auv * aspect)) : 1
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const f of fs) for (const [u, v] of m.faces[f].uv) { x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v) }
-    // islands measured in square pixels (u-width units): v spans `aspect` times as many
+    // world size (square pixels: v spans `aspect` times as many)
     let w = (x1 - x0) * k, h = (y1 - y0) * k * aspect
     const rot = !o.noRotate && h > w * 1.0001
     if (rot) [w, h] = [h, w]
-    items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot })
+    items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot, x: 0, y: 0 })
   }
-  if (!items.length) return { islands: 0, scale: 0, shrunk: false }
-  items.sort((a, b) => b.h - a.h || b.w - a.w)
-  const fits = (s: number) => {
-    let x = padding, y = padding, rowH = 0
-    for (const it of items) {
-      const w = it.w * s, h = it.h * s
-      if (w + 2 * padding > 1 || h + 2 * padding > aspect) return false
-      if (x + w + padding > 1) { x = padding; y += rowH + padding; rowH = 0 }
-      if (y + h + padding > aspect) return false
-      it.x = x; it.y = y; x += w + padding; rowH = Math.max(rowH, h)
+  if (!items.length) return { islands: 0, scale: 0, shrunk: false, fits: true, fill: 0 }
+  const size = (v: number) => (px ? Math.max(1, Math.ceil(v - 1e-9)) : v)
+  const fits = (list: Item[], s: number) => {
+    let x = pad, y = pad, rowH = 0
+    for (const it of list) {
+      const w = size(it.w * s), h = size(it.h * s)
+      if (w + 2 * pad > RW + 1e-9 || h + 2 * pad > RH + 1e-9) return false
+      if (x + w + pad > RW + 1e-9) { x = pad; y += rowH + pad; rowH = 0 }
+      if (y + h + pad > RH + 1e-9) return false
+      it.x = x; it.y = y; x += w + pad; rowH = Math.max(rowH, h)
     }
     return true
   }
-  // largest scale that fits (bisection)
+  const orders: Item[][] = [
+    [...items].sort((a, b) => b.h - a.h || b.w - a.w),
+    [...items].sort((a, b) => b.w - a.w || b.h - a.h),
+    [...items].sort((a, b) => b.w * b.h - a.w * a.h),
+    [...items].sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h)),
+  ]
   const total = items.reduce((a, it) => a + it.w * it.h, 0)
-  let lo = 0, hi = Math.sqrt(aspect / total) * 1.01, shrunk = false
-  if (o.fixed && o.fixed > 0 && fits(o.fixed)) lo = o.fixed
-  else {
-    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid }
-    shrunk = !!o.fixed
+  const fixed = o.fixed && o.fixed > 0 ? (px ? o.fixed * px.tw : o.fixed / rw) : 0
+  let best: Item[] | null = null, lo = 0, shrunk = false
+  if (fixed) for (const ord of orders) if (fits(ord, fixed)) { best = ord; lo = fixed; break }
+  if (!best) {
+    if (fixed && o.keepDensity) return { islands: items.length, scale: o.fixed!, shrunk: false, fits: false, fill: 0 }
+    shrunk = !!fixed
+    for (const ord of orders) {
+      let a = lo, b = Math.sqrt((RW * RH) / total) * 1.01
+      if (!fits(ord, a + 1e-12) && a > 0) continue
+      for (let i = 0; i < 40; i++) { const mid = (a + b) / 2; if (fits(ord, mid)) a = mid; else b = mid }
+      if (a > lo || !best) { lo = a; best = ord }
+    }
   }
-  fits(lo)
-  for (const it of items) {
+  fits(best!, lo)
+  let used = 0
+  for (const it of best!) {
     const s = lo * it.k
+    used += size(it.w * lo) * size(it.h * lo)
     for (const f of it.faces) m.faces[f].uv = m.faces[f].uv.map(([u, v]) => {
-      const lx = (u - it.x0) * s, ly = (v - it.y0) * s
+      const lx = (u - it.x0) * s, ly = (v - it.y0) * s * aspect
       // rotate 90° counter-clockwise (keeps winding): (x, y) -> (H - y, x) with H = original height
-      const ly2 = ly * aspect // square-pixel units
-      const q = it.rot ? [it.x! + (it.w * lo - ly2), it.y! + lx] : [it.x! + lx, it.y! + ly2]
-      return [q[0], q[1] / aspect] as Vec2
+      const q = it.rot ? [it.x + (it.w * lo - ly), it.y + lx] : [it.x + lx, it.y + ly]
+      return [r.minU + (q[0] / RW) * rw, r.minV + (q[1] / RH) * rh] as Vec2
     })
   }
-  return { islands: items.length, scale: lo, shrunk }
+  return { islands: items.length, scale: px ? lo / px.tw : lo * rw, shrunk, fits: true, fill: used / (RW * RH) }
 }
 
 // ---------- texel density ----------

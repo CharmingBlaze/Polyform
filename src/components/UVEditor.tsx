@@ -107,6 +107,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [checker, setChecker] = useState(false)
   const [heat, setHeat] = useState<'off' | U.StretchKind | 'overlap' | 'density'>('off')
   const [units, setUnits] = useState<'px' | '01'>('px')
+  const [packOpen, setPackOpen] = useState(false)
+  const packPrefs = useStore(s => s.ui.uvPack)
   const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
   /** right-click menu: canvas-local px */
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
@@ -759,6 +761,25 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   }
   /** image the pixel layouts are measured on: the shown one, else the paint size */
   const imgW = () => tw || paintTexSize, imgH = () => th || paintTexSize
+  /** Pack with the options row (padding px, pixel alignment, 90° turns, keep density, into the selection's box) */
+  const pack = () => {
+    const faces = targetFaces(), st = useStore.getState(), o = st.ui.uvPack
+    if (!faces.length) return
+    const w = imgW(), h = imgH()
+    let region: { minU: number; minV: number; maxU: number; maxV: number } | undefined
+    if (o.into === 'sel') {
+      const b = U.cornerBox(st.model, faces.flatMap(fi => st.model.faces[fi].uv.map((_, c) => fi * 1024 + c)))
+      if (b) region = { minU: Math.max(0, b.minU), minV: Math.max(0, b.minV), maxU: Math.min(1, b.maxU), maxV: Math.min(1, b.maxV) }
+    }
+    const opts = (m: typeof model): U.PackOpts => ({ pixel: o.align ? { tw: w, th: h } : undefined, aspect: h / w, padPx: o.pad, noRotate: !o.rotate, region, fixed: o.keep ? m.props.texelDensity / w : undefined, keepDensity: o.keep })
+    // keep density: try on a copy first, so a refusal leaves no undo step
+    if (o.keep && !U.packIslandsEx(JSON.parse(JSON.stringify(st.model)), faces, o.pad / w, opts(st.model)).fits) { st.notify(`${st.model.props.texelDensity} px/unit does not fit ${region ? 'the selection box' : `the ${w}×${h} image`}: untick Keep density or resize the image`); return }
+    let r: U.PackResult | null = null
+    st.edit(m => U.keepPins(m, faces, () => { r = U.packIslandsEx(m, faces, o.pad / w, opts(m)) }), 'Pack islands')
+    const res = r as U.PackResult | null
+    if (res) st.notify(`Packed ${res.islands} island${res.islands === 1 ? '' : 's'} · ${Math.round(res.scale * w * 10) / 10} px/unit · ${Math.round(res.fill * 100)} % filled`)
+  }
+  const setPack = (p: Partial<typeof packPrefs>) => useStore.getState().setUI({ uvPack: { ...useStore.getState().ui.uvPack, ...p } })
   /** pixel-true Auto UV: each flat group at the project density; repacked (upright, whole texels) if groups collide */
   const autoPx = () => {
     const faces = targetFaces(), st = useStore.getState()
@@ -769,8 +790,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       U.autoPixel(m, faces, dens, w, h)
       if (U.groupsOverlap(m, U.planarGroups(m, faces))) {
         packed = true
-        shrunk = U.packIslandsEx(m, faces, 1 / w, { fixed: dens / w, aspect: h / w, noRotate: true }).shrunk
-        U.snapIslandsToTexels(m, faces, w, h)
+        shrunk = U.packIslandsEx(m, faces, 0, { fixed: dens / w, pixel: { tw: w, th: h }, padPx: st.ui.uvPack.pad, noRotate: true }).shrunk
       }
     }), 'UV auto (pixel)')
     st.notify(`Auto (pixel): ${dens} px per unit on ${w}×${h}${packed ? (shrunk ? ' · did not fit: packed smaller' : ' · packed') : ''}`)
@@ -893,10 +913,17 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="cycle" label="Cycle" tip="Turn the texture one corner on each selected face (Shift: the other way)" onClick={e => { const f = opFaces(), rev = e.shiftKey; if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f, rev), 'Cycle UV corners') }} />
           <B id="copy" label="Copy" tip="Copy the selected faces' UVs · Ctrl+C over the editor" onClick={copyUVs} />
           <B id="paste" label="Paste" tip="Paste onto each selected face's box · Ctrl+V over the editor" onClick={pasteUVs} />
-          <B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all) into 0–1: same texel density, no overlaps" onClick={() => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.packIslands(m, faces), 'Pack islands') }} />
+          <span className="uv-split"><B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all): same texel density, no overlaps (options: ▾)" onClick={pack} /><B id="pack-opts" label="▾" on={packOpen} tip="Pack options" onClick={() => setPackOpen(o => !o)} /></span>
           <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
           <B id="palette-snap" label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
+        </div>}
+        {tab === 'adjust' && packOpen && <div className="btn-row uv-packopts" data-testid="uv-pack-options">
+          <label title="Gap between islands, in image pixels">Gap <input data-testid="uv-pack-pad" type="number" min={0} max={64} value={packPrefs.pad} onChange={e => setPack({ pad: Math.max(0, Math.min(64, Math.round(+e.target.value || 0))) })} /> px</label>
+          <label title="Island sizes and positions on whole pixels"><input type="checkbox" data-testid="uv-pack-align" checked={packPrefs.align} onChange={e => setPack({ align: e.target.checked })} /> Pixels</label>
+          <label title="Turn tall islands 90° for a tighter fit"><input type="checkbox" data-testid="uv-pack-rotate" checked={packPrefs.rotate} onChange={e => setPack({ rotate: e.target.checked })} /> Rotate</label>
+          <label title="Pack at the project's texel density; refuse instead of shrinking"><input type="checkbox" data-testid="uv-pack-keep" checked={packPrefs.keep} onChange={e => setPack({ keep: e.target.checked })} /> Keep density</label>
+          <select data-testid="uv-pack-into" value={packPrefs.into} title="Pack into the whole image or the selection's current box" onChange={e => setPack({ into: e.target.value as 'image' | 'sel' })}><option value="image">Into image</option><option value="sel">Into selection box</option></select>
         </div>}
         {tab === 'align' && <div className="btn-row">
           <B id="align-left" label="⇤" tip="Align left: line the selected UV points up on the left edge" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min'))} />

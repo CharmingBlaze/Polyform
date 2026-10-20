@@ -493,6 +493,38 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('Esc cancels a typed move', JSON.stringify(await box(4)) === JSON.stringify(b0))
 }
 
+// UV-11: packing options (gap px, whole pixels, rotate, keep density, into the selection box)
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(64, 64, 'pk64')
+  await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16; m.faces.forEach((f, i) => { const o = 0.1 + i * 0.05; f.uv = [[o, o], [o + 0.13, o], [o + 0.13, o + 0.13], [o, o + 0.13]] }) }, 'messy'))
+  await p.click('[data-testid="uv-tab-adjust"]'); await p.click('[data-testid="uv-pack-opts"]'); await frame()
+  check('Pack options row shows (gap 2 px, pixels on)', await p.isVisible('[data-testid="uv-pack-options"]') && (await p.inputValue('[data-testid="uv-pack-pad"]')) === '2' && await p.isChecked('[data-testid="uv-pack-align"]'))
+  await p.click('[data-testid="uv-pack"]'); await frame()
+  const pb = await S(() => window.__polyform.getState().model.faces.map(f => { const us = f.uv.map(q => q[0] * 64), vs = f.uv.map(q => q[1] * 64); return [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)] }))
+  const gapOk = pb.every((a, i) => pb.every((b, j) => i === j || Math.max(b[0] - a[1], a[0] - b[1], b[2] - a[3], a[2] - b[3]) >= 2 - 1e-6))
+  check('Pack: whole-pixel origins and ≥ 2 px gaps', pb.every(b => close(b[0], Math.round(b[0])) && close(b[2], Math.round(b[2]))) && gapOk, JSON.stringify(pb))
+  // keep density 16 on a 64 px image: 6 sides of 16 px fit
+  await p.check('[data-testid="uv-pack-keep"]'); await p.click('[data-testid="uv-pack"]'); await frame()
+  const sides = await S(() => window.__polyform.getState().model.faces.map(f => Math.round((Math.max(...f.uv.map(q => q[0])) - Math.min(...f.uv.map(q => q[0]))) * 64 * 1000) / 1000))
+  check('Keep density: sides stay 16 px', sides.every(x => x === 16), JSON.stringify(sides))
+  await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 100 }, 'too dense'))
+  const before = JSON.stringify(await uvs()), hist = await S(() => window.__polyform.getState().histRev)
+  await p.click('[data-testid="uv-pack"]'); await frame()
+  check('Keep density that does not fit: refused, nothing moves, no undo step', JSON.stringify(await uvs()) === before && (await S(() => window.__polyform.getState().histRev)) === hist)
+  await p.uncheck('[data-testid="uv-pack-keep"]')
+  // into the selection box
+  await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'd16'))
+  await gridLayout(); await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0, 1] }) }); await frame()
+  const sb = await S(() => { const m = window.__polyform.getState().model, us = [0, 1].flatMap(i => m.faces[i].uv.map(q => q[0])), vs = [0, 1].flatMap(i => m.faces[i].uv.map(q => q[1])); return [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)] })
+  await p.selectOption('[data-testid="uv-pack-into"]', 'sel'); await p.click('[data-testid="uv-pack"]'); await frame()
+  const inside = await S(b => { const m = window.__polyform.getState().model; return [0, 1].every(i => m.faces[i].uv.every(([u, v]) => u >= b[0] - 1e-9 && u <= b[1] + 1e-9 && v >= b[2] - 1e-9 && v <= b[3] + 1e-9)) }, sb)
+  check('Into selection box: the islands stay inside it', inside)
+  await p.selectOption('[data-testid="uv-pack-into"]', 'image')
+  check('pack options persist in prefs', (await S(() => JSON.parse(localStorage.getItem('polyform.ui') || localStorage.getItem(Object.keys(localStorage).find(k => /ui|pref/i.test(k))) || '{}').uvPack?.pad)) === 2)
+  await p.click('[data-testid="uv-pack-opts"]')
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

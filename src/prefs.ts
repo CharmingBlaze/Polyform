@@ -18,11 +18,13 @@ export interface UIPrefs {
   uvSync: 'uv' | '3d'
   /** UV drag snapping: grid cells per texel of the shown image (0 off, 1 pixel, 2 half, 4 quarter) */
   uvSnap: 0 | 1 | 2 | 4
+  /** UV Pack: padding px, whole-texel origins, allow 90° turns, keep the texel density (no shrinking), target area */
+  uvPack: { pad: number; align: boolean; rotate: boolean; keep: boolean; into: 'image' | 'sel' }
 }
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1 }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' } }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -45,6 +47,10 @@ export function loadPrefs(): UIPrefs {
       pressureStrength: bool(p.pressureStrength, DEFAULT_PREFS.pressureStrength),
       uvSync: p.uvSync === '3d' ? '3d' : 'uv',
       uvSnap: ([0, 1, 2, 4] as const).includes(p.uvSnap as 0) ? p.uvSnap as 0 | 1 | 2 | 4 : 1,
+    uvPack: (() => {
+      const q = (p.uvPack && typeof p.uvPack === 'object' ? p.uvPack : {}) as Record<string, unknown>, d = DEFAULT_PREFS.uvPack
+      return { pad: typeof q.pad === 'number' && q.pad >= 0 && q.pad <= 64 ? Math.round(q.pad) : d.pad, align: bool(q.align, d.align), rotate: bool(q.rotate, d.rotate), keep: bool(q.keep, d.keep), into: q.into === 'sel' ? 'sel' as const : 'image' as const }
+    })(),
     }
   } catch { return { ...DEFAULT_PREFS } }
 }
