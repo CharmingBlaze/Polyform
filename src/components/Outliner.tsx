@@ -1,26 +1,39 @@
 import { useState, type ReactNode } from 'react'
-import { Bone, Box, ChevronDown, ChevronRight, Clapperboard, Eye, EyeOff, Image as ImageIcon, Palette, Search } from 'lucide-react'
+import { Bone, Box, ChevronDown, ChevronRight, Clapperboard, Eye, EyeOff, HelpCircle, Image as ImageIcon, Palette, Pencil, Search } from 'lucide-react'
 import { useStore } from '../store'
 import { faceMat, triCount } from '../model'
+import { textures } from '../textures'
+import { olTabFor, type OlTab } from '../prefs'
+import { RefsPanel } from './RefsPanel'
 
-type Section = 'objects' | 'joints' | 'materials' | 'clips'
+const HELP: Record<OlTab, string> = {
+  objects: 'Click selects an object · Ctrl+click toggles · Shift+click selects a range · double-click renames · the eye hides · ▸ lists its materials (click one to select those faces)',
+  joints: 'Click selects a joint · Shift+click adds · double-click renames · the count is the points bound to it',
+  materials: 'Click makes a material active (the Materials editor follows) and selects its faces · Shift+click adds · double-click renames · ✎ opens the editor',
+  clips: 'Click makes a clip active · double-click renames',
+  refs: 'Reference images: guides drawn behind the model in a chosen view',
+}
 
 /**
- * Outliner: everything in the scene as one tree (objects with their materials, the joint hierarchy, materials /
- * images, clips). Rows select (Shift adds), eyes hide objects, double-click renames, the filter narrows by name.
+ * Outliner: the scene in tabs, one list at a time — Objects (with their materials), Skeleton (the joint tree),
+ * Materials (and their images; picking one syncs the Materials editor), Clips, and Reference images (Model).
+ * The filter narrows the active tab by name. The active tab is remembered per workspace.
  */
 export function Outliner() {
   const m = useStore(s => s.model)
-  useStore(s => s.version)
+  useStore(s => s.version); useStore(s => s.texRev)
   const selFaces = useStore(s => s.selFaces)
   const selBones = useStore(s => s.selBones)
   const clip = useStore(s => s.clip)
   const mode = useStore(s => s.mode)
-  const [open, setOpen] = useState<Record<Section, boolean>>({ objects: true, joints: true, materials: true, clips: true })
+  const activeMat = useStore(s => s.activeMat)
+  const tab = useStore(s => olTabFor(s.ui, s.workspace))
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
   const [q, setQ] = useState('')
+  const [anchor, setAnchor] = useState<number | null>(null)
   const st = useStore.getState()
+  const setTab = (t: OlTab) => st.setUI({ olTab: { ...st.ui.olTab, [st.workspace]: t } })
   const match = (name: string) => !q || name.toLowerCase().includes(q.toLowerCase())
   const facesOf = (g: number) => m.faces.map((f, fi) => (f.g === g ? fi : -1)).filter(fi => fi >= 0)
   const matFaces = (mi: number, g?: number) => m.faces.map((f, fi) => (faceMat(m, f) === mi && (g === undefined || f.g === g) ? fi : -1)).filter(fi => fi >= 0)
@@ -28,24 +41,43 @@ export function Outliner() {
     if (st.selectMode === 'object' || st.selectMode === 'joint') st.setSelectMode('face')
     st.setSelection({ faces: add ? [...selFaces, ...faces] : faces })
   }
+  /** Scene rows: click selects one object, Ctrl/Cmd+click toggles it, Shift+click selects the range from the last click. */
+  const pickObject = (i: number, e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }, order: number[] = m.groups.map((_, k) => k)) => {
+    const s = useStore.getState()
+    if (s.selectMode !== 'object') s.setSelectMode('object')
+    const selected = new Set([...s.selFaces].map(f => m.faces[f]?.g))
+    let want: Set<number>
+    if (e.shiftKey && anchor !== null && order.includes(anchor)) {
+      const a = order.indexOf(anchor), b = order.indexOf(i)
+      want = new Set(order.slice(Math.min(a, b), Math.max(a, b) + 1))
+      if (e.ctrlKey || e.metaKey) selected.forEach(g => g !== undefined && want.add(g))
+    } else if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      want = new Set([...selected].filter((g): g is number => g !== undefined))
+      if (want.has(i)) want.delete(i); else want.add(i)
+      setAnchor(i)
+    } else { want = new Set([i]); setAnchor(i) }
+    s.setSelection({ faces: m.faces.map((f, fi) => (want.has(f.g) ? fi : -1)).filter(fi => fi >= 0) })
+  }
   const rename = (key: string, name: string, apply: (v: string) => void) => editing === key
     ? <input autoFocus defaultValue={name} onClick={e => e.stopPropagation()} onBlur={e => { if (e.target.value && e.target.value !== name) apply(e.target.value); setEditing(null) }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(null) }} />
     : <span className="name" onDoubleClick={e => { e.stopPropagation(); setEditing(key) }}>{name}</span>
-  const head = (s: Section, label: string, icon: ReactNode, count: number) => (
-    <div className="ol-head" data-testid={`ol-sec-${s}`} onClick={() => setOpen({ ...open, [s]: !open[s] })}>
-      {open[s] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}{icon}<span>{label}</span><span className="meta">{count}</span>
-    </div>
-  )
 
-  // objects
-  const objects = m.groups.map((g, i) => ({ g, i })).filter(x => match(x.g.name) || m.materials.some((mt, mi) => match(mt.name) && matFaces(mi, x.i).length))
+  const tabs: { id: OlTab; label: string; icon: ReactNode; n: number }[] = [
+    { id: 'objects', label: 'Scene', icon: <Box size={13} />, n: m.groups.length },
+    { id: 'joints', label: 'Skeleton', icon: <Bone size={13} />, n: m.bones.length },
+    { id: 'materials', label: 'Materials', icon: <Palette size={13} />, n: m.materials.length },
+    { id: 'clips', label: 'Clips', icon: <Clapperboard size={13} />, n: m.clips.length },
+    { id: 'refs', label: 'Refs', icon: <ImageIcon size={13} />, n: m.refs?.length ?? 0 },
+  ]
+  const cur: OlTab = tab
+
   // joints, as a tree; a filtered joint keeps its ancestors so the hierarchy still reads
   const keepJoint = new Set<number>()
   m.bones.forEach((b, i) => { if (match(b.name)) for (let j = i; j >= 0; j = m.bones[j].parent) keepJoint.add(j) })
   const counts = m.vbone.reduce<Record<number, number>>((a, b) => { if (b >= 0) a[b] = (a[b] || 0) + 1; return a }, {})
   const jointRow = (i: number, depth: number): ReactNode => !keepJoint.has(i) ? null : (
     <div key={i}>
-      <div className={`row ${selBones.has(i) ? 'on' : ''}`} style={{ paddingLeft: 18 + depth * 14 }} data-testid={`ol-joint-${i}`}
+      <div className={`row ${selBones.has(i) ? 'on' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} data-testid={`ol-joint-${i}`}
         onClick={e => { const s = new Set(e.shiftKey ? selBones : []); s.add(i); useStore.setState({ selBones: s, selectMode: mode === 'model' && st.selectMode !== 'joint' ? st.selectMode : 'joint' }) }}>
         <Bone size={13} className="dim" />
         {rename(`j${i}`, m.bones[i].name, v => st.edit(mm => (mm.bones[i].name = v), 'Rename joint'))}
@@ -54,60 +86,85 @@ export function Outliner() {
       {m.bones.map((b, c) => (b.parent === i ? jointRow(c, depth + 1) : null))}
     </div>
   )
-  const mats = m.materials.map((mt, i) => ({ mt, i, n: matFaces(i).length })).filter(x => match(x.mt.name))
-  const clips = m.clips.map((c, i) => ({ c, i })).filter(x => match(x.c.name))
   const keyCount = (ci: number) => { const c = m.clips[ci]; let n = 0; for (const k of Object.values(c.keys)) n += Object.keys(k).length; for (const k of Object.values(c.okeys)) n += Object.keys(k).length; return n }
+  const empty = (s: string) => <div className="ol-empty">{s}</div>
+
+  let body: ReactNode
+  if (cur === 'objects') {
+    const objects = m.groups.map((g, i) => ({ g, i })).filter(x => match(x.g.name) || m.materials.some((mt, mi) => match(mt.name) && matFaces(mi, x.i).length))
+    body = !m.groups.length ? empty('No objects: add a primitive (Create tab) or drop a .glb / .obj / .ms3d file.')
+      : !objects.length ? empty('Nothing matches the filter.')
+      : objects.map(({ g, i }) => {
+        const faces = facesOf(i)
+        const sel = faces.length > 0 && faces.every(fi => selFaces.has(fi))
+        const used = m.materials.map((mt, mi) => ({ mt, mi, n: matFaces(mi, i).length })).filter(x => x.n)
+        const isOpen = expanded.has(i) || (!!q && !match(g.name))
+        return (
+          <div key={i}>
+            <div className={`row ${sel ? 'on' : ''}`} data-testid={`ol-obj-${i}`} onClick={e => pickObject(i, e, objects.map(x => x.i))}>
+              <button className="icon-btn sm twisty" data-testid={`ol-expand-${i}`} title={isOpen ? 'Hide its materials' : 'Show its materials'} onClick={e => { e.stopPropagation(); const n = new Set(expanded); if (n.has(i)) n.delete(i); else n.add(i); setExpanded(n) }}>{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</button>
+              {/* per-object toggles; lock / exclude-from-export go here next to the eye */}
+              <span className="ol-toggles" data-slot="object-toggles">
+              <button className="icon-btn sm" data-testid={`ol-eye-${i}`} title={g.visible ? 'Hide' : 'Show'} onClick={e => { e.stopPropagation(); st.edit(mm => (mm.groups[i].visible = !mm.groups[i].visible), g.visible ? 'Hide object' : 'Show object') }}>
+                {g.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+              </button>
+              </span>
+              {rename(`g${i}`, g.name, v => st.edit(mm => (mm.groups[i].name = v), 'Rename object'))}
+              <span className="meta" data-testid={`group-count-${i}`} title={`${faces.length} faces · ${triCount(m, faces)} triangles`}>{faces.length} f · {triCount(m, faces)} t</span>
+            </div>
+            {isOpen && used.map(({ mt, mi, n }) => (
+              <div key={mi} className="row sub" data-testid={`ol-obj-${i}-mat-${mi}`} onClick={e => selectFaces(matFaces(mi, i), e.shiftKey)} title="Select these faces">
+                <span className="swatch-dot" style={{ background: mt.color }} />{mt.texture ? <ImageIcon size={12} className="dim" /> : null}
+                <span className="name">{mt.name}</span><span className="meta">{n} faces</span>
+              </div>
+            ))}
+          </div>
+        )
+      })
+  } else if (cur === 'joints') {
+    body = !m.bones.length ? empty('No joints: Rig workspace → click to place a root joint.')
+      : !keepJoint.size ? empty('Nothing matches the filter.')
+      : m.bones.map((b, i) => (b.parent < 0 ? jointRow(i, 0) : null))
+  } else if (cur === 'materials') {
+    const mats = m.materials.map((mt, i) => ({ mt, i, n: matFaces(i).length })).filter(x => match(x.mt.name))
+    const openEditor = (i: number) => { useStore.setState({ activeMat: i }); if (['model', 'uv', 'paint'].includes(st.workspace)) st.set({ sideTab: 'materials' }) }
+    body = !mats.length ? empty('Nothing matches the filter.') : mats.map(({ mt, i, n }) => {
+      const sz = mt.texture ? textures.size(mt.texture) : null
+      return (
+        <div key={i} className={`row ${activeMat === i ? 'on' : ''}`} data-testid={`ol-mat-${i}`} onClick={e => { useStore.setState({ activeMat: i }); if (n) selectFaces(matFaces(i), e.shiftKey) }} title={n ? 'Make active (the Materials editor follows) and select the faces using it' : 'Unused · make active'}>
+          <span className="swatch-dot" style={{ background: mt.color }} />{mt.texture ? <ImageIcon size={12} className="dim" /> : null}
+          {rename(`m${i}`, mt.name, v => st.edit(mm => (mm.materials[i].name = v), 'Rename material'))}
+          <span className="meta" title={sz ? `image ${sz.w}×${sz.h}` : undefined}>{sz ? `${sz.w}×${sz.h} · ` : ''}{n ? `${n} f` : 'unused'}</span>
+          <button className="icon-btn sm" data-testid={`ol-mat-edit-${i}`} title="Edit in the Materials tab" onClick={e => { e.stopPropagation(); openEditor(i) }}><Pencil size={12} /></button>
+        </div>
+      )
+    })
+  } else if (cur === 'clips') {
+    const clips = m.clips.map((c, i) => ({ c, i })).filter(x => match(x.c.name))
+    body = !clips.length ? empty('Nothing matches the filter.') : clips.map(({ c, i }) => (
+      <div key={i} className={`row ${clip === i ? 'on' : ''}`} data-testid={`ol-clip-${i}`} onClick={() => st.setClip(i)} title={`${c.frames} frames · ${keyCount(i)} keys`}>
+        <Clapperboard size={13} className="dim" />
+        {rename(`c${i}`, c.name, v => st.edit(mm => (mm.clips[i].name = v), 'Rename clip'))}
+        <span className="meta">{c.frames} f · {keyCount(i)} k</span>
+      </div>
+    ))
+  } else body = <RefsPanel />
 
   return (
     <div className="list outliner" data-testid="outliner">
-      <label className="ol-filter"><Search size={13} /><input placeholder="Filter by name" value={q} data-testid="ol-filter" onChange={e => setQ(e.target.value)} /></label>
-      {head('objects', 'Objects', <Box size={13} />, m.groups.length)}
-      {open.objects && <>
-        {!m.groups.length && <div className="ol-empty">No objects: add a primitive (Create tab) or drop a .glb / .obj / .ms3d file.</div>}
-        {objects.map(({ g, i }) => {
-          const faces = facesOf(i)
-          const sel = faces.length > 0 && faces.every(fi => selFaces.has(fi))
-          const used = m.materials.map((mt, mi) => ({ mt, mi, n: matFaces(mi, i).length })).filter(x => x.n)
-          const isOpen = expanded.has(i) || (!!q && !match(g.name))
-          return (
-            <div key={i}>
-              <div className={`row ${sel ? 'on' : ''}`} data-testid={`ol-obj-${i}`} onClick={e => st.selectGroup(i, e.shiftKey)}>
-                <button className="icon-btn sm twisty" data-testid={`ol-expand-${i}`} onClick={e => { e.stopPropagation(); const n = new Set(expanded); if (n.has(i)) n.delete(i); else n.add(i); setExpanded(n) }}>{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</button>
-                <button className="icon-btn sm" data-testid={`ol-eye-${i}`} title={g.visible ? 'Hide' : 'Show'} onClick={e => { e.stopPropagation(); st.edit(mm => (mm.groups[i].visible = !mm.groups[i].visible), g.visible ? 'Hide object' : 'Show object') }}>
-                  {g.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                </button>
-                {rename(`g${i}`, g.name, v => st.edit(mm => (mm.groups[i].name = v), 'Rename object'))}
-                <span className="meta" data-testid={`group-count-${i}`}>{faces.length} faces · {triCount(m, faces)} tris</span>
-              </div>
-              {isOpen && used.map(({ mt, mi, n }) => (
-                <div key={mi} className="row sub" data-testid={`ol-obj-${i}-mat-${mi}`} onClick={e => selectFaces(matFaces(mi, i), e.shiftKey)} title="Select these faces">
-                  <span className="swatch-dot" style={{ background: mt.color }} />{mt.texture ? <ImageIcon size={12} className="dim" /> : null}
-                  <span className="name">{mt.name}</span><span className="meta">{n} faces</span>
-                </div>
-              ))}
-            </div>
-          )
-        })}
-      </>}
-      {head('joints', 'Skeleton', <Bone size={13} />, m.bones.length)}
-      {open.joints && (m.bones.length ? m.bones.map((b, i) => (b.parent < 0 ? jointRow(i, 0) : null)) : <div className="ol-empty">No joints: Rig workspace → click to place a root joint.</div>)}
-      {head('materials', 'Materials & images', <Palette size={13} />, m.materials.length)}
-      {open.materials && mats.map(({ mt, i, n }) => (
-        <div key={i} className="row" data-testid={`ol-mat-${i}`} onClick={e => { useStore.setState({ activeMat: i }); if (n) selectFaces(matFaces(i), e.shiftKey) }} title={n ? 'Select the faces using it' : 'Unused'}>
-          <span className="swatch-dot" style={{ background: mt.color }} />{mt.texture ? <ImageIcon size={12} className="dim" /> : null}
-          {rename(`m${i}`, mt.name, v => st.edit(mm => (mm.materials[i].name = v), 'Rename material'))}
-          <span className="meta">{n ? `${n} faces` : 'unused'}</span>
-        </div>
-      ))}
-      {head('clips', 'Clips', <Clapperboard size={13} />, m.clips.length)}
-      {open.clips && clips.map(({ c, i }) => (
-        <div key={i} className={`row ${clip === i ? 'on' : ''}`} data-testid={`ol-clip-${i}`} onClick={() => st.setClip(i)}>
-          <Clapperboard size={13} className="dim" />
-          {rename(`c${i}`, c.name, v => st.edit(mm => (mm.clips[i].name = v), 'Rename clip'))}
-          <span className="meta">{c.frames} f · {keyCount(i)} keys</span>
-        </div>
-      ))}
-      <p className="tip">Click selects · Shift adds · double-click renames · ▸ shows an object's materials</p>
+      <div className="ol-tabs" role="tablist">
+        {tabs.map(t => (
+          <button key={t.id} role="tab" aria-selected={cur === t.id} className={cur === t.id ? 'on' : ''} data-testid={`ol-tab-${t.id}`} title={`${t.label} (${t.n})`} onClick={() => setTab(t.id)}>
+            {t.icon}<span className="tl">{t.label}</span>{t.n > 0 && <span className="badge">{t.n}</span>}
+          </button>
+        ))}
+      </div>
+      {cur !== 'refs' && (
+        <label className="ol-filter"><Search size={13} /><input placeholder={`Filter ${tabs.find(t => t.id === cur)!.label.toLowerCase()}`} value={q} data-testid="ol-filter" onChange={e => setQ(e.target.value)} />
+          <span className="ol-help" title={HELP[cur]} data-testid="ol-help"><HelpCircle size={13} /></span>
+        </label>
+      )}
+      <div className="ol-body" data-testid={`ol-body-${cur}`}>{body}</div>
     </div>
   )
 }

@@ -27,9 +27,16 @@ export interface UIPrefs {
   uvSwap: boolean
   /** UV Tools panel (accordion): the open group, '' for none */
   uvToolsGroup: string
+  /** Outliner tab per workspace (absent = the workspace default: Rig → Skeleton, Animate → Clips, else Objects) */
+  olTab: Record<string, OlTab>
   /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
   uvUnwrap: UnwrapPrefs
 }
+export const OL_TABS = ['objects', 'joints', 'materials', 'clips', 'refs'] as const
+export type OlTab = typeof OL_TABS[number]
+/** The Outliner tab shown in a workspace: the remembered one, else Rig → Skeleton, Animate → Clips, otherwise Objects. */
+export const olTabFor = (ui: Pick<UIPrefs, 'olTab'>, ws: string): OlTab => ui.olTab?.[ws] ?? (ws === 'rig' ? 'joints' : ws === 'animate' ? 'clips' : ws === 'paint' ? 'materials' : 'objects')
+
 export interface PanelState { left: boolean | null; right: boolean | null }
 /** the workspaces that keep their own panel state ('uv' is the UV workspace / Map tab) */
 export const PANEL_KEYS = ['model', 'uv', 'paint', 'rig', 'animate', 'export'] as const
@@ -55,7 +62,7 @@ export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, olTab: {} }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars */
 const PREFS_V = 2
@@ -105,6 +112,7 @@ export function loadPrefs(): UIPrefs {
           follow: q.follow === 'even' ? 'even' as const : 'length_average' as const, lmMargin: rng(q.lmMargin, 0, 0.25, d.lmMargin), sharpAngle: rng(q.sharpAngle, 1, 179, d.sharpAngle),
         }
       })(),
+      olTab: Object.fromEntries(Object.entries(p.olTab && typeof p.olTab === 'object' ? p.olTab : {}).filter(([k, v]) => (PANEL_KEYS as readonly string[]).includes(k) && (OL_TABS as readonly unknown[]).includes(v))) as Record<string, OlTab>,
       uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
     }
   } catch { return { ...DEFAULT_PREFS } }

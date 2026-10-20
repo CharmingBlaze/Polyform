@@ -132,6 +132,7 @@ interface State {
   setMode: (mode: Mode) => void
   showTexture: boolean
   showWire: boolean
+  /** the active material index: set by the Outliner's Materials tab and the Materials editor; Paint reads it to pick the texture to paint */
   activeMat: number
   paint: PaintSettings
   numericOpen: boolean

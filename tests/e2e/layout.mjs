@@ -75,7 +75,7 @@ for (const [ws, want] of Object.entries(SIDES)) {
   check(`sidebar sections in ${ws}: ${want}`, got === want, got)
 }
 await p.click('[data-testid="ws-model"]'); await frame()
-check('Model: References fold under the Outliner', await p.locator('[data-testid="refs-fold"]').count() === 1)
+check('Model: References are an Outliner tab', await p.locator('[data-testid="ol-tab-refs"]').count() === 1)
 await S(() => window.__polyform.getState().set({ numericOpen: true, lastOp: null })); await frame()
 check('no Numeric card without an active tool', (await p.locator('[data-testid="numeric"]').count()) === 0)
 await S(() => window.__polyform.getState().set({ numericOpen: false }))

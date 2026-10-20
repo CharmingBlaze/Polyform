@@ -270,7 +270,7 @@ export function DrawPanel() {
   return (
     <div className="numeric" data-testid="draw-panel">
       <div className="numeric-head"><b>Draw {label}</b><span className="grow" /></div>
-      {!d.has ? <div className="muted draw-hint">Drag a box in any view · Shift equal sides · Ctrl snaps to the grid · Enter drops one at the origin · Esc cancels</div> : <>
+      {!d.has ? <div className="muted draw-hint">Drag a box in any view · Shift equal sides · Ctrl snaps to the grid · Enter drops one at the origin · Esc cancels · then double-click or Enter creates it</div> : <>
         {['X', 'Y', 'Z'].map((a, i) => (
           <label className="pf" key={a}><span>Size {a}</span>
             <input type="number" step={0.1} min={0.001} data-testid={`draw-s${a.toLowerCase()}`} value={size(i)} onChange={e => setSize(i, parseFloat(e.target.value))} />
@@ -281,9 +281,9 @@ export function DrawPanel() {
             <input type="number" step={1} data-testid="draw-seg" value={d.seg} onChange={e => useStore.getState().drawSeg(parseInt(e.target.value, 10))} />
           </label>
         )}
-        <div className="muted draw-hint">Drag the handles to resize · wheel or +/- segments · drag in another flat view for depth</div>
+        <div className="muted draw-hint">Drag the handles to resize · wheel or +/- segments · drag in another flat view for depth · double-click or Enter creates</div>
         <div className="draw-btns">
-          <button className="tool-btn" data-testid="draw-ok" onClick={() => useStore.getState().confirmDraw()}>Create (Enter)</button>
+          <button className="tool-btn" data-testid="draw-ok" title="Create the primitive · Enter, or double-click in a view" onClick={() => useStore.getState().confirmDraw()}>Create (Enter)</button>
           <button className="tool-btn" data-testid="draw-cancel" onClick={() => useStore.getState().cancelDraw()}>Cancel (Esc)</button>
         </div>
       </>}

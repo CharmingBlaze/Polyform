@@ -10,10 +10,10 @@ const check = (name, ok, info = '') => results.push([name, !!ok, info])
 const S = (fn, arg) => p.evaluate(fn, arg)
 const frame = () => p.waitForTimeout(80)
 
-// Model: the References panel sits under the Outliner
+// Model: References are a tab of the Outliner
 await p.click('[data-testid="ws-model"]'); await frame()
-check('refs fold is closed while there are no references', (await p.locator('[data-testid="refs-panel"]').count()) === 0)
-await p.click('[data-testid="refs-fold"]'); await frame()
+check('the refs tab is not open by default (Objects is)', (await p.locator('[data-testid="refs-panel"]').count()) === 0)
+await p.click('[data-testid="ol-tab-refs"]'); await frame()
 check('refs panel visible', await p.locator('[data-testid="refs-panel"]').isVisible())
 check('empty state shown', await p.locator('[data-testid="ref-empty"]').isVisible())
 check('scene has refsGroup', await S(() => !!window.__polyformScene.refsGroup))

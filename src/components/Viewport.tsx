@@ -37,6 +37,9 @@ type Drag =
 /** What a press landed on, in the current mode. */
 type Hit = { type: 'vert' | 'edge' | 'face' | 'object' | 'joint'; i: number }
 const TWEAK_PX = 4
+/** double-click / double-tap: two presses within this time (ms) and distance (px) */
+const DBL_MS = 400, DBL_PX = 8
+let lastDrawTap: { t: number; x: number; y: number; pane: number } | null = null
 
 /** A running transform: from the gizmo, a modal G/R/S/E, or a click-drag tweak. */
 interface XfDrag {
@@ -846,8 +849,14 @@ export function Viewport({ pane }: { pane: number }) {
     if (snap) { const g = useStore.getState().gridStep; p.set(Math.round(p.x / g) * g, Math.round(p.y / g) * g, Math.round(p.z / g) * g) }
     return p
   }
-  function drawDown(x: number, y: number, ctrl: boolean) {
+  function drawDown(x: number, y: number, ctrl: boolean, at = performance.now()) {
     const st = useStore.getState(), d = st.draw!
+    // double-click / double-tap (mouse, trackpad, pen: from pointer downs, not the native dblclick) finalizes like
+    // Enter (timed by the events' own timestamps, so a busy frame between the presses doesn't break it); the second press never starts a new footprint, and is ignored while there is no box yet
+    const now = at, lt = lastDrawTap
+    const dbl = !!lt && lt.pane === pane && now - lt.t < DBL_MS && Math.hypot(x - lt.x, y - lt.y) < DBL_PX
+    lastDrawTap = dbl ? null : { t: now, x, y, pane }
+    if (dbl) { drag.current = null; if (d.has) st.confirmDraw(); return }
     if (drag.current?.kind === 'draw' && drag.current.phase === 'height') { drag.current = null; return } // click ends the height
     if (d.has) {
       for (const h of drawHandles(d.min, d.max)) {
@@ -1027,7 +1036,7 @@ export function Viewport({ pane }: { pane: number }) {
     if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
     if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select' && st.tool !== 'paint')) { drag.current = { kind: 'orbit', x, y }; return }
     if (btn !== 0) return
-    if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
+    if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey, e.timeStamp); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still.
     // Shift+click is always selection (add / toggle), so the gizmo never swallows it
     const h: Handle | null = e.shiftKey ? null : gizmo.current.hit(ray(x, y))

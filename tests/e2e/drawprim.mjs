@@ -124,6 +124,36 @@ await reset(); await frame()
   await p.dblclick('[data-testid="prim-box"]'); await frame()
   check('double-click a primitive drops one at the origin', (await bounds())?.faces === 6 && !(await draw()))
 }
+// 6. double-click in a view finalizes like Enter (mouse and pen), without a stray extra box; ignored while invalid
+await reset(); await frame()
+{
+  await p.click('[data-testid="prim-box"]'); await frame()
+  await p.waitForSelector('[data-testid="draw-panel"]')
+  check('the draw tip mentions double-click', /double-click/i.test(await p.textContent('[data-testid="draw-panel"]')))
+  const empty = await screen(0, [1.5, 0, 1.5])
+  await p.mouse.dblclick(empty.x, empty.y); await frame()
+  check('double-click before a box is drawn is ignored (still armed, nothing created)', (await draw())?.kind === 'box' && !(await bounds()))
+  await dragIn(0, await screen(0, [-1, 0, -0.5]), await screen(0, [0.5, 0, 0.5]))
+  const bb0 = await bounds()
+  const at = await screen(0, [1.5, 0, 1.5])
+  await p.mouse.dblclick(at.x, at.y); await frame()
+  const bb1 = await bounds()
+  check('double-click finalizes the drawn box (drawing ends)', !(await draw()) && bb1?.faces === 6, JSON.stringify(bb1))
+  check('…the box is unchanged (no stray footprint from the second click)', JSON.stringify(bb0) === JSON.stringify(bb1), JSON.stringify([bb0, bb1]))
+  check('…one undo step', await canUndo())
+  await p.keyboard.press('Control+z'); await frame()
+  check('…Ctrl+Z removes it', !(await bounds()))
+  // pen: two quick pen taps (pointer events) in the Top view after a footprint
+  await p.click('[data-testid="prim-box"]'); await frame()
+  await dragIn(0, await screen(0, [-0.5, 0, -0.5]), await screen(0, [0.5, 0, 0.5]))
+  const t = await screen(0, [1.5, 0, -1.5])
+  const cdp = await p.context().newCDPSession(p)
+  for (const type of ['mousePressed', 'mouseReleased', 'mousePressed', 'mouseReleased']) {
+    await cdp.send('Input.dispatchMouseEvent', { type, x: t.x + 1, y: t.y + 1, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1, pointerType: 'pen', force: type === 'mousePressed' ? 0.5 : 0 })
+  }
+  await frame()
+  check('pen double-tap finalizes too', !(await draw()) && (await bounds())?.faces === 6)
+}
 await b.close()
 for (const [n, ok, info] of results) console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info)
 console.log('pageErrors', JSON.stringify(errs))
