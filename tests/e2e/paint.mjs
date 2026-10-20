@@ -45,7 +45,7 @@ const C = await screen(front.ctr)
 check('setup: the box is UV-unwrapped and its front face is under the cursor', (await probe(C))?.fi === front.fi, JSON.stringify(await probe(C)))
 
 // 1. paint tool from the Paint tab; the first stroke creates an image for the material and paints into it
-await p.click('[data-testid="tab-paint"]')
+await S(() => window.__polyform.getState().set({ railTab: 'Paint' })); await p.click('[data-testid="tab-paint"]')
 await p.click('[data-testid="brush"]')
 check('Paint tab: tool, modes, colour, swatches, size/strength/hardness, mirror, new image size', await S(() => window.__polyform.getState().tool === 'paint') && (await p.locator('[data-testid^="paint-"]').count()) >= 10 && (await p.locator('[data-testid^="swatch-"]').count()) === 10)
 const matColor = await S(() => window.__polyform.getState().model.materials[0].color)

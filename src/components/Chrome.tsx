@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle } from 'lucide-react'
-import { history, useStore, type EditMode, type Layout } from '../store'
+import { history, useStore, type EditMode, type Layout, type Workspace } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
 import { OPS, opById } from '../ops'
@@ -13,6 +13,8 @@ import { ClipsPanel } from './ClipsPanel'
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
 export type Tab = typeof TABS[number]
+/** Rail tabs relevant to each workspace (the active tab is always shown, so commands that jump tabs never orphan it). */
+export const WS_TABS: Record<Workspace, Tab[]> = { model: ['Create', 'Modify', 'Multiply', 'Construct'], uv: ['Map'], paint: ['Paint'], rig: ['Setup', 'Paint'], animate: ['Animate'], export: ['Export'] }
 
 export function Header({ onPalette }: { onPalette: () => void }) {
   useStore(s => s.histRev)
@@ -54,6 +56,8 @@ export function Header({ onPalette }: { onPalette: () => void }) {
 /** LightWave Modeler-style left panel: tool tabs with labeled text buttons. Tabs only change the panel, never the mode. */
 export function ToolRail() {
   const tab = useStore(s => s.railTab)
+  const workspace = useStore(s => s.workspace)
+  const tabs = WS_TABS[workspace].includes(tab) ? WS_TABS[workspace] : [...WS_TABS[workspace], tab]
   const setTab = (t: Tab) => useStore.getState().set({ railTab: t })
   const tool = useStore(s => s.tool)
   const axis = useStore(s => s.axis)
@@ -71,8 +75,8 @@ export function ToolRail() {
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
   return (
     <aside className="rail" data-testid="tool-rail">
-      <div className="tabs">
-        {TABS.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
+      <div className={`tabs n${tabs.length}`}>
+        {tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>
       <div className="tool-list">
         {tab === 'Create' && <>

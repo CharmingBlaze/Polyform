@@ -72,7 +72,8 @@ await p.click('[data-testid="x-mirror"]'); await frame()
 check('button toggles it off again', !(await S(() => window.__polyform.getState().xMirror)))
 
 await S(() => window.__polyform.getState().openSample('character')); await frame()
-// samples open into Animate; X-Mirror lives on the Modify tab
+// samples open into Animate; X-Mirror lives on Model's Modify tab
+await p.click('[data-testid="ws-model"]'); await frame()
 await p.click('[data-testid="tab-modify"]'); await frame()
 await p.click('[data-testid="x-mirror"]'); await frame()
 const paired = await S(() => {

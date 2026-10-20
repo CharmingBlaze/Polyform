@@ -40,7 +40,7 @@ const front = await S(pane => {
   return out
 }, PANE)
 const C = await screen(front.ctr)
-await p.click('[data-testid="tab-paint"]')
+await S(() => window.__polyform.getState().set({ railTab: 'Paint' })); await p.click('[data-testid="tab-paint"]')
 await p.click('[data-testid="brush"]')
 await p.click('[data-testid="paint-target-vertex"]')
 check('Paint tab: Image / Vertex target toggle', await S(() => window.__polyform.getState().paint.target === 'vertex'))

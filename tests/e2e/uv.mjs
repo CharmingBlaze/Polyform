@@ -27,7 +27,7 @@ const faces = () => S(() => window.__polyform.getState().model.faces.map(f => f.
 // 1. Auto UV
 await reset()
 await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = f.uv.map(() => [0, 0]))), 'zero UVs') })
-await p.click('[data-testid="tab-uv"]')
+await p.click('[data-testid="ws-uv"]')
 await p.click('[data-testid="auto-uv"]')
 await p.waitForFunction(() => window.__polyform.getState().model.faces.every(f => f.uv.some(u => u[0] || u[1])), null, { timeout: 15000 }).catch(() => {})
 {
@@ -70,9 +70,9 @@ const rect = sel => p.locator(sel).boundingBox()
   await p.click('[data-testid="uv-max-3d"]'); await p.dblclick('[data-testid="uv-divider"]', { position: { x: 7, y: 5 } }); await frame()
   const v5 = await rect('[data-testid="views"]')
   check('double-click on the divider resets to 50%', Math.abs(v5.width / (work.width - 14) - 0.5) < 0.03, (v5.width / work.width).toFixed(3))
-  await p.click('[data-testid="tab-create"]'); await frame()
+  await p.click('[data-testid="ws-model"]'); await frame()
   check('leaving the Map tab closes the UV workspace and restores the views', !(await p.locator('[data-testid="uv-pane"]').count()) && (await S(() => window.__polyform.getState().maximized)) === null)
-  await p.click('[data-testid="tab-uv"]'); await frame()
+  await p.click('[data-testid="ws-uv"]'); await frame()
 }
 
 // 3. synced selection
@@ -153,7 +153,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
 
 // seams, pins, stitch
 {
-  await reset(); await p.click('[data-testid="tab-uv"]'); await frame()
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
   const shared = (a, b) => S(([a, b]) => { const m = window.__polyform.getState().model, A = m.faces[a], B = m.faces[b]; return A.v.filter(v => B.v.includes(v)).map(v => [A.uv[A.v.indexOf(v)], B.uv[B.v.indexOf(v)]]) }, [a, b])
   const joined = async (a, b) => (await shared(a, b)).every(([x, y]) => Math.abs(x[0] - y[0]) < 1e-6 && Math.abs(x[1] - y[1]) < 1e-6)
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0] }) })
@@ -216,7 +216,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
 // 5. Images library + per-face materials: two images on different faces of a box, export, validate
 {
   await reset()
-  await p.click('[data-testid="tab-uv"]'); await frame()
+  await p.click('[data-testid="ws-uv"]'); await frame()
   await p.click('[data-testid="uv-proj-box"]'); await frame()
   // two real PNG files (8×8 red, 16×8 blue) through the file input
   const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 2, 2); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
