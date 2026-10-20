@@ -151,7 +151,7 @@ function KeyInspector({ bone, frame }: { bone: number; frame: number }) {
     }, 'Key easing')
   }
   return (
-    <div className="card" data-testid="key-inspector">
+    <div className="card key-insp" data-testid="key-inspector">
       <div className="label">{m.bones[bone].name} · frame {frame} {isKey ? <span className="pill">key</span> : <span className="pill dim">interpolated</span>}</div>
       {(['rot', 'pos'] as const).map(f => (
         <div className="vec" key={f}>
