@@ -22,6 +22,7 @@ import { primitiveImageUVs, primitiveTarget } from './primuv'
 import * as IO from './imageops'
 import { hexToRgb } from './paintcore'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
+import type { AnimKeyRef } from './timeline/keys'
 
 /** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
@@ -99,6 +100,12 @@ interface State {
   frame: number
   playing: boolean
   playSpeed: number
+  /** Selected whole-pose keys in the dope sheet. Channel rows share one entry. */
+  animKeys: AnimKeyRef[]
+  /** Curves graph instead of the dope sheet. Sampling stays in anim.ts. */
+  showCurves: boolean
+  /** Inclusive play range in frames. Null uses the whole clip. The time ruler owns the markers. */
+  playRange: { start: number; end: number } | null
   autoKey: boolean
   onion: boolean
   /** How many frames on each side of the playhead the onion ghosts show (1–3). */
@@ -242,6 +249,8 @@ interface State {
   addClip: (dup?: boolean) => void
   deleteClip: (i: number) => void
   setClip: (i: number) => void
+  /** Clamp the playhead to the clip and switch into Animate. */
+  setPlayhead: (frame: number) => void
 
   // materials
   addMaterial: () => number
@@ -347,6 +356,9 @@ export const useStore = create<State>((set, get) => ({
   frame: 0,
   playing: false,
   playSpeed: 1,
+  animKeys: [],
+  showCurves: false,
+  playRange: null,
   autoKey: true,
   onion: false,
   onionSteps: 2,
@@ -461,7 +473,7 @@ export const useStore = create<State>((set, get) => ({
   edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
   loadModel: m => {
     history.reset(m)
-    set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, savedRev: s.histRev + 1, frame: 0, clip: Math.min(m.props?.defaultClip ?? 0, Math.max(0, m.clips.length - 1)), lastOp: null, extruding: false, activeMat: 0, ...clearSel() }))
+    set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, savedRev: s.histRev + 1, frame: 0, clip: Math.min(m.props?.defaultClip ?? 0, Math.max(0, m.clips.length - 1)), lastOp: null, extruding: false, activeMat: 0, animKeys: [], playRange: null, ...clearSel() }))
   },
   notify: msg => {
     set({ toast: msg })
@@ -975,7 +987,14 @@ export const useStore = create<State>((set, get) => ({
     s.edit(m => { m.clips.splice(i, 1) }, 'Delete clip')
     set({ clip: Math.max(0, Math.min(i, get().model.clips.length - 1)), frame: 0 })
   },
-  setClip: i => set({ clip: i, frame: 0, playing: false }),
+  setClip: i => set({ clip: i, frame: 0, playing: false, animKeys: [], playRange: null }),
+  setPlayhead: frame => {
+    const s = get()
+    const last = Math.max(0, (s.curClip()?.frames ?? 2) - 1)
+    const f = Math.max(0, Math.min(last, Math.round(frame)))
+    if (s.mode !== 'animate') s.setMode('animate')
+    set({ frame: f, playing: false })
+  },
 
   // ------------------------------------------------------------------ materials
   uvFaces: () => { const m = get().model; return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0) },

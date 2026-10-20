@@ -6,7 +6,8 @@ import { pairs as xPairs } from './xmirror'
 import { PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import * as G from './geom'
-import { isModalActive, overUV } from './interaction'
+import { interaction, isModalActive, overUV } from './interaction'
+import { copyTimelineKeys, deleteTimelineKeys, duplicateTimelineKeys, pasteTimelineKeys, setTimelineArmed, timelineArmed } from './timeline/edit'
 import { toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
@@ -270,6 +271,15 @@ export const commands: Command[] = [
   { id: 'paint.layerDup', label: 'Duplicate the active paint layer', group: 'Paint', keys: 'Alt+Shift+J', run: () => duplicateActivePaintLayer() },
   { id: 'paint.paletteSave', label: 'Save the swatches as a GIMP palette', group: 'Paint', keys: 'Alt+Shift+P', run: () => saveSwatchFile() },
   { id: 'paint.paletteLoad', label: 'Load a GIMP palette into the swatches', group: 'Paint', keys: 'Alt+Shift+U', run: () => openSwatchFile() },
+  { id: 'anim.play', label: 'Play / pause', group: 'Animate', run: () => { const s = S(); if (s.mode !== 'animate') s.setMode('animate'); S().set({ playing: !S().playing }) } },
+  { id: 'anim.insertKey', label: 'Insert key on the selected joints, all channels', group: 'Animate', run: () => S().setKey() },
+  { id: 'anim.toggleCurves', label: 'Dope sheet / curves', group: 'Animate', run: () => S().set({ showCurves: !S().showCurves }) },
+  { id: 'anim.setSpeed', label: 'Cycle playback speed (0.25×–2×)', group: 'Animate', run: () => {
+    const steps = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+    const cur = S().playSpeed
+    const i = steps.findIndex(v => Math.abs(v - cur) < 0.02)
+    S().set({ playSpeed: steps[(i < 0 ? 2 : i + 1) % steps.length] })
+  } },
 ]
 
 export const byId = Object.fromEntries(commands.map(c => [c.id, c]))
@@ -297,6 +307,17 @@ export function comboOf(e: KeyboardEvent) {
 export const UV_KEYS = ['G', 'R', 'S', 'L', 'F', 'Home', 'Shift+R', 'Shift+Alt+R', 'Alt+M', 'Shift+Alt+M', 'Alt+U']
 /** UV copy / paste over the editor, except in Animate where Ctrl+C / V copy keys */
 export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
+/** Dope sheet keys while the pointer is over the timeline. Not Command.keys: those letters already belong to the views.
+ *  Home, arrows, comma and period stay with the time ruler. */
+export const TIMELINE_KEYS = ['G', 'S', 'E', 'F', 'I', 'Del', 'Space', 'Ctrl+D', 'Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+V']
+
+function overTimeline(): boolean {
+  const el = document.querySelector('[data-testid="timeline"]')
+  if (!el) return false
+  const r = el.getBoundingClientRect()
+  const { x, y } = interaction.pointer
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+}
 
 /** Single-letter paint tools. They are not Command.keys: those letters already belong to modelling. */
 const PAINT_HOT: Record<string, PaintMode> = { B: 'brush', E: 'erase', G: 'fill', I: 'pick', M: 'marquee', V: 'move', L: 'line', R: 'rect', O: 'ellipse' }
@@ -323,6 +344,28 @@ export function installShortcuts(openPalette: () => void) {
     if (!combo) return
     if (paintHotkey(e)) return
     if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && S().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
+    if (timelineArmed()) {
+      if (combo === 'Ctrl+Z' || combo === 'Ctrl+Shift+Z' || combo === 'Ctrl+Y') {
+        setTimelineArmed(false)
+        window.dispatchEvent(new CustomEvent('timeline-key', { detail: 'Esc' }))
+      } else {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('timeline-key', { detail: combo }))
+        return
+      }
+    }
+    if (overTimeline() && TIMELINE_KEYS.includes(combo)) {
+      e.preventDefault()
+      if (combo === 'Space') { byId['anim.play'].run(); return }
+      if (combo === 'I') { byId['anim.insertKey'].run(); return }
+      if (combo === 'Del') { deleteTimelineKeys(); return }
+      if (combo === 'Ctrl+C') { if (!copyTimelineKeys()) S().copyKeys(); return }
+      if (combo === 'Ctrl+V') { pasteTimelineKeys(false); return }
+      if (combo === 'Ctrl+Shift+V') { pasteTimelineKeys(true); return }
+      if (combo === 'Ctrl+D') { duplicateTimelineKeys(); return }
+      window.dispatchEvent(new CustomEvent('timeline-key', { detail: combo }))
+      return
+    }
     if (combo === 'Ctrl+K') { e.preventDefault(); openPalette(); return }
     if (combo === 'Ctrl+Y') { e.preventDefault(); S().doRedo(); return }
     const c = map.get(combo.toUpperCase())
