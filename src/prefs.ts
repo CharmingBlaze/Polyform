@@ -30,13 +30,30 @@ export interface UIPrefs {
   uvLeftCollapsed: boolean
   /** UV Tools panel (accordion): the open group, '' for none */
   uvToolsGroup: string
+  /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
+  uvUnwrap: UnwrapPrefs
 }
+export interface UnwrapPrefs {
+  method: 'angle' | 'conformal'
+  /** gap between islands, UV units (0..1 of the width) */
+  margin: number
+  /** re-solve the island while pinned points are dragged */
+  live: boolean
+  smartAngle: number
+  smartMargin: number
+  /** 0..1: how much bigger faces pull the projection directions */
+  smartArea: number
+  follow: 'even' | 'length_average'
+  lmMargin: number
+  sharpAngle: number
+}
+export const DEFAULT_UNWRAP: UnwrapPrefs = { method: 'angle', margin: 0.01, live: false, smartAngle: 66, smartMargin: 0.02, smartArea: 0, follow: 'length_average', lmMargin: 0.02, sharpAngle: 60 }
 export const UV_VIEW3D_DEFAULT = 0.32
 export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsGroup: 'unwrap' }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -67,6 +84,15 @@ export function loadPrefs(): UIPrefs {
       uvView3D: typeof p.uvView3D === 'number' && Number.isFinite(p.uvView3D) ? clampView3D(p.uvView3D) : UV_VIEW3D_DEFAULT,
       uvSwap: p.uvSwap === true,
       uvLeftCollapsed: bool(p.uvLeftCollapsed, true),
+      uvUnwrap: (() => {
+        const q = (p.uvUnwrap && typeof p.uvUnwrap === 'object' ? p.uvUnwrap : {}) as Record<string, unknown>, d = DEFAULT_UNWRAP
+        const rng = (v: unknown, lo: number, hi: number, dv: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dv)
+        return {
+          method: q.method === 'conformal' ? 'conformal' as const : 'angle' as const, margin: rng(q.margin, 0, 0.25, d.margin), live: bool(q.live, d.live),
+          smartAngle: rng(q.smartAngle, 1, 89, d.smartAngle), smartMargin: rng(q.smartMargin, 0, 0.25, d.smartMargin), smartArea: rng(q.smartArea, 0, 1, d.smartArea),
+          follow: q.follow === 'even' ? 'even' as const : 'length_average' as const, lmMargin: rng(q.lmMargin, 0, 0.25, d.lmMargin), sharpAngle: rng(q.sharpAngle, 1, 179, d.sharpAngle),
+        }
+      })(),
       uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
     }
   } catch { return { ...DEFAULT_PREFS } }

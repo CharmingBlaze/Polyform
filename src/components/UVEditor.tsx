@@ -15,6 +15,7 @@ import * as UVS from '../uvsel'
 import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
 import { viewCtx } from './Viewport'
+import { runUnwrap } from '../uvunwrap'
 import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
@@ -116,6 +117,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [heat, setHeat] = useState<'off' | U.StretchKind | 'overlap' | 'density' | 'unused'>('off')
   const [units, setUnits] = useState<'px' | '01'>('px')
   const [packOpen, setPackOpen] = useState(false)
+  const [unwrapOpen, setUnwrapOpen] = useState(false)
+  const uw = useStore(s => s.ui.uvUnwrap)
+  const setUW = (p: Partial<typeof uw>) => useStore.getState().setUI({ uvUnwrap: { ...useStore.getState().ui.uvUnwrap, ...p } })
   const packPrefs = useStore(s => s.ui.uvPack)
   const [tab, setTab] = useState<ToolGroup>('unwrap')
   const [panelMenu, setPanelMenu] = useState<{ kind: 'proj' | 'align'; x: number; y: number } | null>(null)
@@ -673,7 +677,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       drag.current = { kind: 'press', x0: x, y0: y, hit, was }
       return
     }
-    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, moved: false }
+    // Shift+click (no drag) toggles the element under the pointer (Blender); Shift+drag adds a box
+    drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, toggle: add && !sub, moved: false }
   }
   const touches = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<{ mx: number; my: number; dist: number } | null>(null)
@@ -866,11 +871,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     else if (k === 'Ctrl+V') pasteUVs()
   }
   const openMenu = (x: number, y: number) => { if (globalTool !== 'paint') setCtx({ x, y }) }
-  const project = (axis: U.UVAxis | 'cyl' | 'sphere') => {
-    const faces = targetFaces()
-    if (!faces.length) return
-    useStore.getState().edit(m => U.keepPins(m, faces, () => (axis === 'cyl' ? U.projectCylinder(m, faces) : axis === 'sphere' ? U.projectSphere(m, faces) : U.project(m, faces, axis))), 'UV project')
-  }
+  /** projections and unwraps: the selected faces only (all when nothing is selected), see uvunwrap.ts */
+  const project = (axis: U.UVAxis | 'cyl' | 'sphere') => { runUnwrap(axis === 'z' ? 'front' : axis === 'y' ? 'top' : axis === 'x' ? 'side' : axis) }
   /** image the pixel layouts are measured on: the shown one, else the paint size */
   const imgW = () => tw || paintTexSize, imgH = () => th || paintTexSize
   /** Pack with the options row (padding px, pixel alignment, 90° turns, keep density, into the selection's box) */
@@ -920,7 +922,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (!c) { st.notify('No 3D view to project from'); return }
     c.camera.updateMatrixWorld()
     const a = c.w / c.h, q = new THREE.Vector3()
-    st.edit(m => U.keepPins(m, faces, () => U.projectView(m, faces, p => { q.set(p[0], p[1], p[2]).project(c.camera); return [q.x * a, q.y] })), 'UV project from view')
+    runUnwrap('view', p => { q.set(p[0], p[1], p[2]).project(c.camera); return [q.x * a, q.y] })
   }
   /** Minecraft-style box cross at the project density, at the selection's current top-left */
   const boxCross = () => {
@@ -960,13 +962,19 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   )
   const openPanelMenu = (e: React.MouseEvent, kind: 'proj' | 'align') => { const r = e.currentTarget.getBoundingClientRect(); setPanelMenu(panelMenu?.kind === kind ? null : { kind, x: r.left, y: r.bottom + 2 }) }
   const groups: Record<ToolGroup, React.ReactNode> = {
-    unwrap: <div className="uv-grid">
+    unwrap: <><div className="uv-grid">
+      <T id="unwrap" icon={Scissors} label="Unwrap" tip={`Unwrap from seams: ${uw.method === 'angle' ? 'angle based' : 'conformal'}, pins kept; the selected faces only (all when none)`} onClick={() => runUnwrap('unwrap')} />
       <T id="auto" icon={WandSparkles} label="Auto UV" tip="Auto UV: unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
       <T id="auto-px" icon={Grid3x3} label="Auto px" tip="Auto px: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
       <T id="proj-cross" icon={Box} label="Box cross" tip="Box cross (Minecraft layout): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
       <T id="proj-view" icon={Camera} label="From view" tip="Project from the last hovered 3D view's camera" onClick={projectFromView} />
       <T id="proj-menu" icon={Cylinder} label="Project ▾" on={panelMenu?.kind === 'proj'} tip="Planar (front / top / side), per-face box, cylinder or sphere projection" onClick={e => openPanelMenu(e, 'proj')} />
-    </div>,
+      <T id="unwrap-opts" icon={SlidersHorizontal} label="Options" on={unwrapOpen} tip="Unwrap options: method (angle based / conformal), margin between islands" onClick={() => setUnwrapOpen(o => !o)} />
+    </div>
+      {unwrapOpen && <div className="uv-packopts" data-testid="uv-unwrap-options">
+        <select data-testid="uv-unwrap-method" value={uw.method} title="Angle based (ABF-style): angles made consistent first, best for organic shapes. Conformal (LSCM): straight from the 3D angles, faster" onChange={e => setUW({ method: e.target.value as 'angle' | 'conformal' })}><option value="angle">Angle based</option><option value="conformal">Conformal</option></select>
+        <label title="Gap between islands when packing, in UV units (0–1 of the image width)">Margin <input data-testid="uv-unwrap-margin" type="number" min={0} max={0.25} step={0.005} value={uw.margin} onChange={e => setUW({ margin: Math.max(0, Math.min(0.25, +e.target.value || 0)) })} /></label>
+      </div>}</>,
     transform: <div className="uv-grid">
       <T id="xf-rot-ccw" icon={RotateCcw} label="Rotate ⟲" tip="Rotate 90° counter-clockwise · Shift+Alt+R" onClick={() => rotOp('ccw')} />
       <T id="xf-rot-cw" icon={RotateCw} label="Rotate ⟳" tip="Rotate 90° clockwise · Shift+R" onClick={() => rotOp('cw')} />
@@ -1047,6 +1055,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(cx, cy) },
           (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
           { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
+          'sep',
+          { id: 'unwrap', label: `Unwrap (${uw.method === 'angle' ? 'angle based' : 'conformal'})`, run: () => runUnwrap('unwrap') },
           'sep',
           { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },
           { id: 'paste', label: 'Paste UVs', keys: 'Ctrl+V', run: pasteUVs, enabled: !!uvClip },

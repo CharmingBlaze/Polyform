@@ -13,6 +13,7 @@ import { defaults, opById, type OpSel } from './ops'
 import { topology } from './topology'
 import * as X from './extrude'
 import { applyAtlas, atlasInput } from './unwrap'
+import { placeUnwrapped } from './uvplace'
 import * as UV from './uvops'
 import * as UVS from './uvsel'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
@@ -1064,9 +1065,14 @@ export const useStore = create<State>((set, get) => ({
   },
   autoUV: async () => {
     const s = get()
-    let faces = s.activeFaces()
-    if (!faces.length) faces = s.model.faces.map((f, i) => (f.hidden || s.model.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
+    const vis = s.uvFaces()
+    let faces = s.activeFaces().filter(fi => s.model.faces[fi] && !s.model.faces[fi].hidden)
+    const subset = faces.length > 0
+    if (!faces.length) faces = vis
     if (!faces.length) { s.notify('Nothing to unwrap'); return false }
+    // a selection: the other faces on the same images keep their UVs; the new islands keep the selection's place
+    const mats = new Set(faces.map(fi => M.faceMat(s.model, s.model.faces[fi]))), inSel = new Set(faces)
+    const others = subset ? vis.filter(fi => !inSel.has(fi) && mats.has(M.faceMat(s.model, s.model.faces[fi]))) : []
     try {
       const inp = atlasInput(s.model, faces)
       const ver = s.version
@@ -1076,12 +1082,17 @@ export const useStore = create<State>((set, get) => ({
       // with an image: islands at the project's texel density (px per unit), packed; without: fill 0..1 as xatlas did
       const img = get().imageSizeOf(faces), dens = get().model.props.texelDensity
       let res: { shrunk: boolean; scale: number } | null = null
+      let where = ''
       get().edit(m => UV.keepPins(m, faces, () => {
+        const before = faces.map(fi => m.faces[fi].uv.map(p => [p[0], p[1]] as M.Vec2))
         applyAtlas(m, inp, out)
-        if (img) res = UV.packIslandsEx(m, faces, 0, { fixed: dens / img.w, pixel: { tw: img.w, th: img.h }, padPx: get().ui.uvPack.pad })
+        if (others.length) {
+          const r = placeUnwrapped(m, faces, others, before, false, { margin: get().ui.uvUnwrap.margin, img: img ? { tw: img.w, th: img.h, density: dens } : undefined })
+          where = r.mode === 'free space' ? ' · moved to free space' : r.mode === 'overlaps' ? ' · no free space: overlaps other UVs' : ' · kept in place'
+        } else if (img) res = UV.packIslandsEx(m, faces, 0, { fixed: dens / img.w, pixel: { tw: img.w, th: img.h }, padPx: get().ui.uvPack.pad })
       }), 'Auto UV')
       const r = res as { shrunk: boolean; scale: number } | null
-      get().notify(`Auto UV: unwrapped ${faces.length} faces` + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit (${(q => `${q.w}×${q.h}`)(UV.pow2Suggest(img.w, img.h, dens / (r.scale * img.w)))} would hold it)` : ` at ${dens} px/unit`) : ''))
+      get().notify(`Auto UV: unwrapped ${faces.length} faces` + where + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit (${(q => `${q.w}×${q.h}`)(UV.pow2Suggest(img.w, img.h, dens / (r.scale * img.w)))} would hold it)` : ` at ${dens} px/unit`) : ''))
       return true
     } catch (e) {
       get().notify(String((e as Error).message || e))

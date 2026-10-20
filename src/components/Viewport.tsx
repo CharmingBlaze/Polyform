@@ -1021,8 +1021,9 @@ export function Viewport({ pane }: { pane: number }) {
     if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select')) { drag.current = { kind: 'orbit', x, y }; return }
     if (btn !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey); return }
-    // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still
-    const h: Handle | null = gizmo.current.hit(ray(x, y))
+    // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still.
+    // Shift+click is always selection (add / toggle), so the gizmo never swallows it
+    const h: Handle | null = e.shiftKey ? null : gizmo.current.hit(ray(x, y))
     if (h) {
       const d = beginXf('gizmo', h.kind, x, y, { axis: h.axis === 3 ? null : h.axis })
       if (d) { d.ctrl = e.ctrlKey || e.metaKey; activate(d) }

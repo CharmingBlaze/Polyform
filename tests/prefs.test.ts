@@ -18,3 +18,12 @@ describe('UV Tools accordion pref', () => {
     expect(withPrefs({ uvToolsOpen: ['project'] }).uvToolsGroup).toBe('unwrap')
   })
 })
+
+describe('unwrap options pref', () => {
+  it('defaults to Angle based with a small margin; clamps and sanitizes saved values', () => {
+    expect(loadPrefs().uvUnwrap).toMatchObject({ method: 'angle', margin: 0.01, live: false, smartAngle: 66 })
+    const u = withPrefs({ uvUnwrap: { method: 'conformal', margin: 9, live: true, smartAngle: 'x', follow: 'even', sharpAngle: -3 } }).uvUnwrap
+    expect(u).toMatchObject({ method: 'conformal', margin: 0.25, live: true, smartAngle: 66, follow: 'even', sharpAngle: 1 })
+    expect(withPrefs({ uvUnwrap: { method: 'weird' } }).uvUnwrap.method).toBe('angle')
+  })
+})
