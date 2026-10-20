@@ -674,6 +674,43 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await S(() => window.__polyform.getState().set({ tool: 'select' }))
 }
 
+// UV-14: hover sync between the UV editor and 3D, Alt+click selects every face at a texel
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(16, 16, 'hv16')
+  await gridLayout(); await S(() => { const s = window.__polyform.getState(); s.set({ tool: 'select' }); s.selectNone() }); await frame()
+  const c4 = await uvC(...await centroid(4))
+  await p.mouse.move(c4.x, c4.y); await p.mouse.move(c4.x + 1, c4.y); await frame()
+  const hv = await S(() => ({ f: window.__polyformScene.hoverFace, n: window.__polyformScene.hoverGeo.getAttribute('position')?.count ?? 0 }))
+  check('hovering a face in the UV editor outlines it in 3D', hv.f === 4 && hv.n === 8, JSON.stringify(hv))
+  const empty = await uvC(0.995, 0.005)
+  await p.mouse.move(empty.x, empty.y); await frame()
+  check('hovering empty UV space clears the 3D outline', (await S(() => window.__polyformScene.hoverFace)) === -1)
+  // 3D → UV: hover each face centre in the perspective view until one is outlined in the UV editor
+  const pane = await S(() => window.__polyform.getState().maximized ?? 1)
+  const centres = await S(pane => { const c = window.__polyformViews[pane], m = window.__polyform.getState().model, V = c.camera.position.constructor, r = c.el.getBoundingClientRect(); return m.faces.map(f => { const q = new V(...[0, 1, 2].map(k => f.v.reduce((a, v) => a + m.verts[v][k], 0) / f.v.length)).project(c.camera); return { x: r.left + (q.x * .5 + .5) * c.w, y: r.top + (-q.y * .5 + .5) * c.h } }) }, pane)
+  let synced = -1
+  for (let fi = 0; fi < centres.length && synced < 0; fi++) {
+    await p.mouse.move(centres[fi].x, centres[fi].y); await p.mouse.move(centres[fi].x + 1, centres[fi].y); await frame()
+    const h = +(await p.getAttribute('[data-testid="uv-canvas"]', 'data-hover'))
+    if (h === fi) synced = fi
+  }
+  check('hovering a face in 3D outlines the same face in the UV editor', synced >= 0, String(synced))
+  if (synced >= 0) await p.screenshot({ path: '/workspace/shot-uv-hover.png' })
+  const bb = await p.locator('[data-testid="pane-' + pane + '"]').boundingBox()
+  await p.mouse.move(bb.x + 8, bb.y + bb.height - 8); await frame()
+  check('3D hover off the model clears the UV outline', (await p.getAttribute('[data-testid="uv-canvas"]', 'data-hover')) === '-1')
+  // Alt+click on a texel two faces share selects both (hidden overlap)
+  await S(() => window.__polyform.getState().edit(m => { m.faces[1].uv = m.faces[0].uv.map(q => [...q]) }, 'overlap'))
+  const c0 = await uvC(...await centroid(0))
+  await p.keyboard.down('Alt'); await p.mouse.click(c0.x, c0.y); await p.keyboard.up('Alt'); await frame()
+  const at = await S(() => [...window.__polyform.getState().selFaces].sort((a, b) => a - b).join(','))
+  check('Alt+click selects every face covering the texel', at === '0,1', at)
+  await p.keyboard.down('Control'); await p.keyboard.down('Alt'); await p.mouse.click(c0.x, c0.y); await p.keyboard.up('Alt'); await p.keyboard.up('Control'); await frame()
+  const isl = await S(() => [...window.__polyform.getState().selFaces])
+  check('Ctrl+Alt+click selects their islands', isl.includes(0) && isl.includes(1), JSON.stringify(isl))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

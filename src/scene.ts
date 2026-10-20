@@ -172,6 +172,9 @@ class SceneManager {
     toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
     const toolP = new THREE.Points(this.toolPointGeo, new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
     toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
+    // hover sync (UV-14): the face under the pointer in the UV editor, outlined on top in every pane
+    const hov = new THREE.LineSegments(this.hoverGeo, new THREE.LineBasicMaterial({ color: '#ffd166', depthTest: false, transparent: true }))
+    hov.layers.enableAll(); hov.renderOrder = 11; hov.frustumCulled = false; s.add(hov)
 
     useStore.subscribe((st, prev) => {
       const selOrView = st.frame !== prev.frame || st.mode !== prev.mode || st.selVerts !== prev.selVerts || st.selEdges !== prev.selEdges ||
@@ -214,6 +217,19 @@ class SceneManager {
   setToolOverlay(lines: number[] | null, points: number[] | null = null) {
     this.toolLineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lines ?? [], 3))
     this.toolPointGeo.setAttribute('position', new THREE.Float32BufferAttribute(points ?? [], 3))
+    this.invalidate()
+  }
+
+  readonly hoverGeo = new THREE.BufferGeometry()
+  /** face outlined as hovered in the UV editor (-1: none) */
+  hoverFace = -1
+  /** Outline face `fi` (hovered in the UV editor) in the 3D views; -1 clears. */
+  setHoverFace(fi: number) {
+    if (fi === this.hoverFace) return
+    this.hoverFace = fi
+    const f = fi >= 0 ? useStore.getState().model.faces[fi] : null, P = this.posed, out: number[] = []
+    if (f) f.v.forEach((a, i) => { const b = f.v[(i + 1) % f.v.length]; if (P[a] && P[b]) out.push(...P[a], ...P[b]) })
+    this.hoverGeo.setAttribute('position', new THREE.Float32BufferAttribute(out, 3))
     this.invalidate()
   }
 

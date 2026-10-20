@@ -444,6 +444,7 @@ export const MOUSE_TIPS: [string, string][] = [
   ['Add to selection', 'Shift+Click'],
   ['Box select with pen / touch: drag on empty space, or use the Select tool', 'Drag'],
   ['Edge / face loop', 'Alt+Click'],
+  ['UV editor: every face covering the texel (Ctrl+Alt: their islands)', 'Alt+Click'],
   ['Maximize / restore a view: the ⤢ button in its header', 'Shift+Space'],
 ]
 

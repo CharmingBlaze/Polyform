@@ -3,7 +3,8 @@ import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../store'
-import { interaction } from '../interaction'
+import { interaction, setHoverFace } from '../interaction'
+import { sceneManager } from '../scene'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as UVS from '../uvsel'
@@ -159,13 +160,18 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   /** last pointer was a pen or finger: bigger handles */
   const coarse = useRef(false)
   const mouse = useRef({ x: 0, y: 0 })
+  /** face outlined because it is hovered in a 3D view (-1: none) */
+  const hov3d = useRef(-1)
 
   useEffect(() => {
     const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setSize({ w: Math.max(50, r.width), h: Math.max(50, r.height) }) })
     ro.observe(wrap.current!)
     const h = () => force(x => x + 1)
+    // hover sync: redraw when the face hovered in 3D changes
+    const hv = () => { if (interaction.hoverFace?.from === '3d' || hov3d.current >= 0) force(x => x + 1) }
     window.addEventListener('texture-changed', h)
-    return () => { ro.disconnect(); window.removeEventListener('texture-changed', h) }
+    window.addEventListener('hover-face', hv)
+    return () => { ro.disconnect(); window.removeEventListener('texture-changed', h); window.removeEventListener('hover-face', hv); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }
   }, [])
 
   const side = Math.min(size.w, size.h) * 0.88 * view.zoom
@@ -276,6 +282,16 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       g.fillStyle = '#ffa04a'; g.beginPath(); g.arc(fr.rot.x, fr.rot.y, fr.hs + 1, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#1b1f27'; g.stroke()
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(fr.pp.x, fr.pp.y, 5, 0, Math.PI * 2)
       g.moveTo(fr.pp.x - 8, fr.pp.y); g.lineTo(fr.pp.x + 8, fr.pp.y); g.moveTo(fr.pp.x, fr.pp.y - 8); g.lineTo(fr.pp.x, fr.pp.y + 8); g.stroke()
+    }
+    // hover sync (UV-14): the face under the pointer in a 3D view
+    const hf = interaction.hoverFace
+    hov3d.current = hf?.from === '3d' && m.faces[hf.face] ? hf.face : -1
+    cv.current!.dataset.hover = String(hov3d.current)
+    if (hov3d.current >= 0) {
+      const pts = m.faces[hov3d.current].uv.map(toPx)
+      g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
+      g.fillStyle = 'rgba(255,209,102,0.18)'; g.fill()
+      g.strokeStyle = '#1b1f27'; g.lineWidth = 4; g.stroke(); g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1
     }
     if (drag.current?.kind === 'rect' && drag.current.moved) {
       const d = drag.current
@@ -593,6 +609,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     // Ctrl+drag: marquee from anywhere (replace; +Shift add, +Alt subtract); a Ctrl+click toggles. Shift-drag on empty space adds.
     const ctrl = e.ctrlKey || e.metaKey
+    // Alt+click on a texel: all faces covering it (Ctrl+Alt: their islands); a drag instead keeps Alt-drag pivot / Ctrl+Alt marquee
+    if (e.altKey && !e.shiftKey) { drag.current = { kind: 'texel', x0: x, y0: y, islands: ctrl, pivot: !ctrl && hitHandle(x, y) === 'pivot' }; return }
     const add = e.shiftKey, sub = ctrl && e.altKey && !e.shiftKey
     if (ctrl) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add, sub, toggle: !add && !sub, moved: false }; return }
     coarse.current = e.pointerType === 'pen' || e.pointerType === 'touch'
@@ -620,6 +638,27 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const twoFinger = () => {
     const [a, b] = [...touches.current.values()]
     return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }
+  }
+  /** topmost face whose UV polygon contains (u, v) (drawn last = on top), -1 for none */
+  const faceAtUV = (u: number, v: number) => {
+    const m = useStore.getState().model, fs = imageFaces()
+    for (let k = fs.length - 1; k >= 0; k--) {
+      const uv = m.faces[fs[k]].uv
+      let inside = false
+      for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) { const [xi, yi] = uv[i], [xj, yj] = uv[j]; if ((yi > v) !== (yj > v) && u < xi + ((v - yi) / (yj - yi)) * (xj - xi)) inside = !inside }
+      if (inside) return fs[k]
+    }
+    return -1
+  }
+  /** Alt+click: every face whose UVs cover the texel under the pointer (finds hidden overlaps); with Ctrl their islands */
+  const selectAtTexel = (x: number, y: number, islands: boolean) => {
+    const st = useStore.getState(), w = imgW(), h = imgH(), [u, v] = toUV(x, y)
+    const px = Math.floor(u * w), py = Math.floor((1 - v) * h)
+    let faces = U.facesAtTexel(st.model, imageFaces(), w, h, px, py)
+    if (islands && faces.length) faces = U.islandFaces(st.model, faces, uvFaces())
+    if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face')
+    useStore.getState().setSelection({ faces })
+    st.notify(faces.length ? `${faces.length} face${faces.length === 1 ? '' : 's'} at texel ${px}, ${py}${islands ? ' (their islands)' : ''}` : `No face covers texel ${px}, ${py}`)
   }
   /** brush outline at the cursor (Paint tool): true size in texels, a circle or the texel square it stamps */
   const showBrush = (x: number, y: number) => {
@@ -657,6 +696,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const d = drag.current
     if (!d) {
       if (e.pointerType !== 'touch') { coarse.current = e.pointerType === 'pen'; const h = hitHandle(x, y); cv.current!.style.cursor = h ? CURSOR[h] : '' }
+      // hover sync (UV-14): outline the face under the pointer in the 3D views
+      const fi = faceAtUV(...toUV(x, y))
+      setHoverFace(fi, 'uv'); sceneManager.setHoverFace(fi)
       return
     }
     if (d.kind === 'pivot') {
@@ -665,6 +707,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       force(n => n + 1); return
     }
     if (d.kind === 'paint') { notePen(e); const [u, v] = toUV(x, y); paintUVAt(u, v); return }
+    if (d.kind === 'texel') {
+      if (Math.abs(x - d.x0) <= 4 && Math.abs(y - d.y0) <= 4) return
+      // Ctrl+Alt+drag: subtracting marquee; Alt+drag on the pivot moves it; elsewhere nothing
+      drag.current = d.islands ? { kind: 'rect', x0: d.x0, y0: d.y0, x1: x, y1: y, add: false, sub: true, moved: true } : d.pivot ? { kind: 'pivot' } : null
+      if (d.pivot && !d.islands) { const g = grid(e.ctrlKey || e.metaKey, e.shiftKey), q = toUV(x, y); pivot.current = g ? snapUV(q[0], q[1], tw, th, g) : q }
+      force(n => n + 1); return
+    }
     if (d.kind === 'pan') { const dx = x - d.x, dy = y - d.y; setView(v => ({ ...v, ox: v.ox + dx, oy: v.oy + dy })); d.x = x; d.y = y; return } // deltas read now: the updater runs later
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
     if (d.kind === 'press') { if (Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4) { if (beginXf('move', d.x0, d.y0, false)) updateXf(x, y, e) } return }
@@ -683,6 +732,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     // right-click without a drag: the UV menu (a right-drag pans)
     if (d.kind === 'pan' && d.menu && Math.hypot(d.x - d.x0, d.y - d.y0) < 5) { const { x, y } = loc(e); openMenu(x, y); return }
     // a plain click on an already selected element selects only it
+    if (d.kind === 'texel') { selectAtTexel(d.x0, d.y0, d.islands); return }
     if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
     if (d.kind !== 'rect') { force(n => n + 1); return }
     if (!d.moved) { applyHit(pickAt(d.x0, d.y0), d.add, d.sub, !!d.toggle); return }
@@ -882,7 +932,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => showBrush(-1, -1)} />
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => { showBrush(-1, -1); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }} />
         <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
         {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
           {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
@@ -923,7 +973,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
         ]} />}
         {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">

@@ -9,7 +9,7 @@ import { paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
 import { input, notePen, notePointer, palmRejected, penErases, pickRadius, wheelIntent } from '../input'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
-import { interaction } from '../interaction'
+import { interaction, setHoverFace } from '../interaction'
 import { topology } from '../topology'
 import type { ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
@@ -1124,6 +1124,8 @@ export function Viewport({ pane }: { pane: number }) {
       const before = gizmo.current.hovered
       gizmo.current.setHover(h)
       if (before !== gizmo.current.hovered) sceneManager.invalidate()
+      // hover sync (UV-14): with the UV editor open, the face under the pointer is outlined there
+      if (interaction.uvCanvas?.isConnected) setHoverFace(pickFace(x, y), '3d')
       return
     }
     if (d.kind === 'draw' || d.kind === 'drawHandle') { drawMove(d, x, y, e.shiftKey, e.ctrlKey || e.metaKey); return }
@@ -1348,7 +1350,7 @@ export function Viewport({ pane }: { pane: number }) {
   return (
     <div className={`viewport ${hidden ? 'hidden' : ''}`} ref={host} onContextMenu={e => e.preventDefault()} data-testid={`pane-${pane}`}>
       <div className="vp-hit" ref={hit} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel}
-        onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none' }} />
+        onPointerLeave={() => { if (brushRef.current) brushRef.current.style.display = 'none'; setHoverFace(-1, '3d') }} />
       {painting && <div className="brush-cursor" ref={brushRef} data-testid={`brush-cursor-${pane}`} style={{ width: brushSize * 2, height: brushSize * 2, display: 'none' }} />}
       <div className="vp-title">
         <select value={cfg.type} data-testid={`pane-${pane}-view`} onChange={e => setPane({ type: e.target.value as ViewType })} title="View type">

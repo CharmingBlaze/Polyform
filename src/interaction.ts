@@ -8,6 +8,17 @@ export const interaction = {
   uvCanvas: null as HTMLElement | null,
   /** last pointer position per pane (pane-local px), so G/R/S start from where the mouse is */
   mouse: [null, null, null, null] as ({ x: number; y: number } | null)[],
+  /** hover sync (UV-14): the face under the pointer and where it is hovered; not stored, not undone */
+  hoverFace: null as { face: number; from: '3d' | 'uv' } | null,
+}
+
+/** Set the hovered face; listeners (UV editor, 3D overlay) hear 'hover-face' only when it changes. */
+export function setHoverFace(face: number, from: '3d' | 'uv') {
+  const cur = interaction.hoverFace
+  if (face < 0) { if (!cur || cur.from !== from) return; interaction.hoverFace = null }
+  else if (cur && cur.face === face && cur.from === from) return
+  else interaction.hoverFace = { face, from }
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('hover-face'))
 }
 export const isModalActive = () => interaction.modal
 
