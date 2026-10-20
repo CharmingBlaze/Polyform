@@ -7,7 +7,7 @@ import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as UVS from '../uvsel'
-import { gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
+import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 import { viewCtx } from './Viewport'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
@@ -433,6 +433,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const grid = (ctrl: boolean, shift: boolean) => gridSub(snapSetting, tw > 0, ctrl, shift)
   const updateXf = (x: number, y: number, mods: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean; altKey?: boolean }) => {
     const d = drag.current, st = useStore.getState(), m = st.model
+    d.last = { x, y, mods }
+    if (d.modal && d.typed) return applyTyped()
     const ctrl = !!(mods.ctrlKey || mods.metaKey), shift = !!mods.shiftKey, sub = grid(ctrl, shift)
     let [dx, dy] = snapMoveDelta(d.anchor, [(x - d.x0) / side, -(y - d.y0) / side], tw, th, sub)
     if (!sub) { dx = (x - d.x0) / side; dy = -(y - d.y0) / side }
@@ -462,13 +464,37 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       st.touch()
       return
     }
+    // X / Y during a modal G or S: that axis only
+    if (d.axis === 'x') dy = 0
+    if (d.axis === 'y') dx = 0
+    const fx = d.axis === 'y' ? 1 : f, fy = d.axis === 'x' ? 1 : f
+    d.echo = d.xf === 'move' ? `${fmtPx(dx * (tw || paintTexSize))}, ${fmtPx(-dy * (th || paintTexSize))} px` : d.xf === 'scale' ? `×${Math.round(f * 1000) / 1000}` : `${Math.round((ang * 180) / Math.PI * 10) / 10}°`
     d.orig.forEach((o: Vec2, id: number) => {
       let u: Vec2
       if (d.xf === 'move') u = [o[0] + dx, o[1] + dy]
-      else if (d.xf === 'scale') u = [d.c[0] + (o[0] - d.c[0]) * f, d.c[1] + (o[1] - d.c[1]) * f]
+      else if (d.xf === 'scale') u = [d.c[0] + (o[0] - d.c[0]) * fx, d.c[1] + (o[1] - d.c[1]) * fy]
       else { const cs = Math.cos(ang), sn = Math.sin(ang), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
       m.faces[cornerFace(id)].uv[cornerIdx(id)] = u
     })
+    st.touch()
+  }
+  /**
+   * Typed value during a modal G / R / S (like the 3D views): G takes image pixels (+V is up), S a factor, R degrees
+   * (counter-clockwise). X / Y lock the axis; without a lock G and S use both (G: along U).
+   */
+  const applyTyped = () => {
+    const d = drag.current, st = useStore.getState(), m = st.model
+    const v = parseFloat(d.typed)
+    if (!Number.isFinite(v)) { d.echo = d.typed || ''; d.orig.forEach((o: Vec2, id: number) => { m.faces[cornerFace(id)].uv[cornerIdx(id)] = [o[0], o[1]] }); st.touch(); return }
+    const w = tw || paintTexSize, h = th || paintTexSize
+    d.orig.forEach((o: Vec2, id: number) => {
+      let u: Vec2
+      if (d.xf === 'move') u = d.axis === 'y' ? [o[0], o[1] + v / h] : [o[0] + v / w, o[1]]
+      else if (d.xf === 'scale') u = [d.c[0] + (o[0] - d.c[0]) * (d.axis === 'y' ? 1 : v), d.c[1] + (o[1] - d.c[1]) * (d.axis === 'x' ? 1 : v)]
+      else { const a = (v * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a), px = o[0] - d.c[0], py = o[1] - d.c[1]; u = [d.c[0] + px * cs - py * sn, d.c[1] + px * sn + py * cs] }
+      m.faces[cornerFace(id)].uv[cornerIdx(id)] = u
+    })
+    d.echo = `${d.typed}${d.xf === 'move' ? ' px' : d.xf === 'rotate' ? '°' : '×'}`
     st.touch()
   }
   const endXf = (cancel: boolean) => {
@@ -494,9 +520,24 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       force(n => n + 1)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (!drag.current?.modal) return
-      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); endXf(true) }
-      else if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); endXf(false) }
+      const d = drag.current
+      if (!d?.modal) return
+      const eat = () => { e.preventDefault(); e.stopImmediatePropagation() }
+      if (e.key === 'Escape') { eat(); endXf(true); return }
+      if (e.key === 'Enter') { eat(); endXf(false); return }
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      const k = e.key.toLowerCase()
+      let changed = false
+      if ((k === 'x' || k === 'y') && d.xf !== 'rotate') { d.axis = d.axis === k ? null : k; changed = true }
+      else if (/^[0-9.]$/.test(e.key) || (e.key === '-' && !d.typed)) { d.typed = (d.typed ?? '') + e.key; changed = true }
+      else if (e.key === '-' && d.typed) { d.typed = d.typed.startsWith('-') ? d.typed.slice(1) : '-' + d.typed; changed = true }
+      else if (e.key === 'Backspace' && d.typed) { d.typed = d.typed.slice(0, -1); changed = true }
+      if (!changed) return
+      eat()
+      if (d.typed) applyTyped()
+      else if (d.last) updateXf(d.last.x, d.last.y, d.last.mods)
+      else updateXf(d.x0, d.y0, {})
+      force(n => n + 1)
     }
     window.addEventListener('uv-key', onUVKey)
     window.addEventListener('keydown', onKey, true)
@@ -823,7 +864,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'island', label: 'Select island', keys: 'L', run: () => selectIsland(pickAt(ctx.x, ctx.y)) },
           { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
         ]} />}
-        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+        {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">

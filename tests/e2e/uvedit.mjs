@@ -450,6 +450,49 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.selectOption('[data-testid="uv-stretch"]', 'off')
 }
 
+// UV-15: typed values and axis lock in modal G / R / S
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(16, 16, 'g16')
+  await gridLayout(); await selFace(4); await frame()
+  const c4 = await uvC(...await centroid(4))
+  const b0 = await box(4)
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('g'); await frame()
+  await p.mouse.move(c4.x + 23, c4.y + 17, { steps: 3 }); await frame()
+  await p.keyboard.press('x'); await frame()
+  let b1 = await box(4)
+  check('G then X: the mouse moves along U only', close(b1.minV, b0.minV) && !close(b1.minU, b0.minU), JSON.stringify(b1))
+  check('the hint echoes the modal state', (await p.textContent('[data-testid="uv-modal-echo"]')).startsWith('Move X:'))
+  await p.keyboard.type('8'); await frame()
+  await p.mouse.move(c4.x + 60, c4.y + 40, { steps: 3 }); await frame()
+  check('typing 8: exactly 8 px along U, the mouse no longer counts', close((await box(4)).minU - b0.minU, 8 / 16) && close((await box(4)).minV, b0.minV), JSON.stringify(await box(4)))
+  check('echo shows the typed value', (await p.textContent('[data-testid="uv-modal-echo"]')).includes('8 px'))
+  await p.keyboard.press('Enter'); await frame()
+  b1 = await box(4)
+  check('G X 8 Enter moves exactly 8 px along U (one undo step)', close(b1.minU - b0.minU, 8 / 16) && close(b1.minV, b0.minV) && !(await p.isVisible('[data-testid="uv-modal-echo"]')), JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  check('Ctrl+Z restores it', close((await box(4)).minU, b0.minU))
+  // G Y -2: V up is +, so down the image
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('g'); await p.keyboard.press('y'); await p.keyboard.type('-2'); await p.keyboard.press('Enter'); await frame()
+  check('G Y -2 moves 2 px down (−V)', close((await box(4)).minV - b0.minV, -2 / 16) && close((await box(4)).minU, b0.minU), JSON.stringify(await box(4)))
+  await p.keyboard.press('Control+z'); await frame()
+  // S X 2 Enter: double the width about the centre
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('s'); await p.keyboard.press('x'); await p.keyboard.type('2'); await p.keyboard.press('Enter'); await frame()
+  b1 = await box(4)
+  check('S X 2 doubles the width only', close(b1.maxU - b1.minU, 8 / 16) && close(b1.maxV - b1.minV, 4 / 16), JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  // R 90 Enter; Backspace edits; Esc cancels
+  const u0 = (await uvs())[4][0]
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('r'); await p.keyboard.type('95'); await p.keyboard.press('Backspace'); await frame()
+  check('Backspace edits the typed value (9°)', (await p.textContent('[data-testid="uv-modal-echo"]')).includes('9°'))
+  await p.keyboard.type('0'); await p.keyboard.press('Enter'); await frame()
+  const u1 = (await uvs())[4][0]
+  check('R 90 Enter turns 90° counter-clockwise', close(u1[0], 10 / 16) && close(u1[1], 7 / 16), JSON.stringify([u0, u1]))
+  await p.keyboard.press('Control+z'); await frame()
+  await p.mouse.move(c4.x, c4.y); await p.keyboard.press('g'); await p.keyboard.type('5'); await p.keyboard.press('Escape'); await frame()
+  check('Esc cancels a typed move', JSON.stringify(await box(4)) === JSON.stringify(b0))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }
