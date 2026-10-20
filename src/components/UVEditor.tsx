@@ -27,6 +27,36 @@ export function uvSelection(): Set<number> {
 /** UV-local picking applies (Sync: UV, point or edge mode); face and object picks are already face-local. */
 const uvLocal = () => { const s = useStore.getState(); return s.ui.uvSync === 'uv' && s.selectMode !== 'object' && s.selectMode !== 'joint' && !s.subModes.includes('face') }
 
+/** A compact numeric field: Enter / blur applies, Esc reverts, wheel nudges (Shift = finer). "—" when not applicable. */
+function NumField({ label, value, onCommit, testid, step, digits, title }: { label: string; value: number | null; onCommit: (v: number) => void; testid: string; step: number; digits: number; title: string }) {
+  const [txt, setTxt] = useState('')
+  const focused = useRef(false)
+  const el = useRef<HTMLInputElement>(null)
+  const fmt = (v: number | null) => (v === null ? '—' : String(Math.round(v * 10 ** digits) / 10 ** digits))
+  useEffect(() => { if (!focused.current) setTxt(fmt(value)) })
+  const cb = useRef({ value, onCommit }); cb.current = { value, onCommit }
+  useEffect(() => {
+    const i = el.current!
+    const wheel = (e: WheelEvent) => {
+      if (cb.current.value === null) return
+      e.preventDefault()
+      const d = (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? step / 4 : step)
+      cb.current.onCommit(cb.current.value + d)
+    }
+    i.addEventListener('wheel', wheel, { passive: false })
+    return () => i.removeEventListener('wheel', wheel)
+  }, [step])
+  const commit = () => { const v = parseFloat(txt.replace(',', '.')); if (Number.isFinite(v) && value !== null && Math.abs(v - value) > 1e-9) onCommit(v); else setTxt(fmt(value)) }
+  return (
+    <label className="uv-num" title={title}><span>{label}</span>
+      <input ref={el} data-testid={testid} value={txt} disabled={value === null} inputMode="decimal"
+        onFocus={e => { focused.current = true; e.target.select() }} onBlur={() => { focused.current = false; commit() }}
+        onChange={e => setTxt(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { commit(); requestAnimationFrame(() => { setTxt(fmt(cb.current.value)); requestAnimationFrame(() => el.current?.select()) }) } else if (e.key === 'Escape') { setTxt(fmt(value)); el.current?.blur() } }} />
+    </label>
+  )
+}
+
 /**
  * UV editor. Selection is synced with the 3D views: picking here selects points / edges / faces in the current
  * select mode, and whatever is selected in 3D is highlighted here. G/R/S while hovering = modal move / rotate /
@@ -39,6 +69,9 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [size, setSize] = useState({ w: 300, h: 300 })
   const [checker, setChecker] = useState(false)
   const [heat, setHeat] = useState<'off' | U.StretchKind>('off')
+  const [units, setUnits] = useState<'px' | '01'>('px')
+  const [tab, setTab] = useState<'project' | 'adjust' | 'seams'>('project')
+  const paintTexSize = useStore(s => s.paint.texSize)
   const version = useStore(s => s.version)
   const selFaces = useStore(s => s.selFaces)
   const selVerts = useStore(s => s.selVerts)
@@ -579,58 +612,97 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <select data-testid="uv-snap" value={snapSetting} title={`Snap while dragging to the image's pixel grid${tw ? '' : ' (when an image is shown)'} · Ctrl inverts · Shift = 4× finer`} onChange={e => useStore.getState().setUI({ uvSnap: +e.target.value as 0 | 1 | 2 | 4 })}>
           <option value={0}>Snap off</option><option value={1}>Snap: pixel</option><option value={2}>Snap: ½ px</option><option value={4}>Snap: ¼ px</option>
         </select>
-        <span className="grow" />
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
         </select>
-        <select data-testid="uv-stretch" title="Stretch heatmap: blue = true to the 3D shape, red = distorted" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
-          <option value="off">No heatmap</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option>
+        <select data-testid="uv-stretch" title="Overlay: stretch heatmap (blue = true to the 3D shape, red = distorted)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option>
         </select>
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
-        <button title="Reset view" data-testid="uv-reset-view" onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>⟲</button>
       </div>
+      <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
         <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
-        <div className="label">Project</div>
-        <div className="btn-row">
+        <div className="seg uv-tabs" role="tablist">
+          {(['project', 'adjust', 'seams'] as const).map(t => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{t === 'project' ? 'Project' : t === 'adjust' ? 'Adjust' : 'Seams'}</button>)}
+        </div>
+        {tab === 'project' && <div className="btn-row">
+          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
           <B id="proj-front" label="Front" onClick={() => project('z')} />
           <B id="proj-top" label="Top" onClick={() => project('y')} />
           <B id="proj-side" label="Side" onClick={() => project('x')} />
           <B id="proj-box" label="Box" onClick={() => project('box')} />
           <B id="proj-cyl" label="Cylinder" tip="Wrap around the vertical axis; caps go flat into the top strip" onClick={() => project('cyl')} />
           <B id="proj-sphere" label="Sphere" tip="Longitude / latitude about the selection's centre" onClick={() => project('sphere')} />
-          <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas" onClick={() => { void useStore.getState().autoUV() }} />
-        </div>
-        <div className="label">Adjust</div>
-        <div className="btn-row">
+        </div>}
+        {tab === 'adjust' && <div className="btn-row">
           <B id="flip-u" label="Flip H" onClick={() => op('UV flip', U.flipU)} />
           <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
-          <B id="rot90" label="Rot 90°" onClick={() => op('UV rotate', U.rot90)} />
           <B id="fit" label="Fit 0–1" onClick={() => op('UV fit', U.fit01)} />
           <B id="pack" label="Pack" tip="Pack the islands of the selected faces (or all) into 0–1: same texel density, no overlaps" onClick={() => { const faces = targetFaces(); if (faces.length) useStore.getState().edit(m => U.packIslands(m, faces), 'Pack islands') }} />
-          <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || 64, th || 64))} />
+          <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
           <B id="palette-snap" label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
-        </div>
-        <div className="label">Seams</div>
-        <div className="btn-row">
+        </div>}
+        {tab === 'seams' && <div className="btn-row">
           <B id="seam-mark" label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />
           <B id="seam-clear" label="Clear seam" onClick={() => useStore.getState().markSeams(false)} />
           <B id="pin" label="Pin" tip="Pinned UVs stay put during projections and Auto UV" onClick={() => useStore.getState().pinUVs(true)} />
           <B id="unpin" label="Unpin" onClick={() => useStore.getState().pinUVs(false)} />
           <B id="stitch" label="Stitch" tip="Join the UV islands of the selected faces (or both sides of the selected edges) along their shared edges" onClick={() => useStore.getState().stitchUVs()} />
-        </div>
-        {!big && <>
-          <div className="label">Texture</div>
-          <div className="btn-row">
-            <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>
-          </div>
-        </>}
+          {!big && <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>}
+        </div>}
       </div>
+    </div>
+  )
+}
+
+/**
+ * X / Y / W / H of the selection's bounding box in image pixels (top-left origin) or 0..1 UV (U / V = bottom-left),
+ * plus a rotation field and ⟲ / ⟳ 90°. Each change is one undo step.
+ */
+function UVNumeric({ tw, th, units, setUnits }: { tw: number; th: number; units: 'px' | '01'; setUnits: (u: 'px' | '01') => void }) {
+  useStore(s => s.version); useStore(s => s.selVerts); useStore(s => s.selFaces); useStore(s => s.selEdges); useStore(s => s.uvSel)
+  const st = useStore.getState()
+  const ids = [...uvSelection()]
+  const b = ids.length ? U.cornerBox(st.model, ids) : null
+  const px = units === 'px'
+  const w = b ? b.maxU - b.minU : 0, h = b ? b.maxV - b.minV : 0
+  const val = b ? (px ? { x: b.minU * tw, y: (1 - b.maxV) * th, w: w * tw, h: h * th } : { x: b.minU, y: b.minV, w, h }) : null
+  const apply = (k: 'x' | 'y' | 'w' | 'h', v: number) => {
+    if (!b || !val) return
+    let minU = b.minU, minV = b.minV, nw = w, nh = h
+    if (px) {
+      if (k === 'x') minU = v / tw
+      if (k === 'y') minV = 1 - v / th - h
+      if (k === 'w') nw = v / tw
+      if (k === 'h') { nh = v / th; minV = b.maxV - nh } // grows downwards from the top edge, like the image
+    } else {
+      if (k === 'x') minU = v
+      if (k === 'y') minV = v
+      if (k === 'w') nw = v
+      if (k === 'h') nh = v
+    }
+    if ((k === 'w' && w < 1e-12) || (k === 'h' && h < 1e-12)) return
+    useStore.getState().edit(m => U.keepPins(m, [...new Set(ids.map(id => Math.floor(id / 1024)))], () => U.setBox(m, ids, { minU, minV, w: nw, h: nh })), `UV ${k.toUpperCase()}`)
+  }
+  const rot = (deg: number) => { if (b) useStore.getState().edit(m => U.rotateDeg(m, ids, deg), 'UV rotate') }
+  const d = px ? 2 : 4, step = px ? 1 : 1 / tw
+  const tip = (what: string) => `${what} of the selection's box ${px ? `in pixels of the ${tw}×${th} image` : 'in UV units'} · Enter applies · wheel nudges (Shift finer)`
+  return (
+    <div className="uv-numbar" data-testid="uv-numeric">
+      <NumField label={px ? 'X' : 'U'} testid="uv-num-x" value={val && val.x} step={step} digits={d} title={tip(px ? 'Left edge' : 'Left edge (U)')} onCommit={v => apply('x', v)} />
+      <NumField label={px ? 'Y' : 'V'} testid="uv-num-y" value={val && val.y} step={step} digits={d} title={tip(px ? 'Top edge' : 'Bottom edge (V)')} onCommit={v => apply('y', v)} />
+      <NumField label="W" testid="uv-num-w" value={val && w > 1e-12 ? val.w : null} step={step} digits={d} title={tip('Width')} onCommit={v => apply('w', v)} />
+      <NumField label="H" testid="uv-num-h" value={val && h > 1e-12 ? val.h : null} step={step} digits={d} title={tip('Height')} onCommit={v => apply('h', v)} />
+      <NumField label="∠" testid="uv-num-rot" value={val ? 0 : null} step={15} digits={1} title="Rotate the selection by this many degrees (counter-clockwise) about its centre" onCommit={v => rot(v)} />
+      <button data-testid="uv-rot-ccw" title="Rotate 90° counter-clockwise · Shift+Alt+R" disabled={!b} onClick={() => rot(90)}>⟲</button>
+      <button data-testid="uv-rot-cw" title="Rotate 90° clockwise · Shift+R" disabled={!b} onClick={() => rot(-90)}>⟳</button>
+      <button className="ghost small" data-testid="uv-units" title="Show pixels of the image or 0..1 UV units" onClick={() => setUnits(px ? '01' : 'px')}>{px ? 'px' : '0–1'}</button>
     </div>
   )
 }

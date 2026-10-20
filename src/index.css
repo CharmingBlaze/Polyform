@@ -106,7 +106,8 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .empty .eb { line-height: 1.5; font-size: 12.5px; }
 
 .uv-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.uv-toolbar { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); }
+.uv-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.uv-toolbar select { max-width: 130px; }
 .uv-toolbar button { font-size: 12px; padding: 3px 8px; }
 .uv-canvas { flex: 1; min-height: 200px; position: relative; overflow: hidden; }
 .uv-canvas canvas { position: absolute; inset: 0; touch-action: none; }
@@ -414,3 +415,13 @@ button.danger { color: #ff9a9a; }
 .pp-stats dt { color: var(--dim); }
 .pp-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .pp { grid-template-columns: 1fr; } }
+
+/* ---- UV numeric bar + action tabs ---- */
+.uv-numbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 6px; border-bottom: 1px solid var(--line); font-size: 11.5px; }
+.uv-num { display: flex; align-items: center; gap: 3px; color: var(--dim); }
+.uv-num input { width: 36px; padding: 2px 3px; font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+.uv-num input:disabled { opacity: .5; }
+.uv-numbar > button { padding: 2px 6px; font-size: 13px; line-height: 1; }
+.uv-actions .uv-tabs { margin-bottom: 6px; }
+.uv-actions .uv-tabs button { font-size: 11.5px; padding: 3px 10px; }
+.uv-editor.big .uv-actions { display: block; }

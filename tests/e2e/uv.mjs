@@ -22,6 +22,9 @@ const reset = () => S(() => {
   const st = window.__polyform.getState(); st.selectNone(); st.set({ tool: 'select', snap: false, numericOpen: false, mode: 'model', frame: 0, cursor3d: [0, 0, 0] }); st.setSelectMode('object')
 })
 const area = a => { let s = 0; for (let i = 0; i < a.length; i++) { const p = a[i], q = a[(i + 1) % a.length]; s += p[0] * q[1] - q[0] * p[1] } return s / 2 }
+/** the UV action buttons live on tabs (Project / Adjust / Seams) */
+const UV_TAB = { proj: 'project', auto: 'project', flip: 'adjust', fit: 'adjust', pack: 'adjust', snap: 'adjust', palette: 'adjust', island: 'adjust', seam: 'seams', pin: 'seams', unpin: 'seams', stitch: 'seams' }
+const uvBtn = async id => { await p.click(`[data-testid="uv-tab-${UV_TAB[id.split('-')[0]]}"]`); await p.click(`[data-testid="uv-${id}"]`) }
 const faces = () => S(() => window.__polyform.getState().model.faces.map(f => f.uv))
 
 // 1. Auto UV
@@ -129,7 +132,7 @@ const sceneUV = () => S(() => Array.from(window.__polyformScene.meshGeo.getAttri
   check('dragging a selected face in the UV editor moves it', Math.abs(dragged[0][0] - JSON.parse(before)[0][0] + 30 / side) < 0.01, JSON.stringify(dragged[0]))
   await p.keyboard.press('Control+z'); await frame()
   // tools
-  await p.click('[data-testid="uv-flip-u"]'); await frame()
+  await uvBtn('flip-u'); await frame()
   const flipped = await S(() => window.__polyform.getState().model.faces[4].uv)
   check('Flip H mirrors the selected UVs', Math.abs(flipped[0][0] - JSON.parse(before)[0][0]) > 1e-4 || JSON.parse(before)[0][0] === JSON.parse(before)[1][0])
   await p.keyboard.press('Control+z')
@@ -146,7 +149,7 @@ await p.screenshot({ path: '/workspace/shot-uv-workspace.png' })
 for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphere']]) {
   await S(kind => { const s = window.__polyform.getState(); const m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().addPrimitive(kind); window.__polyform.getState().selectNone() }, kind)
   await frame()
-  await p.click(`[data-testid="${btn}"]`); await frame()
+  await uvBtn(btn.slice(3)); await frame()
   const uv = await faces()
   check(`${kind} projection: every face has positive UV area, all in 0..1`, uv.every(f => area(f) > 1e-7) && uv.flat().every(([u, v]) => u >= -1e-9 && u <= 1 + 1e-9 && v >= 0 && v <= 1), uv.filter(f => area(f) <= 1e-7).length + ' bad')
 }
@@ -157,7 +160,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   const shared = (a, b) => S(([a, b]) => { const m = window.__polyform.getState().model, A = m.faces[a], B = m.faces[b]; return A.v.filter(v => B.v.includes(v)).map(v => [A.uv[A.v.indexOf(v)], B.uv[B.v.indexOf(v)]]) }, [a, b])
   const joined = async (a, b) => (await shared(a, b)).every(([x, y]) => Math.abs(x[0] - y[0]) < 1e-6 && Math.abs(x[1] - y[1]) < 1e-6)
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0] }) })
-  await p.click('[data-testid="uv-seam-mark"]'); await frame()
+  await uvBtn('seam-mark'); await frame()
   const seamPts = await S(() => window.__polyformScene.seamGeo.getAttribute('position').count)
   check('Mark seam in Face mode marks the face outline (4 edges, drawn red in 3D)', seamPts === 8, String(seamPts))
   await S(() => window.__polyform.getState().selectNone())
@@ -167,36 +170,36 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   for (const f of nb) if (await joined(0, f)) cut = false
   check('Auto UV cuts along the marked seams: face 0 is its own island', cut && nb.length === 4, JSON.stringify(nb))
   await S(() => window.__polyform.getState().setSelection({ faces: [0] }))
-  await p.click('[data-testid="uv-seam-clear"]'); await frame()
+  await uvBtn('seam-clear'); await frame()
   check('Clear seam removes them', (await S(() => window.__polyformScene.seamGeo.getAttribute('position').count)) === 0)
   // pin
   await S(() => window.__polyform.getState().setSelection({ faces: [1] }))
-  await p.click('[data-testid="uv-pin"]'); await frame()
+  await uvBtn('pin'); await frame()
   const pinned = await S(() => window.__polyform.getState().model.faces[1])
   check('Pin pins the selected UV corners', JSON.stringify(pinned.pin) === '[0,1,2,3]')
   await S(() => window.__polyform.getState().selectNone())
-  await p.click('[data-testid="uv-proj-front"]'); await frame()
+  await uvBtn('proj-front'); await frame()
   const after = await S(() => window.__polyform.getState().model.faces)
   check('pinned UVs stay put during a projection; the others move', JSON.stringify(after[1].uv) === JSON.stringify(pinned.uv) && JSON.stringify(after[0].uv) !== JSON.stringify(pinned.uv))
   await S(() => window.__polyform.getState().setSelection({ faces: [1] }))
-  await p.click('[data-testid="uv-unpin"]'); await frame()
+  await uvBtn('unpin'); await frame()
   check('Unpin', (await S(() => window.__polyform.getState().model.faces[1].pin)) === undefined)
   // stitch
   await S(() => window.__polyform.getState().selectNone())
-  await p.click('[data-testid="uv-proj-box"]'); await frame()
+  await uvBtn('proj-box'); await frame()
   check('box projection leaves faces 0 and 2 apart in UV', !(await joined(0, 2)))
   const before = await S(() => window.__polyform.getState().model.faces[0].uv)
   await S(() => window.__polyform.getState().setSelection({ faces: [0, 2] }))
-  await p.click('[data-testid="uv-stitch"]'); await frame()
+  await uvBtn('stitch'); await frame()
   check('Stitch joins face 2 onto face 0 along their shared edge; face 0 stays', await joined(0, 2) && JSON.stringify(await S(() => window.__polyform.getState().model.faces[0].uv)) === JSON.stringify(before))
   await p.screenshot({ path: '/workspace/shot-uv-seams.png' })
   await p.keyboard.press('Control+z'); await frame()
   check('one Ctrl+Z undoes the stitch', !(await joined(0, 2)))
   // pack: seams everywhere, overlapping islands -> packed apart
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('edge'); s.selectAll() })
-  await p.click('[data-testid="uv-seam-mark"]')
+  await uvBtn('seam-mark')
   await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = [[0.1, 0.1], [0.6, 0.1], [0.6, 0.6], [0.1, 0.6]])), 'overlap'); s.setSelectMode('face'); s.selectNone() })
-  await p.click('[data-testid="uv-pack"]'); await frame()
+  await uvBtn('pack'); await frame()
   const packed = await faces()
   const inside = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) c = !c } return c }
   const cents = packed.map(f => [f.reduce((s, q) => s + q[0], 0) / 4, f.reduce((s, q) => s + q[1], 0) / 4])
@@ -217,7 +220,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
 {
   await reset()
   await p.click('[data-testid="ws-uv"]'); await frame()
-  await p.click('[data-testid="uv-proj-box"]'); await frame()
+  await uvBtn('proj-box'); await frame()
   // two real PNG files (8×8 red, 16×8 blue) through the file input
   const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 2, 2); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
   const red = Buffer.from(await png(8, 8, '#e04040'), 'base64'), blue = Buffer.from(await png(16, 8, '#4060e0'), 'base64')

@@ -59,6 +59,24 @@ export const flipU = (m: Model, ids: Iterable<number>) => mapCorners(m, ids, (u,
 export const flipV = (m: Model, ids: Iterable<number>) => mapCorners(m, ids, (u, c) => [u[0], 2 * c[1] - u[1]])
 /** 90° counter-clockwise */
 export const rot90 = (m: Model, ids: Iterable<number>) => mapCorners(m, ids, (u, c) => [c[0] - (u[1] - c[1]), c[1] + (u[0] - c[0])])
+/** 90° clockwise */
+export const rotCW = (m: Model, ids: Iterable<number>) => mapCorners(m, ids, (u, c) => [c[0] + (u[1] - c[1]), c[1] - (u[0] - c[0])])
+/** Rotate about the bounding-box centre by `deg` degrees (counter-clockwise positive, like UV space). */
+export function rotateDeg(m: Model, ids: Iterable<number>, deg: number) {
+  const a = (deg * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a)
+  mapCorners(m, ids, (u, c) => { const x = u[0] - c[0], y = u[1] - c[1]; return [c[0] + x * cs - y * sn, c[1] + x * sn + y * cs] })
+}
+/**
+ * Fit the corners' bounding box onto a new box (UV units). A zero-width / zero-height selection only moves on
+ * that axis. Used by the numeric X / Y / W / H fields.
+ */
+export function setBox(m: Model, ids: Iterable<number>, nb: { minU: number; minV: number; w: number; h: number }) {
+  const list = [...ids], b = cornerBox(m, list)
+  if (!b) return
+  const w0 = b.maxU - b.minU, h0 = b.maxV - b.minV
+  mapCorners(m, list, u => [nb.minU + (w0 > 1e-12 ? ((u[0] - b.minU) / w0) * nb.w : 0), nb.minV + (h0 > 1e-12 ? ((u[1] - b.minV) / h0) * nb.h : 0)])
+}
+
 /** Scale uniformly into 0..1 (bottom-left aligned). */
 export function fit01(m: Model, ids: Iterable<number>) {
   const list = [...ids], b = cornerBox(m, list)

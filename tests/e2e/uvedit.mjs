@@ -195,6 +195,68 @@ const H = () => S(() => window.__polyformUV.handles())
   await p.screenshot({ path: '/tmp/uv4.png' })
 }
 
+// UV-5: numeric X / Y / W / H (px of the image, or 0..1) and rotation
+{
+  await gridLayout(); await selFace(4); await frame()
+  const val = id => p.inputValue(`[data-testid="uv-num-${id}"]`)
+  const typeIn = async (id, v) => { await p.click(`[data-testid="uv-num-${id}"]`); await p.keyboard.press('Control+a'); await p.keyboard.type(String(v)); await p.keyboard.press('Enter'); await frame() }
+  check('numeric panel shows the selection box in px (top-left origin)', [await val('x'), await val('y'), await val('w'), await val('h')].join() === '6,5,4,4', [await val('x'), await val('y'), await val('w'), await val('h')].join())
+  const b0 = await box(4)
+  await typeIn('x', 8)
+  let b1 = await box(4)
+  check('X moves the box: left edge at 8 px, size kept', close(b1.minU, 8 / 16) && close(b1.maxU - b1.minU, 4 / 16) && close(b1.minV, b0.minV), JSON.stringify(b1))
+  await p.locator('[data-testid="uv-num-x"]').blur(); await p.mouse.move(640, 300)
+  await p.keyboard.press('Control+z'); await frame()
+  check('one Ctrl+Z undoes a numeric edit', JSON.stringify(await box(4)) === JSON.stringify(b0))
+  await typeIn('w', 8)
+  b1 = await box(4)
+  check('W scales from the left edge', close(b1.minU, b0.minU) && close(b1.maxU - b1.minU, 8 / 16) && close(b1.maxV, b0.maxV), JSON.stringify(b1))
+  await typeIn('h', 2)
+  b1 = await box(4)
+  check('H keeps the top edge (image-down), height 2 px', close(b1.maxV, b0.maxV) && close(b1.maxV - b1.minV, 2 / 16), JSON.stringify(b1))
+  await typeIn('y', 0)
+  b1 = await box(4)
+  check('Y = 0 puts the box at the top of the image', close(b1.maxV, 1), JSON.stringify(b1))
+  await p.locator('[data-testid="uv-num-y"]').blur()
+  await gridLayout(); await selFace(4); await frame()
+  // wheel nudge: 1 px, Shift a quarter
+  await p.hover('[data-testid="uv-num-x"]'); await p.mouse.wheel(0, -100); await frame()
+  check('wheel up nudges X by one pixel', close((await box(4)).minU, 7 / 16), await val('x'))
+  await p.keyboard.down('Shift'); await p.mouse.wheel(0, 100); await p.keyboard.up('Shift'); await frame()
+  check('Shift+wheel nudges by a quarter pixel', close((await box(4)).minU, 6.75 / 16), await val('x'))
+  // rotation
+  await gridLayout(); await selFace(4); await typeIn('w', 8)
+  const wide = await box(4)
+  await p.click('[data-testid="uv-rot-ccw"]'); await frame()
+  b1 = await box(4)
+  const cx = (wide.minU + wide.maxU) / 2, cy = (wide.minV + wide.maxV) / 2
+  check('⟲ turns the box 90° about its centre', close(b1.maxU - b1.minU, 4 / 16) && close(b1.maxV - b1.minV, 8 / 16) && close((b1.minU + b1.maxU) / 2, cx) && close((b1.minV + b1.maxV) / 2, cy), JSON.stringify(b1))
+  await gridLayout(); await selFace(4); await frame()
+  const u0 = (await uvs())[4][0]
+  await p.click('[data-testid="uv-rot-cw"]'); await frame()
+  const u1 = (await uvs())[4][0]
+  check('⟳ is clockwise: the bottom-left corner goes to the top-left', close(u0[0], 6 / 16) && close(u0[1], 7 / 16) && close(u1[0], 6 / 16) && close(u1[1], 11 / 16), JSON.stringify([u0, u1]))
+  await gridLayout(); await selFace(4); await typeIn('rot', 45)
+  b1 = await box(4)
+  check('∠ 45 rotates by 45°; the field returns to 0', close(b1.maxU - b1.minU, Math.SQRT2 * 4 / 16, 1e-6) && (await val('rot')) === '0', JSON.stringify(b1))
+  await p.locator('[data-testid="uv-num-rot"]').blur()
+  // units
+  await gridLayout(); await selFace(4); await frame()
+  await p.click('[data-testid="uv-units"]'); await frame()
+  check('0–1 units: U / V / W / H in UV space', [await val('x'), await val('y'), await val('w'), await val('h')].join() === '0.375,0.4375,0.25,0.25', [await val('x'), await val('y'), await val('w'), await val('h')].join())
+  await typeIn('x', 0.5)
+  check('typing U = 0.5 moves the box', close((await box(4)).minU, 0.5))
+  await p.locator('[data-testid="uv-num-x"]').blur()
+  await p.click('[data-testid="uv-units"]'); await frame()
+  // nothing selected: disabled
+  await S(() => window.__polyform.getState().selectNone()); await frame()
+  check('no selection: the fields and ⟲ ⟳ are disabled', await p.isDisabled('[data-testid="uv-num-x"]') && await p.isDisabled('[data-testid="uv-rot-cw"]'))
+  // screenshot: frame + handles + numeric panel
+  await gridLayout(); await selFace(4); await frame()
+  await p.mouse.move(640, 700); await frame()
+  await p.screenshot({ path: '/workspace/shot-uv-handles.png' })
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }
