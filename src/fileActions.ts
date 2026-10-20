@@ -4,7 +4,7 @@
  */
 import { useStore } from './store'
 import { emptyModel } from './model'
-import { exportGLB, exportGLTF, exportOBJ, importFile, saveProject } from './io'
+import { exportGLB, exportGLTF, exportOBJ, importFile, isProjectFile, projectStem, saveProject } from './io'
 import { ask } from './dialog'
 
 const S = () => useStore.getState()
@@ -14,14 +14,14 @@ export const markSaved = () => useStore.setState(s => ({ savedRev: s.histRev }))
 /** File name stem for saves and exports: Save As name, else the scene name, else "model". */
 export function fileStem() {
   const raw = S().fileName ?? S().model.props?.name ?? ''
-  const clean = raw.replace(/\.polyform\.json$|\.json$/i, '').replace(/[\\/:*?"<>|]+/g, '_').trim()
+  const clean = projectStem(raw).replace(/[\\/:*?"<>|]+/g, '_').trim()
   return clean && clean !== 'Untitled' ? clean : 'model'
 }
 
 export function saveFile() {
   saveProject(S().model, fileStem())
   markSaved()
-  S().notify(`Saved ${fileStem()}.polyform.json`)
+  S().notify(`Saved ${fileStem()}.polyform`)
 }
 
 export async function saveAs(): Promise<boolean> {
@@ -89,10 +89,10 @@ export async function exportAs(kind: 'glb' | 'gltf' | 'obj') {
 
 /** A file chosen in the picker: a project replaces the scene (so offer to save first); meshes, rigs and images merge in. */
 export async function openPicked(f: File) {
-  const project = /\.json$/i.test(f.name)
+  const project = isProjectFile(f.name)
   if (project && !(await confirmDiscard('open another project'))) return
   try {
     await importFile(f)
-    if (project) { useStore.setState({ fileName: f.name.replace(/\.polyform\.json$|\.json$/i, '') }); markSaved() }
+    if (project) { useStore.setState({ fileName: projectStem(f.name) }); markSaved() }
   } catch (err) { S().notify(String((err as Error).message || err)) }
 }

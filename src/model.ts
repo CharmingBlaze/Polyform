@@ -270,11 +270,21 @@ const pushSkinOf = (m: Model, src: number) => {
 
 type Raw = Record<string, unknown> & { textures?: Record<string, string> }
 
+/** One format upgrade step: takes a raw version-n file and returns it as version n+1 (with `version: n + 1`). */
+export type Migration = (r: Raw) => Raw
+
 /**
- * Format migrations (spec B): MIGRATIONS[n] turns a version-n file into version n+1. Loading runs every step from
- * the file's version up to PROJECT_VERSION in order; validateModel runs afterwards. Files without a version are v1.
+ * Format migrations (spec B) — the registry, keyed by the version a step upgrades FROM. Loading runs every step
+ * from the file's version up to PROJECT_VERSION in order; validateModel runs afterwards. Files without a version
+ * are v1. To add a format version N+1 (reserved: 8 materials, 9 parenting, 10 split animation channels):
+ *   1. add `N: r => ({ ...r, version: N + 1, ... })` here (or call registerMigration(N, fn) from your module),
+ *   2. bump PROJECT_VERSION to N + 1,
+ *   3. add a fixture tests/fixtures/vN-*.polyform.json saved before your change.
+ * A step must not throw on odd data: leave bad values in place for validateModel to reject with a clear message.
+ * tests/persist.test.ts checks the table has exactly one step per older version. New OPTIONAL fields that old
+ * builds can ignore do not need a version step at all.
  */
-export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
+export const MIGRATIONS: Record<number, Migration> = {
   /** v1 (triangles, one texture data URL, one timeline) -> v2 (materials, clips, group smoothing, face flags) */
   1: r => {
     const textures = { ...(r.textures ?? {}) }
@@ -314,6 +324,16 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
   6: r => ({ ...r, version: 7, props: { ...(r.props && typeof r.props === 'object' ? r.props : {}), texelDensity: 16 } }),
 }
 
+/** Plug in the step that upgrades `from` → `from + 1`. Refuses duplicates and versions outside 1..PROJECT_VERSION-1. */
+export function registerMigration(from: number, step: Migration) {
+  if (!Number.isInteger(from) || from < 1 || from >= PROJECT_VERSION) throw new Error(`registerMigration: ${from} is not an older format version (current is ${PROJECT_VERSION})`)
+  if (MIGRATIONS[from] && MIGRATIONS[from] !== step) throw new Error(`registerMigration: a step from format ${from} is already registered`)
+  MIGRATIONS[from] = step
+}
+
+/** Alias for readability at call sites: the format version this build writes. */
+export const CURRENT_VERSION = PROJECT_VERSION
+
 /**
  * Bring any saved project up to the current format. Returns the model plus the textures embedded in the file
  * (id -> data URL). Refuses newer formats. Does not validate (call validateModel next).
@@ -330,7 +350,7 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
     const step = MIGRATIONS[version as number]
     if (!step) throw new Error(`No upgrade path from project format ${version}`)
     try { r = step(r) } catch (e) { throw new Error(`Could not upgrade the project from format ${version}: ${(e as Error)?.message ?? e}`) }
-    if (r.version !== (version as number) + 1) throw new Error(`Upgrading from project format ${version} went wrong`)
+    if (!r || typeof r !== 'object' || r.version !== (version as number) + 1) throw new Error(`Upgrading from project format ${version} went wrong`)
     version = r.version as number
   }
   const textures: Record<string, string> = {}
@@ -362,15 +382,19 @@ export class ProjectError extends Error {
  * Works on a private copy, so a failure never leaves anything half-loaded; every failure is a ProjectError with a
  * readable message. Callers install the result (textures, then the store) only after this returns.
  */
-export function parseProject(input: unknown): { model: Model; textures: Record<string, string> } {
+export type LoadPhase = 'idle' | 'reading' | 'parsing' | 'migrating' | 'validating' | 'applying' | 'done' | 'failed'
+export function parseProject(input: unknown, onPhase: (p: LoadPhase) => void = () => {}): { model: Model; textures: Record<string, string> } {
   let raw: unknown
+  onPhase('parsing')
   if (typeof input === 'string') {
     try { raw = JSON.parse(input) } catch { throw new ProjectError('Could not open project: the file is not valid JSON (it may be truncated or damaged)') }
   } else {
     try { raw = structuredClone(input) } catch { throw new ProjectError('Could not open project: Not a Polyform project') }
   }
   try {
+    onPhase('migrating')
     const out = migrateProject(raw)
+    onPhase('validating')
     validateModel(out.model)
     return out
   } catch (e) {
@@ -379,7 +403,7 @@ export function parseProject(input: unknown): { model: Model; textures: Record<s
   }
 }
 
-/** The JSON written to a .polyform.json file. */
+/** The JSON written to a .polyform file (`format: 'polyform'` is the magic field; older saves used .polyform.json). */
 export function projectFile(m: Model, textures: Record<string, string>) {
   return { format: 'polyform', ...m, version: PROJECT_VERSION, textures }
 }

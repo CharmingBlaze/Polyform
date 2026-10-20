@@ -114,14 +114,14 @@ await p.keyboard.press('Alt+n'); await frame()
 check('Alt+N with changes asks', await p.locator('[data-testid="dialog"]').isVisible())
 const [dl2] = await Promise.all([p.waitForEvent('download', { timeout: 8000 }), p.keyboard.press('Enter')])
 await frame()
-check('Enter = Save: downloads the project, then clears', dl2.suggestedFilename().endsWith('.polyform.json') && (await faces()) === 0, dl2.suggestedFilename())
+check('Enter = Save: downloads the project, then clears', dl2.suggestedFilename().endsWith('.polyform') && (await faces()) === 0, dl2.suggestedFilename())
 
 // --- Save As
 await p.click('[data-testid="mb-create"]'); await p.click('[data-testid="mi-add-box"]'); await frame()
 await p.click('[data-testid="mb-file"]'); await p.click('[data-testid="mi-file-saveAs"]'); await frame()
 await p.fill('[data-testid="dialog-input"]', 'crate')
 const [dl3] = await Promise.all([p.waitForEvent('download', { timeout: 8000 }), p.click('[data-testid="dialog-save"]')])
-check('Save As names the file and marks it saved', dl3.suggestedFilename() === 'crate.polyform.json' && await st(() => { const s = window.__polyform.getState(); return s.histRev === s.savedRev }), dl3.suggestedFilename())
+check('Save As names the file and marks it saved', dl3.suggestedFilename() === 'crate.polyform' && await st(() => { const s = window.__polyform.getState(); return s.histRev === s.savedRev }), dl3.suggestedFilename())
 
 // --- Exit
 await S(() => { window.__closeCalls = 0; window.close = () => { window.__closeCalls++ } }) // a tab the browser refuses to close

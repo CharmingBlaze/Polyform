@@ -40,7 +40,7 @@ export function Header({ onPalette }: { onPalette: () => void }) {
       </div>
       <span className="grow" />
       <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run} title="Export .glb  ·  Ctrl+E"><Download size={15} /> <span className="lbl">Export .glb</span></button>
-      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void openPicked(f); e.target.value = '' }} />
+      <input id="file-open" type="file" hidden accept=".polyform,.json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void openPicked(f); e.target.value = '' }} />
     </header>
   )
 }
@@ -211,7 +211,7 @@ export function ToolRail() {
           <CmdBtn cmd="file.open" label="Open / import" />
           <p className="muted" data-testid="export-blurb">
             <b>How to run:</b> <code>npm install && npm run dev</code> → open the URL → Sample character (or build your own) → Space plays the walk → Ctrl+E exports.
-            <br /><b>What working looks like:</b> a .glb with mesh, materials/images, skin (if rigged), and named clips that loop in any glTF viewer. Project files are .polyform.json (Save / Open). Drop .glb/.gltf/.obj/.ms3d/images to import.
+            <br /><b>What working looks like:</b> a .glb with mesh, materials/images, skin (if rigged), and named clips that loop in any glTF viewer. Project files are .polyform (Save / Open). Drop .glb/.gltf/.obj/.ms3d/images to import.
           </p>
         </>}
       </div>

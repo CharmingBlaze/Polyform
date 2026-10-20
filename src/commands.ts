@@ -233,7 +233,7 @@ export const commands: Command[] = [
   { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },
   { id: 'sample.windmill', label: 'Open sample: Windmill (animated prop)', group: 'File', run: () => S().openSample('windmill') },
   { id: 'file.open', label: 'Open…', group: 'File', keys: 'Ctrl+O', run: () => pickFile('any') },
-  { id: 'file.save', label: 'Save project (.polyform.json)', group: 'File', keys: 'Ctrl+S', run: saveFile },
+  { id: 'file.save', label: 'Save project (.polyform)', group: 'File', keys: 'Ctrl+S', run: saveFile },
   { id: 'file.saveAs', label: 'Save As…', group: 'File', keys: 'Ctrl+Shift+S', run: () => void saveAs() },
   { id: 'file.import.project', label: 'Import: Polyform project (.json)', group: 'File', run: () => pickFile('project') },
   { id: 'file.import.gltf', label: 'Import: glTF (.glb / .gltf)', group: 'File', run: () => pickFile('gltf') },

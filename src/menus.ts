@@ -147,7 +147,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
     { id: 'help.palette', label: 'Command Palette…', keys: 'Ctrl+K', run: openPalette },
     'sep',
     { id: 'help.about', label: 'About Polyform', run: () => void ask({ title: 'About Polyform', cancel: 'ok', buttons: [{ label: 'OK', value: 'ok', primary: true }],
-      message: 'Polyform: a small low-poly modeller for game assets. Model, UV, paint, rig and animate, then export glTF. Everything runs in this browser tab; projects are saved as .polyform.json files.' }) },
+      message: 'Polyform: a small low-poly modeller for game assets. Model, UV, paint, rig and animate, then export glTF. Everything runs in this browser tab; projects are saved as .polyform files.' }) },
   ]
   return [
     { id: 'file', label: 'File', items: file },

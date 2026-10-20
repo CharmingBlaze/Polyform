@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
 import * as M from '../src/model'
 import { characterSample, windmillSample } from '../src/samples'
 
@@ -136,5 +137,104 @@ describe('malformed project files fail with a readable ProjectError', () => {
   it('a migration that blows up names the format it was upgrading from', () => {
     const f = JSON.parse(save(rich())); f.version = 1; f.groups = 'x'; f.faces = [{ v: null }]
     expect(() => M.parseProject(f)).toThrow(M.ProjectError)
+  })
+})
+
+describe('migration registry', () => {
+  it('CURRENT_VERSION is the version written, and steps form an unbroken chain to it', () => {
+    expect(M.CURRENT_VERSION).toBe(M.PROJECT_VERSION)
+    const froms = Object.keys(M.MIGRATIONS).map(Number).sort((a, b) => a - b)
+    expect(froms).toEqual(Array.from({ length: M.PROJECT_VERSION - 1 }, (_, i) => i + 1))
+  })
+  it('registerMigration refuses duplicates and non-older versions', () => {
+    expect(() => M.registerMigration(1, r => r)).toThrow(/already registered/)
+    expect(() => M.registerMigration(M.PROJECT_VERSION, r => r)).toThrow(/not an older/)
+    expect(() => M.registerMigration(0, r => r)).toThrow(/not an older/)
+    expect(() => M.registerMigration(1, M.MIGRATIONS[1])).not.toThrow() // same step again is a no-op
+  })
+  it('the loop terminates with a clear error when a step does not advance the version (no infinite loop)', () => {
+    const v = M.PROJECT_VERSION - 1, orig = M.MIGRATIONS[v]
+    const f = JSON.parse(save(rich())); f.version = v
+    try {
+      M.MIGRATIONS[v] = r => ({ ...r }) // forgets to bump
+      expect(() => M.parseProject(f)).toThrow(/went wrong/)
+      M.MIGRATIONS[v] = r => ({ ...r, version: v + 5 }) // skips ahead
+      expect(() => M.parseProject(f)).toThrow(/went wrong/)
+      M.MIGRATIONS[v] = () => null as never // returns garbage
+      expect(() => M.parseProject(f)).toThrow(/went wrong/)
+      M.MIGRATIONS[v] = () => { throw new TypeError('boom') }
+      expect(() => M.parseProject(f)).toThrow(new RegExp(`upgrade the project from format ${v}: boom`))
+      delete M.MIGRATIONS[v]
+      expect(() => M.parseProject(f)).toThrow(/No upgrade path/)
+    } finally { M.MIGRATIONS[v] = orig }
+  })
+  it('reports load phases in order', () => {
+    const phases: string[] = []
+    M.parseProject(save(rich()), p => phases.push(p))
+    expect(phases).toEqual(['parsing', 'migrating', 'validating'])
+    const bad: string[] = []
+    expect(() => M.parseProject('{', p => bad.push(p))).toThrow()
+    expect(bad).toEqual(['parsing'])
+  })
+})
+
+/** Seeded PRNG so a failure is reproducible. */
+function rng(seed: number) { return () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32 } }
+const NASTY: unknown[] = [null, undefined, 0, -1, 1e9, -1e9, 0.5, NaN, '', 'x', '#zzzzzz', true, false, [], {}, [null], [1, 2], [0, 0, 0, 0], { v: [] }, '__proto__']
+
+describe('fuzz: mutated fixtures always load or throw a ProjectError, never hang or crash', () => {
+  const fixtures = fs.readdirSync('tests/fixtures').filter(f => f.endsWith('.json')).map(f => fs.readFileSync(`tests/fixtures/${f}`, 'utf8'))
+  fixtures.push(save(rich()), save(characterSample()))
+  const paths = (o: unknown, pre: (string | number)[] = [], out: (string | number)[][] = []) => {
+    if (out.length > 4000) return out
+    if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) { const p = [...pre, Array.isArray(o) ? Number(k) : k]; out.push(p); paths(v, p, out) }
+    return out
+  }
+  it('2000 structural mutations', () => {
+    const r = rng(42)
+    let loaded = 0, rejected = 0
+    const raw: string[] = []
+    const t0 = Date.now()
+    for (let i = 0; i < 2000; i++) {
+      const base = JSON.parse(fixtures[i % fixtures.length])
+      const all = paths(base)
+      for (let k = 0; k < 1 + Math.floor(r() * 3); k++) {
+        const p = all[Math.floor(r() * all.length)]
+        let o = base
+        for (const s of p.slice(0, -1)) o = o?.[s]
+        if (!o || typeof o !== 'object') continue
+        const last = p[p.length - 1]
+        const op = r()
+        if (op < 0.2) delete o[last]
+        else if (op < 0.3 && Array.isArray(o)) o.push(structuredClone(o[0]))
+        else o[last] = structuredClone(NASTY[Math.floor(r() * NASTY.length)])
+      }
+      try { M.parseProject(JSON.stringify(base)); loaded++ } catch (e) {
+        if (!(e instanceof M.ProjectError)) throw new Error(`mutation ${i} threw a raw ${(e as Error)?.name}: ${(e as Error)?.message}`)
+        // a readable message, not a leaked JS TypeError
+        if (/Cannot read|is not a function|is not iterable|undefined|Maximum call stack/.test((e as Error).message)) raw.push((e as Error).message)
+        rejected++
+      }
+    }
+    expect([...new Set(raw)]).toEqual([])
+    expect(loaded + rejected).toBe(2000)
+    expect(rejected).toBeGreaterThan(0)
+    expect(Date.now() - t0).toBeLessThan(20000)
+  })
+  it('truncated files at every 97th byte', () => {
+    const text = fixtures[0]
+    for (let n = 0; n < text.length; n += 97) expect(() => M.parseProject(text.slice(0, n))).toThrow(M.ProjectError)
+  })
+  it('anything that loads also saves and reloads identically', () => {
+    const r = rng(7)
+    for (let i = 0; i < 300; i++) {
+      const base = JSON.parse(fixtures[i % fixtures.length])
+      const p = paths(base); const pick = p[Math.floor(r() * p.length)]
+      let o = base; for (const s of pick.slice(0, -1)) o = o?.[s]
+      if (o && typeof o === 'object') o[pick[pick.length - 1]] = structuredClone(NASTY[Math.floor(r() * NASTY.length)])
+      let model: M.Model
+      try { model = M.parseProject(JSON.stringify(base)).model } catch { continue }
+      expect(M.parseProject(save(model)).model).toEqual(model)
+    }
   })
 })

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, parseProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
+import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, parseProject, ProjectError, projectFile, triangulate, validateModel, defaultProps, type LoadPhase, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
 import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
@@ -246,7 +246,7 @@ export function exportOBJ(m: Model, name = 'model') {
 const usedTextures = (m: Model) => [...new Set([...m.materials.flatMap(materialTextures), ...usedRefTextures(m)])]
 
 export function saveProject(m: Model, name = 'model') {
-  download(JSON.stringify(projectFile(m, textures.serialize(usedTextures(m)))), `${name}.polyform.json`, 'application/json')
+  download(JSON.stringify(projectFile(m, textures.serialize(usedTextures(m)))), `${name}.polyform`, 'application/json')
 }
 
 export function saveTexturePNG(id: string, name = 'texture') {
@@ -263,21 +263,42 @@ export async function importImage(file: File): Promise<string> {
   return textures.loadBlob(file)
 }
 
-/** Load a project's JSON text: migrate, validate, restore images. */
-export async function openProjectText(text: string) {
-  // parse + migrate + validate on a private copy first: a bad file throws a ProjectError and changes nothing
-  const { model, textures: texData } = parseProject(text)
-  await textures.loadAll(texData)
-  for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; for (const s of MAP_SLOTS) if (mt[s.k] && !textures.has(mt[s.k]!)) delete mt[s.k] }
-  useStore.getState().loadModel(model)
+/**
+ * Load a project's JSON text. Explicit phases: reading → parsing → migrating → validating → applying → done | failed.
+ * Everything up to `applying` works on a private copy, so a failure leaves the open scene untouched. One load at a
+ * time: a second call while one is running is refused instead of racing it.
+ */
+let loading = false
+export async function openProjectText(text: string | (() => Promise<string>), onPhase: (p: LoadPhase) => void = () => {}) {
+  if (loading) throw new ProjectError('Another project is still opening')
+  loading = true
+  try {
+    onPhase('reading')
+    const src = typeof text === 'string' ? text : await text()
+    const { model, textures: texData } = parseProject(src, onPhase)
+    onPhase('applying')
+    await textures.loadAll(texData)
+    for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; for (const s of MAP_SLOTS) if (mt[s.k] && !textures.has(mt[s.k]!)) delete mt[s.k] }
+    useStore.getState().loadModel(model)
+    onPhase('done')
+  } catch (e) {
+    onPhase('failed')
+    throw e
+  } finally {
+    loading = false
+  }
 }
+
+/** Project files: .polyform (current), .polyform.json and .json (older saves). */
+export const isProjectFile = (name: string) => /\.(polyform|json)$/i.test(name)
+export const projectStem = (name: string) => name.replace(/\.polyform(\.json)?$|\.json$/i, '')
 
 /** Import .json project, .glb/.gltf or .obj (geometry is merged into the current model), or an image. */
 export async function importFile(file: File) {
   const st = useStore.getState()
   const ext = file.name.split('.').pop()!.toLowerCase()
-  if (ext === 'json') {
-    await openProjectText(await file.text())
+  if (isProjectFile(file.name)) {
+    await openProjectText(() => file.text())
     return st.notify(`Opened ${file.name}`)
   }
   if (/^(png|jpe?g|webp)$/.test(ext)) {

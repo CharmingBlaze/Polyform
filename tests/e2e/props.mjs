@@ -96,7 +96,7 @@ check('Ctrl+Shift+Z redoes it', (await props()).author === 'Ann')
 
 // saved in the project and reopened
 const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press('Control+s')])
-check('Save uses the scene name', dl.suggestedFilename() === 'Knight.polyform.json', dl.suggestedFilename())
+check('Save uses the scene name', dl.suggestedFilename() === 'Knight.polyform', dl.suggestedFilename())
 const pf = '/tmp/polyform-props.polyform.json'; await dl.saveAs(pf)
 const saved = JSON.parse(fs.readFileSync(pf, 'utf8'))
 check('project file v6 carries props', saved.version >= 6 && (saved.model?.props ?? saved.props)?.author === 'Ann', `v${saved.version}`)
