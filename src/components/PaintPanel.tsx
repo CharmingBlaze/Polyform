@@ -1,4 +1,4 @@
-import { useStore, type PaintMode } from '../store'
+import { useStore, type FillScope, type PaintMode } from '../store'
 import { CmdBtn } from './CmdBtn'
 
 const MODES: { mode: PaintMode; label: string; title: string }[] = [
@@ -49,6 +49,22 @@ export function PaintPanel() {
       {range('size', 'Size', 1, 200, 1, v => `${v}px`)}
       {range('opacity', 'Strength', 0.01, 1, 0.01, v => `${Math.round(v * 100)}%`)}
       {range('hardness', 'Hardness', 0, 1, 0.01, v => `${Math.round(v * 100)}%`)}
+      {p.target === 'image' && <>
+        <div className="seg small paint-modes" title="Brush shape. Square stamps whole texels">
+          <button className={p.shape === 'round' ? 'on' : ''} data-testid="paint-shape-round" onClick={() => setPaint({ shape: 'round' })}>Round</button>
+          <button className={p.shape === 'square' ? 'on' : ''} data-testid="paint-shape-square" onClick={() => setPaint({ shape: 'square' })}>Square</button>
+        </div>
+        <div className="pen-row">
+          <label className="check" title="Whole texels at full hardness; 1-px strokes drop their L-corners (clean pixel-art lines)"><input type="checkbox" checked={p.pixelPerfect} data-testid="paint-pixel" onChange={e => setPaint({ pixelPerfect: e.target.checked })} /> Pixel perfect</label>
+          <label className="check" title="Paint only where the image already has alpha; transparent texels stay transparent"><input type="checkbox" checked={p.lockAlpha} data-testid="paint-lock-alpha" onChange={e => setPaint({ lockAlpha: e.target.checked })} /> Lock alpha</label>
+        </div>
+        {p.mode === 'fill' && <label className="paint-range" title="What Fill covers">
+          <span>Fill</span>
+          <select value={p.fillScope} data-testid="paint-fill-scope" onChange={e => setPaint({ fillScope: e.target.value as FillScope })}>
+            <option value="face">Face (or selected faces)</option><option value="island">UV island</option><option value="connected">Connected colour</option><option value="colour">All of this colour</option>
+          </select>
+        </label>}
+      </>}
       <label className="check"><input type="checkbox" checked={p.mirror} data-testid="paint-mirror" onChange={e => setPaint({ mirror: e.target.checked })} /> Mirror X</label>
       <div className="pen-row" title="Pen pressure (a mouse counts as full pressure); the pen's eraser end or barrel button erases">
         <label className="check"><input type="checkbox" checked={ui.pressureSize} data-testid="pressure-size" onChange={e => setUI({ pressureSize: e.target.checked })} /> Pressure → Size</label>
@@ -60,7 +76,7 @@ export function PaintPanel() {
           {[64, 128, 256, 512, 1024, 2048].map(n => <option key={n} value={n}>{n}×{n}</option>)}
         </select>
       </label>
-      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint). Drag on the model or in the UV editor." : p.target === 'vertex' ? 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.' : 'Paints bone weights on the selected joint (heat map). Brush adds, Erase subtracts, Fill replaces. Select a joint in the Outliner first.'} [ ] resize · each stroke is one undo step.</p>
+      <p className="muted">{p.target === 'image' ? "Paints into the face's image (one is created on first paint). Drag on the model or in the UV editor." : p.target === 'vertex' ? 'Paints vertex colours: corners inside the brush. Fill gives flat-coloured faces.' : 'Paints bone weights on the selected joint (heat map). Brush adds, Erase subtracts, Fill replaces. Select a joint in the Outliner first.'} [ ] resize · Shift+click draws a line from the last stamp (15°; Ctrl+Shift any angle) · each stroke is one undo step.</p>
     </div>
   )
 }

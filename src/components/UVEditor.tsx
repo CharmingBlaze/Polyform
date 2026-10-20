@@ -8,7 +8,7 @@ import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as UVS from '../uvsel'
 import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
-import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
+import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
 import { viewCtx } from './Viewport'
 import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
@@ -113,6 +113,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
   /** right-click menu: canvas-local px */
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
+  const brushEl = useRef<HTMLDivElement>(null)
   const [imgMenu, setImgMenu] = useState<{ x: number; y: number } | null>(null)
   const [imgDlg, setImgDlg] = useState<'new' | 'resize' | null>(null)
   const paintTexSize = useStore(s => s.paint.texSize)
@@ -583,7 +584,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       const [u, v] = toUV(x, y)
       notePen(e, true)
       if (penPaint) input.erase = true
-      if (paintUVStart(shownMat, u, v, side, e.ctrlKey || e.metaKey)) {
+      if (paintUVStart(shownMat, u, v, side, (e.ctrlKey || e.metaKey) && !e.shiftKey, e.shiftKey ? { free: e.ctrlKey || e.metaKey } : undefined)) {
         drag.current = { kind: 'paint' }
         return
       }
@@ -620,9 +621,25 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const [a, b] = [...touches.current.values()]
     return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }
   }
+  /** brush outline at the cursor (Paint tool): true size in texels, a circle or the texel square it stamps */
+  const showBrush = (x: number, y: number) => {
+    const el = brushEl.current
+    if (!el) return
+    if (globalTool !== 'paint' || useStore.getState().paint.target !== 'image' || x < 0) { el.style.display = 'none'; return }
+    const [u, v] = toUV(x, y), o = uvBrushOutline(shownMat, u, v, side)
+    const q = o.texels, c = o.circle!
+    const a = q ? toPx([q.x / o.w, 1 - q.y / o.h]) : toPx([(c.x - c.r) / o.w, 1 - (c.y - c.r) / o.h])
+    const b = q ? toPx([(q.x + q.n) / o.w, 1 - (q.y + q.n) / o.h]) : toPx([(c.x + c.r) / o.w, 1 - (c.y + c.r) / o.h])
+    el.style.display = 'block'
+    el.style.left = `${Math.min(a.x, b.x)}px`; el.style.top = `${Math.min(a.y, b.y)}px`
+    el.style.width = `${Math.abs(b.x - a.x)}px`; el.style.height = `${Math.abs(b.y - a.y)}px`
+    el.className = `uv-brush ${!q || (q.round && q.n > 2) ? 'round' : ''}`
+    el.dataset.texels = q ? `${q.x},${q.y},${q.n}` : ''
+  }
   const move = (e: React.PointerEvent) => {
     notePointer(e)
     const { x, y } = loc(e)
+    if (e.pointerType !== 'touch') showBrush(x, y)
     if (e.pointerType === 'touch') {
       if (!touches.current.has(e.pointerId)) return
       touches.current.set(e.pointerId, { x, y })
@@ -865,7 +882,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => showBrush(-1, -1)} />
+        <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
         {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
           {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
         </div>}
@@ -905,7 +923,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
         ]} />}
         {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">

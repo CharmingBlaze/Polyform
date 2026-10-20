@@ -19,9 +19,11 @@ export interface Stroke {
   color: RGB
   erase: boolean
   dirty: Rect | null
+  /** paint only where the image already has alpha > 0, and never change alpha (UV-13) */
+  lockAlpha?: boolean
 }
-export function beginStroke(px: Px, color: RGB, erase: boolean): Stroke {
-  return { before: { width: px.width, height: px.height, data: new Uint8ClampedArray(px.data) }, out: px, mask: new Float32Array(px.width * px.height), color, erase, dirty: null }
+export function beginStroke(px: Px, color: RGB, erase: boolean, lockAlpha = false): Stroke {
+  return { before: { width: px.width, height: px.height, data: new Uint8ClampedArray(px.data) }, out: px, mask: new Float32Array(px.width * px.height), color, erase, dirty: null, lockAlpha }
 }
 
 /** recomposite a rectangle of the stroke output from before + mask */
@@ -29,6 +31,12 @@ function composite(s: Stroke, r: Rect) {
   const { width } = s.out, b = s.before.data, o = s.out.data, [cr, cg, cb] = s.color
   for (let y = r[1]; y < r[3]; y++) for (let x = r[0]; x < r[2]; x++) {
     const i = y * width + x, a = s.mask[i], k = i * 4
+    if (s.lockAlpha) {
+      // alpha stays; transparent texels stay untouched; erase cannot change alpha so it does nothing
+      if (s.erase || b[k + 3] === 0) { o[k] = b[k]; o[k + 1] = b[k + 1]; o[k + 2] = b[k + 2]; o[k + 3] = b[k + 3]; continue }
+      o[k] = cr * a + b[k] * (1 - a); o[k + 1] = cg * a + b[k + 1] * (1 - a); o[k + 2] = cb * a + b[k + 2] * (1 - a); o[k + 3] = b[k + 3]
+      continue
+    }
     if (s.erase) { o[k] = b[k]; o[k + 1] = b[k + 1]; o[k + 2] = b[k + 2]; o[k + 3] = b[k + 3] * (1 - a); continue }
     const ba = b[k + 3] / 255
     // source-over of (colour, a) onto the old pixel
@@ -64,6 +72,129 @@ export function dab(s: Stroke, cx: number, cy: number, r: number, strength: numb
   const rect: Rect = [x0, y0, x1, y1]
   composite(s, rect)
   s.dirty = unionRect(s.dirty, rect)
+  return rect
+}
+
+// ---------- pixel-art brushes (UV-13) ----------
+/** Top-left texel of an n-texel brush centred at (cx, cy) (pixel coordinates). */
+export const texelOrigin = (cx: number, cy: number, n: number): [number, number] => [Math.floor(cx - (n - 1) / 2), Math.floor(cy - (n - 1) / 2)]
+
+/** Texels of an n-wide hard brush whose top-left texel is (x0, y0): a square, or a round (texel centres inside the circle). */
+export function brushTexels(x0: number, y0: number, n: number, round: boolean): [number, number][] {
+  const out: [number, number][] = [], c = n / 2, rr = (n / 2) ** 2 + 1e-9
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!round || n <= 2 || (x + 0.5 - c) ** 2 + (y + 0.5 - c) ** 2 <= rr) out.push([x0 + x, y0 + y])
+  return out
+}
+
+/** Stamp whole texels at full `strength` (hardness 1). Returns the touched rectangle. */
+export function dabTexels(s: Stroke, texels: [number, number][], strength: number): Rect | null {
+  const { width: w, height: h } = s.out
+  let rect: Rect | null = null
+  for (const [x, y] of texels) {
+    if (x < 0 || y < 0 || x >= w || y >= h) continue
+    const i = y * w + x
+    if (strength > s.mask[i]) s.mask[i] = strength
+    rect = unionRect(rect, [x, y, x + 1, y + 1])
+  }
+  if (rect) { composite(s, rect); s.dirty = unionRect(s.dirty, rect) }
+  return rect
+}
+
+/** Take texels back out of the stroke (pixel-perfect L-corner removal). */
+export function undabTexels(s: Stroke, texels: [number, number][]): Rect | null {
+  const { width: w, height: h } = s.out
+  let rect: Rect | null = null
+  for (const [x, y] of texels) {
+    if (x < 0 || y < 0 || x >= w || y >= h) continue
+    s.mask[y * w + x] = 0
+    rect = unionRect(rect, [x, y, x + 1, y + 1])
+  }
+  if (rect) composite(s, rect)
+  return rect
+}
+
+/** Texels on the line from texel (x0, y0) to (x1, y1), both included (Bresenham: one texel per step on the major axis). */
+export function texelLine(x0: number, y0: number, x1: number, y1: number): [number, number][] {
+  const out: [number, number][] = []
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1
+  let err = dx + dy, x = x0, y = y0
+  for (;;) {
+    out.push([x, y])
+    if (x === x1 && y === y1) break
+    const e2 = 2 * err
+    if (e2 >= dy) { err += dy; x += sx }
+    if (e2 <= dx) { err += dx; y += sy }
+  }
+  return out
+}
+
+/** Pixel-perfect rule (Aseprite): the middle of three path texels is an L-corner when it touches both neighbours orthogonally and they touch diagonally. */
+export const isLCorner = (a: [number, number], b: [number, number], c: [number, number]) =>
+  (a[0] === b[0] || a[1] === b[1]) && (c[0] === b[0] || c[1] === b[1]) && a[0] !== c[0] && a[1] !== c[1]
+
+/** A path with every L-corner removed (what a pixel-perfect 1-px stroke leaves). */
+export function pixelPerfect(path: [number, number][]): [number, number][] {
+  const out: [number, number][] = []
+  for (const p of path) {
+    if (out.length && out[out.length - 1][0] === p[0] && out[out.length - 1][1] === p[1]) continue
+    if (out.length >= 2 && isLCorner(out[out.length - 2], out[out.length - 1], p)) out.pop()
+    out.push(p)
+  }
+  return out
+}
+
+/** Snap the segment (x0, y0) → (x1, y1) to the nearest multiple of `stepDeg` (keeps its length). */
+export function snapSegment(x0: number, y0: number, x1: number, y1: number, stepDeg = 15): [number, number] {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy)
+  if (len < 1e-9) return [x1, y1]
+  const st = (stepDeg * Math.PI) / 180, a = Math.round(Math.atan2(dy, dx) / st) * st
+  return [x0 + Math.cos(a) * len, y0 + Math.sin(a) * len]
+}
+
+/** Flood fill mask: texels 4-connected to (x, y) with the same RGBA (± tol), limited to `limit` when given. */
+export function floodMask(px: Px, x: number, y: number, limit: Uint8Array | null, tol = 0): Uint8Array {
+  const { width: w, height: h, data } = px, out = new Uint8Array(w * h)
+  x = Math.floor(x); y = Math.floor(y)
+  if (x < 0 || y < 0 || x >= w || y >= h || (limit && !limit[y * w + x])) return out
+  const k0 = (y * w + x) * 4, ref = [data[k0], data[k0 + 1], data[k0 + 2], data[k0 + 3]]
+  const same = (i: number) => Math.abs(data[i * 4] - ref[0]) <= tol && Math.abs(data[i * 4 + 1] - ref[1]) <= tol && Math.abs(data[i * 4 + 2] - ref[2]) <= tol && Math.abs(data[i * 4 + 3] - ref[3]) <= tol
+  const stack = [y * w + x]
+  out[y * w + x] = 1
+  while (stack.length) {
+    const i = stack.pop()!, cx = i % w, cy = (i - cx) / w
+    for (const j of [cx > 0 ? i - 1 : -1, cx < w - 1 ? i + 1 : -1, cy > 0 ? i - w : -1, cy < h - 1 ? i + w : -1]) {
+      if (j < 0 || out[j] || (limit && !limit[j]) || !same(j)) continue
+      out[j] = 1; stack.push(j)
+    }
+  }
+  return out
+}
+
+/** Mask of every texel with the colour at (x, y) (± tol), limited to `limit` when given. */
+export function colourMask(px: Px, x: number, y: number, limit: Uint8Array | null, tol = 0): Uint8Array {
+  const { width: w, height: h, data } = px, out = new Uint8Array(w * h)
+  x = Math.floor(x); y = Math.floor(y)
+  if (x < 0 || y < 0 || x >= w || y >= h) return out
+  const k0 = (y * w + x) * 4
+  for (let i = 0; i < w * h; i++) {
+    if (limit && !limit[i]) continue
+    const k = i * 4
+    if (Math.abs(data[k] - data[k0]) <= tol && Math.abs(data[k + 1] - data[k0 + 1]) <= tol && Math.abs(data[k + 2] - data[k0 + 2]) <= tol && Math.abs(data[k + 3] - data[k0 + 3]) <= tol) out[i] = 1
+  }
+  return out
+}
+
+/** Fill every texel of a mask with coverage `strength`. */
+export function fillMask(s: Stroke, mask: Uint8Array, strength: number): Rect | null {
+  const { width: w } = s.out
+  let rect: Rect | null = null
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue
+    if (strength > s.mask[i]) s.mask[i] = strength
+    const x = i % w, y = (i - x) / w
+    rect = unionRect(rect, [x, y, x + 1, y + 1])
+  }
+  if (rect) { composite(s, rect); s.dirty = unionRect(s.dirty, rect) }
   return rect
 }
 

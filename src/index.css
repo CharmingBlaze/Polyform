@@ -452,3 +452,6 @@ button.danger { color: #ff9a9a; }
 .img-anchor button { width: 18px; height: 18px; padding: 0; min-height: 0; border-radius: 3px; }
 .img-anchor button.on { background: var(--accent); border-color: var(--accent); }
 .img-dlg .tip { margin: 0; color: var(--dim); font-size: 11.5px; line-height: 1.4; }
+/* UV-13 brush outline in the UV editor: true texel size */
+.uv-brush { position: absolute; pointer-events: none; border: 1px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6); box-sizing: border-box; }
+.uv-brush.round { border-radius: 50%; }

@@ -1033,7 +1033,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (st.mode !== 'model') st.set({ mode: 'model' })
       notePen(e, true)
       if (penPaint) input.erase = true
-      if (paintStrokeStart(x, y, ray, c, e.ctrlKey || e.metaKey)) drag.current = { kind: 'paint' }
+      if (paintStrokeStart(x, y, ray, c, (e.ctrlKey || e.metaKey) && !e.shiftKey, e.shiftKey ? { free: e.ctrlKey || e.metaKey } : undefined)) drag.current = { kind: 'paint' }
       return
     }
     if (tool === 'joint') {

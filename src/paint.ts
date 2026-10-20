@@ -9,7 +9,7 @@ import { sceneManager } from './scene'
 import { history, useStore } from './store'
 import { textures, type TexPatch } from './textures'
 import { ensureSkin, paintVertWeight } from './skin'
-import { faceArea3D, uvArea } from './uvops'
+import { faceArea3D, islandFaces, uvArea } from './uvops'
 import { input } from './input'
 
 /**
@@ -27,15 +27,49 @@ export function PS() {
 }
 
 interface Hit { fi: number; uv: [number, number]; point: THREE.Vector3; normal: THREE.Vector3 }
-interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke }
-interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCtx; last: [number, number]; tex: Map<string, TexStroke> }
+interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke; /** pixel modes: last stamped texel origin, and the 1-px path for L-corner removal */ lastTexel?: [number, number]; path?: [number, number][] }
+interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCtx; last: [number, number]; tex: Map<string, TexStroke>; /** a Shift+click line: later pointer moves do not paint */ lineOnly?: boolean }
 
 let cur: Active | null = null
 /** UV-editor stroke: paints directly in image space of a material. */
-interface UVActive { mat: number; lastUV: [number, number]; tex: Map<string, TexStroke>; side: number }
+interface UVActive { mat: number; lastUV: [number, number]; tex: Map<string, TexStroke>; side: number; lineOnly?: boolean }
 let uvcur: UVActive | null = null
 
 const S = () => useStore.getState()
+
+/** Where the last stamp landed, for Shift+click lines: in the UV editor (per material) and in a 3D pane (screen px). */
+let lastStampUV: { mat: number; u: number; v: number } | null = null
+let lastStamp3D: { el: HTMLElement; x: number; y: number } | null = null
+/** Brush stamps whole texels (square shape or pixel-perfect). */
+const texelMode = () => { const p = S().paint; return p.shape === 'square' || p.pixelPerfect }
+/** Brush width in texels for a radius of r texels. */
+const texelWidth = (r: number) => Math.max(1, Math.round(r * 2))
+
+/**
+ * Stamp a hard texel brush (square, or round in whole texels) centred at pixel (cx, cy). Consecutive stamps are
+ * joined texel by texel (Bresenham), and with pixel-perfect a 1-px path drops its L-corners as it goes.
+ * `join` = largest gap (texels) still joined; farther jumps (another face of the image) start a new run.
+ */
+function dabTex(t: TexStroke, cx: number, cy: number, r: number, strength: number, join = Infinity): P.Rect | null {
+  const p = S().paint, n = texelWidth(r), round = p.shape === 'round'
+  const o = P.texelOrigin(cx, cy, n)
+  const prev = t.lastTexel
+  const pts = prev && Math.max(Math.abs(prev[0] - o[0]), Math.abs(prev[1] - o[1])) <= join ? P.texelLine(prev[0], prev[1], o[0], o[1]).slice(1) : [o]
+  if (!pts.length) return null
+  if (!prev || pts[0] === o) t.path = []
+  t.lastTexel = o
+  let rect: P.Rect | null = null
+  for (const q of pts) {
+    rect = P.unionRect(rect, P.dabTexels(t.s, P.brushTexels(q[0], q[1], n, round), strength))
+    if (p.pixelPerfect && n === 1) {
+      const path = (t.path ??= [])
+      path.push(q)
+      const k = path.length
+      if (k >= 3 && P.isLCorner(path[k - 3], path[k - 2], path[k - 1])) { rect = P.unionRect(rect, P.undabTexels(t.s, [path[k - 2]])); path.splice(k - 2, 1) }
+    }
+  }
+  return rect
+}
 
 function hitOf(r: THREE.Raycaster): Hit | null {
   const h = r.intersectObject(sceneManager.pickMesh, false)[0]
@@ -81,7 +115,7 @@ function strokeFor(a: Active, id: string): TexStroke | null {
   const g = c.getContext('2d', { willReadFrequently: true })!
   const img = g.getImageData(0, 0, c.width, c.height)
   const p = PS()
-  t = { id, g, img, s: P.beginStroke(img, P.hexToRgb(p.color), p.mode === 'erase') }
+  t = { id, g, img, s: P.beginStroke(img, P.hexToRgb(p.color), p.mode === 'erase', p.lockAlpha) }
   a.tex.set(id, t)
   return t
 }
@@ -112,7 +146,7 @@ function dabAt(a: Active, h: Hit, worldR: number) {
   const r = P.brushRadiusTex(1, worldR, Math.abs(uvArea(f.uv)) * w * hh, faceArea3D(m, h.fi))
   const [x, y] = P.uvToPx(h.uv[0], h.uv[1], w, hh)
   const p = PS()
-  flush(t, P.dab(t.s, x, y, r, p.opacity, p.hardness))
+  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity, texelWidth(r) * 2 + 2) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
 }
 
 function stampScreen(a: Active, x: number, y: number) {
@@ -120,6 +154,7 @@ function stampScreen(a: Active, x: number, y: number) {
   if (!h) return
   const p = PS()
   const worldR = p.size * worldPerPx(a.ctx, h.point)
+  if (a.ctx?.el) lastStamp3D = { el: a.ctx.el, x, y }
   dabAt(a, h, worldR)
   if (p.mirror) { const mh = mirrorHit(h); if (mh) dabAt(a, mh, worldR) }
 }
@@ -138,8 +173,10 @@ function dilateStroke(t: TexStroke) {
 function finish(a: Active, label: string) {
   const patches: TexPatch[] = []
   const erased = PS().mode === 'erase'
+  const crisp = texelMode() || S().paint.lockAlpha
   for (const t of a.tex.values()) {
-    dilateStroke(t)
+    // pixel art and lock alpha keep untouched texels as they are (no seam dilation)
+    if (!crisp) dilateStroke(t)
     const b = P.cropBefore(t.s)
     if (!b) continue
     patches.push({ id: t.id, x: b.x, y: b.y, data: new ImageData(new Uint8ClampedArray(b.px.data), b.px.width, b.px.height) })
@@ -166,6 +203,13 @@ function pick(h: Hit): boolean {
 
 /** Fill the clicked face, or every selected face when the clicked one is selected (and their mirrors). */
 function fill(a: Active, h: Hit) {
+  const scope = S().paint.fillScope
+  if (scope !== 'face') {
+    const id = texOf(h.fi)
+    if (id) fillScoped(a, id, h.fi, h.uv[0], h.uv[1], scope)
+    finish(a, 'Fill')
+    return
+  }
   const faces = fillFaces(h)
   for (const fi of faces) {
     const id = texOf(fi)
@@ -175,6 +219,26 @@ function fill(a: Active, h: Hit) {
     flush(t, P.fillPolygon(t.s, facePoly(fi, t.img.width, t.img.height), PS().opacity))
   }
   finish(a, 'Fill')
+}
+
+/** Faces painted into image `id`. */
+const facesOnImage = (id: string) => S().model.faces.map((_f, fi) => (texOf(fi) === id ? fi : -1)).filter(fi => fi >= 0)
+
+/**
+ * Fill beyond one face: the clicked face's UV island, the texels connected to the clicked one with its colour,
+ * or every texel of that colour; connected / colour stay inside the UVs of faces using this image.
+ */
+function fillScoped(a: Active, id: string, fi: number, u: number, v: number, scope: 'island' | 'connected' | 'colour') {
+  const t = strokeFor(a, id)
+  if (!t) return
+  const { width: w, height: h } = t.img, op = PS().opacity, on = facesOnImage(id)
+  if (scope === 'island') {
+    for (const f of islandFaces(S().model, [fi], on)) flush(t, P.fillPolygon(t.s, facePoly(f, w, h), op))
+    return
+  }
+  const cov = P.coverage(w, h, on.map(f => facePoly(f, w, h)))
+  const [x, y] = P.uvToPx(u, v, w, h)
+  flush(t, P.fillMask(t.s, scope === 'connected' ? P.floodMask(t.s.before, x, y, cov) : P.colourMask(t.s.before, x, y, cov), op))
 }
 
 
@@ -296,11 +360,22 @@ function stampUV(a: UVActive, u: number, v: number) {
   const [x, y] = P.uvToPx(u, v, w, h)
   const p = PS()
   const r = Math.max(0.5, (p.size / Math.max(1, a.side)) * w)
-  flush(t, P.dab(t.s, x, y, r, p.opacity, p.hardness))
+  lastStampUV = { mat: a.mat, u, v }
+  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
+}
+
+/** Outline of the brush at UV (u, v) in the UV editor, in image pixels: a circle, or the texels a texel brush covers. */
+export function uvBrushOutline(mat: number, u: number, v: number, sidePx: number): { w: number; h: number; circle?: { x: number; y: number; r: number }; texels?: { x: number; y: number; n: number; round: boolean } } {
+  const s = S(), id = s.model.materials[mat]?.texture, c = id ? textures.canvas(id) : null
+  const w = c?.width ?? s.paint.texSize, h = c?.height ?? s.paint.texSize
+  const [x, y] = P.uvToPx(u, v, w, h), r = Math.max(0.5, (PS().size / Math.max(1, sidePx)) * w)
+  if (!texelMode()) return { w, h, circle: { x, y, r } }
+  const n = texelWidth(r), [x0, y0] = P.texelOrigin(x, y, n)
+  return { w, h, texels: { x: x0, y: y0, n, round: s.paint.shape === 'round' } }
 }
 
 /** Start a paint stroke in the UV editor at UV (u, v). `sidePx` = on-screen size of the 0–1 UV square. */
-export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false): boolean {
+export function paintUVStart(mat: number, u: number, v: number, sidePx: number, pickMod = false, line?: { free: boolean }): boolean {
   cur = null; vcur = null; uvcur = null
   const s = S(), mode = pickMod ? 'pick' : PS().mode
   if (PS().target === 'vertex') { s.notify('Vertex painting is done in the 3D view'); return false }
@@ -321,15 +396,32 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
       if (faceMat(m, m.faces[fi]) !== mat) continue
       if (uvContains(m.faces[fi].uv as [number, number][], u, v)) { hit = fi; break }
     }
-    if (hit < 0) { s.notify("Click inside a face's UVs to fill"); return false }
+    const scope = s.paint.fillScope
+    if (hit < 0 && scope !== 'colour') { s.notify("Click inside a face's UVs to fill"); return false }
     const a: Active = { rayAt: () => new THREE.Raycaster(), ctx: null as unknown as ViewCtx, last: [0, 0], tex: new Map() }
     const t = strokeFor(a, id)
     if (!t) return false
-    flush(t, P.fillPolygon(t.s, facePoly(hit, t.img.width, t.img.height), PS().opacity))
+    if (scope === 'face') flush(t, P.fillPolygon(t.s, facePoly(hit, t.img.width, t.img.height), PS().opacity))
+    else fillScoped(a, id, hit, u, v, scope)
     finish(a, 'Fill')
     return false
   }
   if (mode !== 'brush' && mode !== 'erase') return false
+  const from = line && lastStampUV?.mat === mat ? lastStampUV : null
+  if (from) {
+    // Shift+click: a straight line from the last stamp, snapped to 15° in image pixels (Ctrl+Shift: any angle)
+    const c = textures.canvas(id)!, W = c.width, H = c.height
+    const [x0, y0] = P.uvToPx(from.u, from.v, W, H), [x1, y1] = P.uvToPx(u, v, W, H)
+    const [sx, sy] = line!.free ? [x1, y1] : P.snapSegment(x0, y0, x1, y1, 15)
+    const to: [number, number] = [sx / W, 1 - sy / H]
+    uvcur = { mat, lastUV: [from.u, from.v], tex: new Map(), side: sidePx }
+    stampUV(uvcur, from.u, from.v)
+    paintUVAt(to[0], to[1])
+    stampUV(uvcur, to[0], to[1])
+    uvcur.lastUV = to
+    uvcur.lineOnly = true
+    return true
+  }
   uvcur = { mat, lastUV: [u, v], tex: new Map(), side: sidePx }
   stampUV(uvcur, u, v)
   return true
@@ -338,7 +430,7 @@ export function paintUVStart(mat: number, u: number, v: number, sidePx: number, 
 /** Continue a UV-editor stroke. */
 export function paintUVAt(u: number, v: number) {
   const a = uvcur
-  if (!a) return
+  if (!a || a.lineOnly) return
   const stepU = Math.max(0.001, (PS().size / 4) / Math.max(1, a.side))
   const [lu, lv] = a.lastUV
   const d = Math.hypot(u - lu, v - lv)
@@ -431,8 +523,21 @@ function weightStamp(st: WStroke, x: number, y: number) {
 }
 
 /** Pointer down with the paint tool. Returns true when a stroke started (the caller then streams paintAt). */
-export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false): boolean {
+export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: number) => THREE.Raycaster, ctx: ViewCtx, pickMod = false, line?: { free: boolean }): boolean {
   cur = null; vcur = null; uvcur = null; wcur = null
+  const mode0 = pickMod ? 'pick' : PS().mode
+  if (line && PS().target === 'image' && (mode0 === 'brush' || mode0 === 'erase') && lastStamp3D && lastStamp3D.el === ctx?.el) {
+    // Shift+click: a straight line on screen from the last stamp in this view, snapped to 15° (Ctrl+Shift: any angle)
+    const { x: x0, y: y0 } = lastStamp3D
+    const [tx, ty] = line.free ? [x, y] : P.snapSegment(x0, y0, x, y, 15)
+    const a: Active = { rayAt, ctx, last: [x0, y0], tex: new Map() }
+    cur = a
+    stampScreen(a, x0, y0)
+    paintAt(tx, ty)
+    stampScreen(a, tx, ty)
+    a.lineOnly = true
+    return true
+  }
   const h = hitOf(rayAt(x, y))
   const s = S(), mode = pickMod ? 'pick' : PS().mode
   if (PS().target === 'weight') return weightStart(x, y, h, rayAt, ctx, mode)
@@ -458,7 +563,7 @@ export function paintStrokeStart(x: number, y: number, rayAt: (x: number, y: num
 /** Pointer move during a stroke: stamp along the screen path every size/4 px so fast strokes have no gaps. */
 export function paintAt(x: number, y: number) {
   const a = cur ?? vcur ?? wcur
-  if (!a) return
+  if (!a || (a === cur && cur.lineOnly)) return
   const step = Math.max(1, PS().size / 4)
   const [lx, ly] = a.last, d = Math.hypot(x - lx, y - ly)
   if (d < step) return

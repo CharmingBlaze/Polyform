@@ -615,6 +615,65 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('New blank transparent 16×32 goes on the selected face only', blank.sz.w === 16 && blank.sz.h === 32 && blank.a && blank.f0 && !blank.f1, JSON.stringify(blank))
 }
 
+// UV-13: pixel-art painting in the UV editor — pixel-perfect strokes, Shift+click lines, lock alpha, island / colour fill, brush outline
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  const mat = await addImage(16, 16, 'px16')
+  await gridLayout()
+  await S(() => { const s = window.__polyform.getState(); s.selectNone(); s.set({ tool: 'paint' }); s.setPaint({ target: 'image', mode: 'brush', color: '#ff0000', size: 1, opacity: 1, hardness: 0.5, pixelPerfect: true, shape: 'round', lockAlpha: false, fillScope: 'face' }) })
+  await frame(200)
+  const T = (x, y) => uvC((x + 0.5) / 16, 1 - (y + 0.5) / 16)
+  const red = () => S(mat => { const m = window.__polyform.getState().model, c = window.__polyformTextures.canvas(m.materials[mat].texture), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, out = []; for (let i = 0; i < d.length / 4; i++) if (d[i * 4] > 240 && d[i * 4 + 1] < 20 && d[i * 4 + 3] > 200) out.push([i % c.width, Math.floor(i / c.width)]); return out }, mat)
+  const alphaAt = (x, y) => S(([mat, x, y]) => { const m = window.__polyform.getState().model, c = window.__polyformTextures.canvas(m.materials[mat].texture); return c.getContext('2d').getImageData(x, y, 1, 1).data[3] }, [mat, x, y])
+  // a wobbly diagonal drawn with the mouse: exactly one texel per step
+  const a = await T(2, 2), z = await T(12, 12)
+  await p.mouse.move(a.x, a.y); await p.mouse.down()
+  for (let k = 1; k <= 40; k++) { const t = k / 40; await p.mouse.move(a.x + (z.x - a.x) * t + (k % 2 ? 1.5 : -1.5), a.y + (z.y - a.y) * t) }
+  await p.mouse.up(); await frame()
+  const diag = await red()
+  check('Pixel perfect: a diagonal stroke on 16 px sets exactly one texel per step (11 texels, one per row and column)', diag.length === 11 && new Set(diag.map(q => q[0])).size === 11 && new Set(diag.map(q => q[1])).size === 11, JSON.stringify(diag))
+  await p.keyboard.press('Control+z'); await frame()
+  check('the stroke is one undo step', (await red()).length === 0)
+  // Shift+click: a line from the last stamp, snapped to 15° (here: horizontal)
+  const s0 = await T(2, 8), s1 = await T(12, 9)
+  await p.mouse.click(s0.x, s0.y); await frame()
+  await p.keyboard.down('Shift'); await p.mouse.click(s1.x, s1.y); await p.keyboard.up('Shift'); await frame()
+  const line = await red()
+  check('Shift+click draws a straight line from the last stamp, snapped to 15° (row 8, x 2…12)', line.length === 11 && line.every(q => q[1] === 8) && Math.min(...line.map(q => q[0])) === 2 && Math.max(...line.map(q => q[0])) === 12, JSON.stringify(line))
+  await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame()
+  // brush outline: true texel size
+  await S(() => window.__polyform.getState().setPaint({ shape: 'square', size: 40 })); await p.mouse.move(z.x, z.y); await p.mouse.move(z.x + 1, z.y); await frame()
+  const ob = await p.locator('[data-testid="uv-brush"]').boundingBox(), sd = await side()
+  const n = await p.getAttribute('[data-testid="uv-brush"]', 'data-texels')
+  const nn = +n.split(',')[2]
+  check('brush outline: a square of the texels it stamps', ob && nn >= 2 && Math.abs(ob.width - (nn * sd) / 16) < 1.5 && Math.abs(ob.height - ob.width) < 1, `${n} ${JSON.stringify(ob)} side ${sd}`)
+  // lock alpha: clear the right half, paint across it
+  await S(mat => { const m = window.__polyform.getState().model, T2 = window.__polyformTextures, id = m.materials[mat].texture; T2.canvas(id).getContext('2d').clearRect(8, 0, 8, 16); T2.touch(id); window.__polyform.getState().setPaint({ lockAlpha: true, shape: 'round', size: 1 }) }, mat)
+  const l0 = await T(2, 4), l1 = await T(14, 4)
+  await p.mouse.move(l0.x, l0.y); await p.mouse.down(); await p.mouse.move(l1.x, l1.y, { steps: 20 }); await p.mouse.up(); await frame()
+  const row = await red()
+  check('Lock alpha: transparent texels stay transparent, opaque ones get the colour', row.length > 0 && row.every(q => q[0] < 8) && (await alphaAt(12, 4)) === 0 && (await alphaAt(10, 4)) === 0, JSON.stringify(row))
+  await p.keyboard.press('Control+z'); await frame()
+  // island fill: face 0's island only
+  await S(() => window.__polyform.getState().setPaint({ lockAlpha: false, mode: 'fill', fillScope: 'island', color: '#ff0000' }))
+  await S(mat => { const m = window.__polyform.getState().model, T2 = window.__polyformTextures, id = m.materials[mat].texture, g = T2.canvas(id).getContext('2d'); g.fillStyle = '#6080c0'; g.fillRect(0, 0, 16, 16); T2.touch(id) }, mat)
+  const c0 = await uvC(...await centroid(0))
+  await p.mouse.click(c0.x, c0.y); await frame()
+  const isl = await red()
+  check('Island fill stops at the island border (face 0: 4×4 texels)', isl.length === 16, String(isl.length))
+  await p.keyboard.press('Control+z'); await frame()
+  await S(() => window.__polyform.getState().setPaint({ fillScope: 'colour' }))
+  await p.mouse.click(c0.x, c0.y); await frame()
+  check('Fill "all of this colour" covers every face of the image (6 × 16 texels), not the gaps', (await red()).length === 96, String((await red()).length))
+  await p.keyboard.press('Control+z'); await frame()
+  // a little pixel art for the screenshot
+  await S(() => window.__polyform.getState().setPaint({ mode: 'brush', shape: 'square', size: 1, pixelPerfect: true, color: '#ffd166' }))
+  for (const [x0, y0, x1, y1] of [[1, 2, 4, 2], [5, 2, 8, 4], [11, 8, 14, 11], [6, 8, 9, 8]]) { const p0 = await T(x0, y0), p1 = await T(x1, y1); await p.mouse.click(p0.x, p0.y); await p.keyboard.down('Shift'); await p.keyboard.down('Control'); await p.mouse.click(p1.x, p1.y); await p.keyboard.up('Control'); await p.keyboard.up('Shift'); await frame() }
+  await S(() => window.__polyform.getState().setPaint({ size: 30, shape: 'square' })); const hv = await T(10, 3); await p.mouse.move(hv.x, hv.y); await p.mouse.move(hv.x + 1, hv.y); await frame(200)
+  await p.screenshot({ path: '/workspace/shot-uv-pixelpaint.png' })
+  await S(() => window.__polyform.getState().set({ tool: 'select' }))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

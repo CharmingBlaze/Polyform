@@ -106,6 +106,16 @@ await p.click('[data-testid="paint-brush"]')
 await p.keyboard.down('Control'); await dabAt({ x: C.x + 30, y: C.y + 35 }); await p.keyboard.up('Control')
 check('Ctrl+click with the brush picks too (the blue dab)', (await S(() => window.__polyform.getState().paint.color)) === blue)
 
+// 3b. Shift+click in 3D: a line from the last stamp (UV-13)
+{
+  await S(() => window.__polyform.getState().setPaint({ color: '#00ffff', size: 4, mode: 'brush' }))
+  await dabAt({ x: C.x - 30, y: C.y + 5 })
+  const one = await S(t => window.__polyformPaint.count(t, '#00ffff', 30), tex)
+  await p.keyboard.down('Shift'); await dabAt({ x: C.x + 30, y: C.y + 7 }); await p.keyboard.up('Shift')
+  const line = await S(t => window.__polyformPaint.count(t, '#00ffff', 30), tex)
+  check('3D Shift+click paints a line from the last stamp', one > 0 && line > one * 4, `${one} → ${line}`)
+  await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame()
+}
 // 4. fill: the clicked face only, one undo step
 await p.click('[data-testid="swatch-5"]')
 const green = await S(() => window.__polyform.getState().paint.color)
