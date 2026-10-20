@@ -1,6 +1,6 @@
 // Blender UV operators that are not the seam unwrap itself: Smart UV Project, Follow Active Quads, Lightmap Pack,
 // Average Islands Scale, Minimize Stretch, Seams from Islands, seams by angle and Split. Pure functions on the model.
-import { edgeKey, faceNormal, type Model, type Vec2 } from './model'
+import { edgeKey, faceNormal, triangulate, type Model, type Vec2 } from './model'
 import { faceArea3D, islands, packIslandsEx, uvArea } from './uvops'
 
 type V3 = [number, number, number]
@@ -162,5 +162,80 @@ export function averageIslandScale(m: Model, faces: number[]): number {
     n++
   }
   return n
+}
+
+// ---------- Minimize Stretch ----------
+/**
+ * Minimize Stretch: an as-rigid-as-possible relax of each island at its current size. Every triangle is fitted
+ * with the rotation that best matches its 3D shape, then every UV point moves towards where its triangles want it.
+ * Pinned UVs stay; islands without pins keep their centre. Returns the UV points moved.
+ */
+export function minimizeStretch(m: Model, faces: number[], iterations = 40): number {
+  const isl = islands(m, faces), groups = new Map<number, number[]>()
+  for (const fi of faces) { const r = isl.get(fi)!; const g = groups.get(r); if (g) g.push(fi); else groups.set(r, [fi]) }
+  let moved = 0
+  for (const g of groups.values()) {
+    // UV points: corners of one mesh point at one UV spot
+    const id = new Map<string, number>(), X: number[] = [], pinned: boolean[] = [], corners: [number, number, number][] = []
+    for (const fi of g) {
+      const f = m.faces[fi], pins = new Set(f.pin ?? [])
+      f.v.forEach((vi, c) => {
+        const k = `${vi}:${Math.round(f.uv[c][0] * 1e7)}:${Math.round(f.uv[c][1] * 1e7)}`
+        let p = id.get(k)
+        if (p === undefined) { p = X.length / 2; id.set(k, p); X.push(f.uv[c][0], f.uv[c][1]); pinned.push(false) }
+        if (pins.has(c)) pinned[p] = true
+        corners.push([fi, c, p])
+      })
+    }
+    const pt = new Map(corners.map(([fi, c, p]) => [fi * 1024 + c, p]))
+    type Tri = { p: [number, number, number]; e: [number, number][]; w: number }
+    const tris: Tri[] = []
+    let a3 = 0, au = 0
+    for (const fi of g) {
+      const f = m.faces[fi]
+      for (const t of triangulate(m.verts, f)) {
+        const P = t.map(c => m.verts[f.v[c]] as V3), e1 = sub(P[1], P[0]), e2 = sub(P[2], P[0])
+        const l1 = Math.hypot(...e1), x = norm(e1), nn = norm(cross(e1, e2)), y = cross(nn, x)
+        // 3D triangle in its own plane: corners at (0,0), (l1,0), (e2·x, e2·y)
+        const loc: [number, number][] = [[0, 0], [l1, 0], [dot(e2, x), dot(e2, y)]]
+        const ar = Math.abs(loc[2][1] * l1) / 2
+        if (ar < 1e-14) continue
+        a3 += ar
+        const ids = t.map(c => pt.get(fi * 1024 + c)!) as [number, number, number]
+        au += Math.abs((X[2 * ids[1]] - X[2 * ids[0]]) * (X[2 * ids[2] + 1] - X[2 * ids[0] + 1]) - (X[2 * ids[2]] - X[2 * ids[0]]) * (X[2 * ids[1] + 1] - X[2 * ids[0] + 1])) / 2
+        tris.push({ p: ids, e: loc, w: ar })
+      }
+    }
+    if (!tris.length || a3 < 1e-14 || au < 1e-14) continue
+    const s = Math.sqrt(au / a3), n = X.length / 2
+    const anyPin = pinned.some(Boolean)
+    let cx = 0, cy = 0
+    for (let i = 0; i < n; i++) { cx += X[2 * i] / n; cy += X[2 * i + 1] / n }
+    const X0 = [...X]
+    for (let it = 0; it < iterations; it++) {
+      const acc = new Float64Array(2 * n), wsum = new Float64Array(n)
+      for (const t of tris) {
+        // best rotation (Procrustes, no reflection) taking the 3D shape onto the UV shape
+        const [i0, i1, i2] = t.p, ux = [X[2 * i0], X[2 * i1], X[2 * i2]], uy = [X[2 * i0 + 1], X[2 * i1 + 1], X[2 * i2 + 1]]
+        const mx = (ux[0] + ux[1] + ux[2]) / 3, my = (uy[0] + uy[1] + uy[2]) / 3, ex = (t.e[0][0] + t.e[1][0] + t.e[2][0]) / 3, ey = (t.e[0][1] + t.e[1][1] + t.e[2][1]) / 3
+        let sc = 0, ss = 0
+        for (let k = 0; k < 3; k++) { const ax = t.e[k][0] - ex, ay = t.e[k][1] - ey, bx = ux[k] - mx, by = uy[k] - my; sc += ax * bx + ay * by; ss += ax * by - ay * bx }
+        const r = Math.atan2(ss, sc), c = Math.cos(r) * s, sn = Math.sin(r) * s
+        for (let k = 0; k < 3; k++) {
+          const ax = t.e[k][0] - ex, ay = t.e[k][1] - ey, pi = t.p[k]
+          acc[2 * pi] += (mx + c * ax - sn * ay) * t.w; acc[2 * pi + 1] += (my + sn * ax + c * ay) * t.w; wsum[pi] += t.w
+        }
+      }
+      for (let i = 0; i < n; i++) if (!pinned[i] && wsum[i] > 0) { X[2 * i] = X[2 * i] * 0.3 + (acc[2 * i] / wsum[i]) * 0.7; X[2 * i + 1] = X[2 * i + 1] * 0.3 + (acc[2 * i + 1] / wsum[i]) * 0.7 }
+      if (!anyPin) {
+        let nx = 0, ny = 0
+        for (let i = 0; i < n; i++) { nx += X[2 * i] / n; ny += X[2 * i + 1] / n }
+        for (let i = 0; i < n; i++) { X[2 * i] += cx - nx; X[2 * i + 1] += cy - ny }
+      }
+    }
+    for (let i = 0; i < n; i++) if (Math.hypot(X[2 * i] - X0[2 * i], X[2 * i + 1] - X0[2 * i + 1]) > 1e-9) moved++
+    for (const [fi, c, p] of corners) m.faces[fi].uv[c] = [X[2 * p], X[2 * p + 1]]
+  }
+  return moved
 }
 

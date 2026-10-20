@@ -153,8 +153,26 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
   check('Average Islands Scale: every face (island) ends at the same UV area (equal 3D areas)', Math.max(...r) / Math.min(...r) < 1.001, JSON.stringify([Math.min(...r), Math.max(...r)]))
 }
 
+// ---- Minimize Stretch (Relax) ----
+{
+  await S(() => { const s = window.__polyform.getState(), m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().runOp('add.plane', { w: 2, d: 2, seg: 4 }); window.__polyform.getState().selectNone() }); await frame(200)
+  await p.click('[data-testid="side-uvtools"]'); await p.click('[data-testid="uv-tab-unwrap"]').catch(() => {}); await frame()
+  if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]')
+  await p.click('[data-testid="uv-unwrap"]'); await frame(300)
+  // shear and squash it, pin one point, relax
+  await S(() => window.__polyform.getState().edit(m => { m.faces.forEach(f => { f.uv = f.uv.map(([u, v]) => [u + (v - 0.5) * 0.4, 0.5 + (v - 0.5) * 0.6]) }); m.faces[0].pin = [0] }, 'shear'))
+  const pin = await S(() => [...window.__polyform.getState().model.faces[0].uv[0]])
+  const angSum = () => S(() => { const m = window.__polyform.getState().model; let t = 0; m.faces.forEach(f => { const n = f.v.length; for (let i = 0; i < n; i++) { const a = f.uv[(i + n - 1) % n], b = f.uv[i], c = f.uv[(i + 1) % n], A = m.verts[f.v[(i + n - 1) % n]], B = m.verts[f.v[i]], C = m.verts[f.v[(i + 1) % n]]; const u2 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]], u3 = A.map((x, k) => x - B[k]), v3 = C.map((x, k) => x - B[k]); const g2 = Math.acos(Math.max(-1, Math.min(1, (u2[0] * v2[0] + u2[1] * v2[1]) / (Math.hypot(...u2) * Math.hypot(...v2) || 1)))), g3 = Math.acos(Math.max(-1, Math.min(1, (u3[0] * v3[0] + u3[1] * v3[1] + u3[2] * v3[2]) / (Math.hypot(...u3) * Math.hypot(...v3) || 1)))); t += Math.abs(g2 - g3) } }); return t })
+  const s0 = await angSum()
+  if ((await p.getAttribute('[data-testid="uv-tab-arrange"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-arrange"]'); await frame()
+  await p.click('[data-testid="uv-relax"]'); await frame(300)
+  const s1 = await angSum()
+  check('Minimize Stretch: angle distortion drops, the pin stays', s1 < s0 * 0.7 && JSON.stringify(await S(() => window.__polyform.getState().model.faces[0].uv[0])) === JSON.stringify(pin), JSON.stringify([s0, s1]))
+}
+
 // ---- Live Unwrap: dragging a pin re-solves its island ----
 {
+  await S(() => { const s = window.__polyform.getState(), m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().runOp('add.sphere', {}); window.__polyform.getState().selectNone() }); await frame(200)
   if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]')
   if (!(await p.isVisible('[data-testid="uv-unwrap-live"]'))) await p.click('[data-testid="uv-unwrap-opts"]')
   await p.click('[data-testid="uv-unwrap-live"]'); await frame()

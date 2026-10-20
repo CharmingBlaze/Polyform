@@ -3,6 +3,7 @@ import { addPolys, addPrimitive, emptyModel, type Poly, type Vec2, type Vec3 } f
 import * as U from '../src/uvops'
 import * as B from '../src/uvblender'
 import { cylStrip } from './cylstrip'
+import { unwrapSeams } from '../src/lscm'
 
 const nIslands = (m: ReturnType<typeof emptyModel>, faces: number[]) => new Set(U.islands(m, faces).values()).size
 const boxOf = (m: ReturnType<typeof emptyModel>, fs: number[]) => U.cornerBox(m, fs.flatMap(fi => m.faces[fi].uv.map((_, c) => fi * 1024 + c)))!
@@ -73,3 +74,21 @@ describe('Average Islands Scale', () => {
     expect(faces.reduce((s, fi) => s + U.uvArea(m.faces[fi].uv), 0)).toBeCloseTo(tot, 9)
   })
 })
+
+describe('Minimize Stretch', () => {
+  it('relaxes a sheared unwrap back towards the 3D shape and keeps pins', () => {
+    const { m, faces } = cylStrip(16, 4)
+    unwrapSeams(m, faces, 'conformal')
+    // distort: a wave across the strip
+    m.faces.forEach(f => { f.uv = f.uv.map(([u, v]) => [u + 0.25 * Math.sin(v * 3), v] as Vec2) })
+    m.faces[faces[0]].pin = [0]
+    const pin = [...m.faces[faces[0]].uv[0]]
+    const s0 = U.stretch(m, faces, 'angle').reduce((a, b) => a + b, 0)
+    expect(B.minimizeStretch(m, faces, 60)).toBeGreaterThan(0)
+    const s1 = U.stretch(m, faces, 'angle').reduce((a, b) => a + b, 0)
+    expect(s1).toBeLessThan(s0 * 0.5)
+    expect(m.faces[faces[0]].uv[0]).toEqual(pin)
+    expect(nIslands(m, faces)).toBe(1)
+  })
+})
+

@@ -2,7 +2,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scaling, Scissors, Shrink, SlidersHorizontal, Sparkles, WandSparkles, type LucideIcon } from 'lucide-react'
+import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scaling, Scissors, Shrink, SlidersHorizontal, Sparkles, WandSparkles, Waves, type LucideIcon } from 'lucide-react'
 import { useHost } from '../portalhost'
 import * as THREE from 'three'
 import { useStore } from '../store'
@@ -881,6 +881,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     st.edit(m => { n = BL.averageIslandScale(m, faces) }, 'Average islands scale')
     st.notify(n ? `Average Islands Scale: ${n} island${n === 1 ? '' : 's'} rescaled` : 'Average Islands Scale: the islands already match')
   }
+  const relax = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    let n = 0
+    st.edit(m => { n = BL.minimizeStretch(m, faces, 40) }, 'Minimize stretch')
+    st.notify(`Minimize Stretch: ${n} UV point${n === 1 ? '' : 's'} relaxed${faces.some(fi => st.model.faces[fi].pin?.length) ? ' (pins kept)' : ''}`)
+  }
   const rotOp = (k: 'cw' | 'ccw' | '180') => op('UV rotate', k === 'cw' ? U.rotCW : k === 'ccw' ? U.rot90 : U.rot180)
   const moveToCursor = (x: number, y: number) => op('UV move to cursor', (m, ids) => U.moveTo(m, ids, toUV(x, y)))
   const runKey = (k: string, x: number, y: number) => {
@@ -1021,6 +1028,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <T id="straighten" icon={Minus} label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
       <T id="dist-u" icon={AlignHorizontalSpaceAround} label="Space ↔" tip="Distribute the UV points evenly left to right" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'u'))} />
       <T id="dist-v" icon={AlignVerticalSpaceAround} label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
+      <T id="relax" icon={Waves} label="Relax" tip="Minimize Stretch: relax the islands towards their 3D shape (pins stay; repeat for more)" onClick={relax} />
       <T id="avg-scale" icon={Scaling} label="Avg scale" tip="Average Islands Scale: every island gets the same UV size per 3D area (total UV area kept; islands with pins stay)" onClick={avgScale} />
     </div>
       {packOpen && <div className="uv-packopts" data-testid="uv-pack-options">
@@ -1088,6 +1096,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, cx, cy) },
           { id: 'straighten', label: 'Straighten', run: straighten },
           { id: 'avg-scale', label: 'Average islands scale', run: avgScale },
+          { id: 'relax', label: 'Minimize stretch', run: relax },
           { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(cx, cy) },
           (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
           { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
