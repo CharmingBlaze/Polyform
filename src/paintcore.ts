@@ -132,14 +132,31 @@ export function texelLine(x0: number, y0: number, x1: number, y1: number): [numb
 export const isLCorner = (a: [number, number], b: [number, number], c: [number, number]) =>
   (a[0] === b[0] || a[1] === b[1]) && (c[0] === b[0] || c[1] === b[1]) && a[0] !== c[0] && a[1] !== c[1]
 
-/** A path with every L-corner removed (what a pixel-perfect 1-px stroke leaves). */
+/**
+ * Pixel-perfect step: the last path texel b is redundant when the new texel c touches (or is) the one before it, a.
+ * That removes L-corners and also the little clusters a jittery hand (or pen) leaves when it steps back. Returns
+ * whether b was dropped; when c equals a it is not added again (the caller skips it).
+ */
+export function pixelPerfectStep(path: [number, number][], c: [number, number]): { dropped: [number, number] | null; skip: boolean } {
+  const k = path.length
+  if (k && path[k - 1][0] === c[0] && path[k - 1][1] === c[1]) return { dropped: null, skip: true }
+  if (k >= 2) {
+    const a = path[k - 2]
+    if (Math.abs(a[0] - c[0]) <= 1 && Math.abs(a[1] - c[1]) <= 1) {
+      const b = path.pop()!
+      const same = a[0] === c[0] && a[1] === c[1]
+      if (!same) path.push(c)
+      return { dropped: b, skip: true }
+    }
+  }
+  path.push(c)
+  return { dropped: null, skip: false }
+}
+
+/** A path with every redundant texel removed (what a pixel-perfect 1-px stroke leaves). */
 export function pixelPerfect(path: [number, number][]): [number, number][] {
   const out: [number, number][] = []
-  for (const p of path) {
-    if (out.length && out[out.length - 1][0] === p[0] && out[out.length - 1][1] === p[1]) continue
-    if (out.length >= 2 && isLCorner(out[out.length - 2], out[out.length - 1], p)) out.pop()
-    out.push(p)
-  }
+  for (const p of path) pixelPerfectStep(out, p)
   return out
 }
 

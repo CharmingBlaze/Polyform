@@ -27,7 +27,9 @@ export function PS() {
 }
 
 interface Hit { fi: number; uv: [number, number]; point: THREE.Vector3; normal: THREE.Vector3 }
-interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke; /** pixel modes: last stamped texel origin, and the 1-px path for L-corner removal */ lastTexel?: [number, number]; path?: [number, number][] }
+/** pixel modes: one run per brush (the stroke and its Mirror X twin): last stamped texel origin and the 1-px path for L-corner removal */
+interface TexRun { lastTexel?: [number, number]; path: [number, number][] }
+interface TexStroke { id: string; g: CanvasRenderingContext2D; img: ImageData; s: P.Stroke; runs?: Map<string, TexRun> }
 interface Active { rayAt: (x: number, y: number) => THREE.Raycaster; ctx: ViewCtx; last: [number, number]; tex: Map<string, TexStroke>; /** a Shift+click line: later pointer moves do not paint */ lineOnly?: boolean }
 
 let cur: Active | null = null
@@ -50,22 +52,24 @@ const texelWidth = (r: number) => Math.max(1, Math.round(r * 2))
  * joined texel by texel (Bresenham), and with pixel-perfect a 1-px path drops its L-corners as it goes.
  * `join` = largest gap (texels) still joined; farther jumps (another face of the image) start a new run.
  */
-function dabTex(t: TexStroke, cx: number, cy: number, r: number, strength: number, join = Infinity): P.Rect | null {
+function dabTex(t: TexStroke, cx: number, cy: number, r: number, strength: number, join = Infinity, channel = 'main'): P.Rect | null {
   const p = S().paint, n = texelWidth(r), round = p.shape === 'round'
   const o = P.texelOrigin(cx, cy, n)
-  const prev = t.lastTexel
+  const runs = (t.runs ??= new Map())
+  let run = runs.get(channel)
+  if (!run) { run = { path: [] }; runs.set(channel, run) }
+  const prev = run.lastTexel
   const pts = prev && Math.max(Math.abs(prev[0] - o[0]), Math.abs(prev[1] - o[1])) <= join ? P.texelLine(prev[0], prev[1], o[0], o[1]).slice(1) : [o]
   if (!pts.length) return null
-  if (!prev || pts[0] === o) t.path = []
-  t.lastTexel = o
+  if (!prev || pts[0] === o) run.path = []
+  run.lastTexel = o
   let rect: P.Rect | null = null
   for (const q of pts) {
     rect = P.unionRect(rect, P.dabTexels(t.s, P.brushTexels(q[0], q[1], n, round), strength))
     if (p.pixelPerfect && n === 1) {
-      const path = (t.path ??= [])
-      path.push(q)
-      const k = path.length
-      if (k >= 3 && P.isLCorner(path[k - 3], path[k - 2], path[k - 1])) { rect = P.unionRect(rect, P.undabTexels(t.s, [path[k - 2]])); path.splice(k - 2, 1) }
+      const { dropped } = P.pixelPerfectStep(run.path, q)
+      // the dropped texel is cleared unless the new one is the same texel (a step back)
+      if (dropped && !(dropped[0] === q[0] && dropped[1] === q[1])) rect = P.unionRect(rect, P.undabTexels(t.s, [dropped]))
     }
   }
   return rect
@@ -137,7 +141,7 @@ function worldPerPx(ctx: ViewCtx, at: THREE.Vector3) {
   return (2 * cam.position.distanceTo(at) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))) / ctx.h
 }
 
-function dabAt(a: Active, h: Hit, worldR: number) {
+function dabAt(a: Active, h: Hit, worldR: number, channel = 'main') {
   const id = texOf(h.fi)
   if (!id) return
   const t = strokeFor(a, id)
@@ -146,7 +150,7 @@ function dabAt(a: Active, h: Hit, worldR: number) {
   const r = P.brushRadiusTex(1, worldR, Math.abs(uvArea(f.uv)) * w * hh, faceArea3D(m, h.fi))
   const [x, y] = P.uvToPx(h.uv[0], h.uv[1], w, hh)
   const p = PS()
-  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity, texelWidth(r) * 2 + 2) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
+  flush(t, texelMode() ? dabTex(t, x, y, r, p.opacity, texelWidth(r) * 2 + 2, channel) : P.dab(t.s, x, y, r, p.opacity, p.hardness))
 }
 
 function stampScreen(a: Active, x: number, y: number) {
@@ -156,7 +160,7 @@ function stampScreen(a: Active, x: number, y: number) {
   const worldR = p.size * worldPerPx(a.ctx, h.point)
   if (a.ctx?.el) lastStamp3D = { el: a.ctx.el, x, y }
   dabAt(a, h, worldR)
-  if (p.mirror) { const mh = mirrorHit(h); if (mh) dabAt(a, mh, worldR) }
+  if (p.mirror) { const mh = mirrorHit(h); if (mh) dabAt(a, mh, worldR, 'mirror') }
 }
 
 /** Pixel polygon of a face in its image. */

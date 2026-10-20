@@ -18,6 +18,11 @@ describe('pixel-art painting (UV-13)', () => {
     // a straight line keeps every texel
     expect(P.pixelPerfect([[0, 0], [1, 0], [2, 0]])).toEqual([[0, 0], [1, 0], [2, 0]])
   })
+  it('pixel-perfect also cleans up a jittery step back (no 2×2 clusters)', () => {
+    // a hand stepping back and forth around a diagonal
+    expect(P.pixelPerfect([[0, 0], [1, 1], [2, 1], [1, 1], [2, 2], [3, 3]])).toEqual([[0, 0], [1, 1], [2, 2], [3, 3]])
+    expect(P.pixelPerfect([[5, 5], [6, 5], [6, 6], [5, 6], [6, 7]])).toEqual([[5, 5], [5, 6], [6, 7]])
+  })
   it('a diagonal of hard 1-texel dabs on a 16 px image sets exactly one texel per step', () => {
     const s = P.beginStroke(img(16, 16), [255, 0, 0], false)
     for (const [x, y] of P.texelLine(2, 3, 12, 13)) P.dabTexels(s, P.brushTexels(x, y, 1, false), 1)

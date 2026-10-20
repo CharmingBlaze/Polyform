@@ -116,6 +116,27 @@ check('Ctrl+click with the brush picks too (the blue dab)', (await S(() => windo
   check('3D Shift+click paints a line from the last stamp', one > 0 && line > one * 4, `${one} → ${line}`)
   await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame()
 }
+// 3c. pixel perfect in 3D: Bresenham-joined 1-px strokes without L-corners, also on the Mirror X twin
+{
+  const prev = await S(() => { const p = window.__polyform.getState().paint; return { size: p.size, mirror: p.mirror, color: p.color } })
+  // the front face spans the whole 32 px image (texels ≈ 5 screen px), the brush is 1 texel
+  await S(fi => { const s = window.__polyform.getState(); s.imageResize(0, 32, 32, 'scale'); s.edit(m => { m.faces[fi].uv = [[0, 0], [1, 0], [1, 1], [0, 1]] }, 'full face'); s.setPaint({ pixelPerfect: true, size: 1, color: '#ff00ff', mirror: true, mode: 'brush' }) }, front.fi); await frame(200)
+  // stroke on the left half only: its Mirror X twin lands on the right half, apart from it
+  await p.mouse.move(C.x - 60, C.y - 40); await p.mouse.down()
+  for (let k = 1; k <= 60; k++) await p.mouse.move(C.x - 60 + 45 * k / 60 + (k % 3) - 1, C.y - 40 + 70 * k / 60 + (k % 2))
+  await p.mouse.up(); await frame()
+  const r = await S(() => {
+    const m = window.__polyform.getState().model, c = window.__polyformTextures.canvas(m.materials[0].texture), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, w = c.width
+    const on = (x, y) => x >= 0 && y >= 0 && x < w && y < c.height && d[(y * w + x) * 4] > 230 && d[(y * w + x) * 4 + 1] < 30 && d[(y * w + x) * 4 + 2] > 230
+    let n = 0, L = 0, left = 0
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < w; x++) if (on(x, y)) { n++; if (x < w / 2) left++; if ((on(x - 1, y) || on(x + 1, y)) && (on(x, y - 1) || on(x, y + 1))) L++ }
+    return { n, L, left }
+  })
+  check('3D pixel perfect: a 1-px stroke and its Mirror X twin have no L-corners', r.left >= 8 && r.n - r.left >= 8 && r.L === 0, JSON.stringify(r))
+  for (let i = 0; i < 3; i++) await p.keyboard.press('Control+z')
+  await frame()
+  await S(prev => window.__polyform.getState().setPaint({ ...prev, pixelPerfect: false }), prev)
+}
 // 4. fill: the clicked face only, one undo step
 await p.click('[data-testid="swatch-5"]')
 const green = await S(() => window.__polyform.getState().paint.color)
