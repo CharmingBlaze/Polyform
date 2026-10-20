@@ -55,6 +55,46 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
   if (W === 1920) await p.screenshot({ path: '/workspace/shot-uv-roomy-1920x1080.png' })
   await p.close()
 }
+// Item 8: ~12k faces — hover lookups use a grid index cached per revision; a 3D hover only redraws a small overlay
+{
+  const p = await b.newPage({ viewport: { width: 1366, height: 768 } })
+  p.on('pageerror', e => errs.push(e.message))
+  const S = (fn, arg) => p.evaluate(fn, arg)
+  await p.goto(url); await p.waitForFunction(() => window.__polyform && window.__polyformScene && window.__polyformHover)
+  await S(() => {
+    const s = window.__polyform.getState(), m = s.model
+    m.verts = []; m.vbone = []; m.faces = []; m.groups = []; m.bones = []; m.wires = []; m.materials = m.materials.slice(0, 1); m.materials[0].texture = null
+    s.loadModel(m)
+    for (let k = 0; k < 3; k++) window.__polyform.getState().runOp('add.plane', { w: 2, d: 2, seg: 64, x: k * 3, y: 0, z: 0 })
+    const st = window.__polyform.getState()
+    st.edit(mm => mm.faces.forEach(f => { f.uv = f.v.map(vi => { const q = mm.verts[vi]; return [(q[0] + 1) / 9, (q[2] + 1) / 2] }) }), 'uv')
+    st.selectNone()
+  })
+  await p.click('[data-testid="ws-uv"]'); await p.waitForTimeout(500)
+  const r = await S(async () => {
+    const n = window.__polyform.getState().model.faces.length
+    const c = document.querySelector('[data-testid="uv-canvas"]'), rc = c.getBoundingClientRect()
+    let t0 = performance.now()
+    for (let i = 0; i < 200; i++) c.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: rc.left + 20 + (i * 3) % (rc.width - 40), clientY: rc.top + rc.height / 2 + (i % 7), pointerType: 'mouse' }))
+    const uvHover = (performance.now() - t0) / 200
+    c.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
+    await new Promise(r => setTimeout(r, 300))
+    const d0 = +c.dataset.draws
+    let sync = 0
+    for (let i = 0; i < 30; i++) { const t = performance.now(); window.__polyformHover(i * 397, '3d'); sync += performance.now() - t; await new Promise(r => requestAnimationFrame(r)) }
+    const hover3d = sync / 30, redraws = +c.dataset.draws - d0
+    const last = +c.dataset.hover
+    const hc = document.querySelector('[data-testid="uv-hover-canvas"]'), d = hc.getContext('2d').getImageData(0, 0, hc.width, hc.height).data
+    let lit = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) lit++
+    window.__polyformHover(-1, '3d')
+    return { n, uvHover, hover3d, redraws, last, lit }
+  })
+  console.log(`perf ${r.n} faces: UV hover ${r.uvHover.toFixed(2)} ms/move, 3D hover → UV outline ${r.hover3d.toFixed(2)} ms, ${r.redraws} full redraws`)
+  check('~12k faces: UV hover under 5 ms per pointer move', r.n > 12000 && r.uvHover < 5, JSON.stringify(r))
+  check('~12k faces: a 3D hover outlines the face in the UV editor at once, on the overlay canvas (no full redraw)', r.hover3d < 8 && r.redraws === 0 && r.last === 29 * 397 && r.lit > 0, JSON.stringify(r))
+  await p.close()
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

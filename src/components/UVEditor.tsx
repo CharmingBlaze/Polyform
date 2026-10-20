@@ -159,7 +159,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   // overlap overlay: coverage at image resolution, cached per model revision / image
   const cov = useMemo(() => {
     if (heat !== 'overlap') return null
-    const w = tw || paintTexSize, h = th || paintTexSize, c = U.coverage(model, imageFaces(), w, h)
+    const w = tw || paintTexSize, h = th || paintTexSize, c = U.cachedCoverage(model, `${version}:${texId ? shownMat : 'all'}`, () => imageFaces(), w, h)
     const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h
     const g = cnv.getContext('2d')!, img = g.createImageData(w, h)
     for (let i = 0; i < c.own.length; i++) if (c.own[i] >= 2) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 40; img.data[i * 4 + 2] = 40; img.data[i * 4 + 3] = 190 }
@@ -189,13 +189,32 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const mouse = useRef({ x: 0, y: 0 })
   /** face outlined because it is hovered in a 3D view (-1: none) */
   const hov3d = useRef(-1)
+  const hovCv = useRef<HTMLCanvasElement>(null)
+  /** hover sync (UV-14): outline the face under the pointer in a 3D view, on the overlay canvas */
+  const drawHover = useRef(() => {})
+  drawHover.current = () => {
+    const c = hovCv.current, main = cv.current
+    if (!c || !main) return
+    const m = useStore.getState().model, hf = interaction.hoverFace, dpr = window.devicePixelRatio || 1
+    hov3d.current = hf?.from === '3d' && m.faces[hf.face] ? hf.face : -1
+    main.dataset.hover = String(hov3d.current)
+    if (c.width !== Math.round(size.w * dpr) || c.height !== Math.round(size.h * dpr)) { c.width = Math.round(size.w * dpr); c.height = Math.round(size.h * dpr) }
+    const g = c.getContext('2d')!
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(dpr, 0, 0, dpr, 0, 0)
+    if (hov3d.current < 0) return
+    const pts = m.faces[hov3d.current].uv.map(toPx)
+    g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
+    g.fillStyle = 'rgba(255,209,102,0.18)'; g.fill()
+    g.strokeStyle = '#1b1f27'; g.lineWidth = 4; g.stroke(); g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.stroke()
+  }
 
   useEffect(() => {
     const ro = new ResizeObserver(() => { const r = wrap.current!.getBoundingClientRect(); setSize({ w: Math.max(50, r.width), h: Math.max(50, r.height) }) })
     ro.observe(wrap.current!)
     const h = () => force(x => x + 1)
     // hover sync: redraw when the face hovered in 3D changes
-    const hv = () => { if (interaction.hoverFace?.from === '3d' || hov3d.current >= 0) force(x => x + 1) }
+    // (drawn on its own overlay canvas: no full redraw of a big mesh per hovered face)
+    const hv = () => { if (interaction.hoverFace?.from === '3d' || hov3d.current >= 0) drawHover.current() }
     window.addEventListener('texture-changed', h)
     window.addEventListener('hover-face', hv)
     return () => { ro.disconnect(); window.removeEventListener('texture-changed', h); window.removeEventListener('hover-face', hv); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }
@@ -221,6 +240,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
     g.fillStyle = '#101217'; g.fillRect(0, 0, size.w, size.h)
     g.imageSmoothingEnabled = useStore.getState().model.materials[shownMat]?.filter === 'linear'
+    c.dataset.draws = String(+(c.dataset.draws || 0) + 1) // full redraws (e2e: a 3D hover must not cause one)
     const drawImg = (x: number, y: number) => {
       if (texImg) { try { g.drawImage(texImg as CanvasImageSource, x, y, side, side) } catch { /* not loaded */ } return }
       const n = 8, cs = side / n
@@ -278,7 +298,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     g.stroke()
     // seams (red) and pinned corners
-    const seams = U.seamSet(m)
+    const seams = U.cachedSeamSet(m, st.version)
     if (seams.size) {
       g.strokeStyle = '#ff3b3b'; g.lineWidth = 2; g.beginPath()
       for (const fi of faces) {
@@ -313,16 +333,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(fr.pp.x, fr.pp.y, 5, 0, Math.PI * 2)
       g.moveTo(fr.pp.x - 8, fr.pp.y); g.lineTo(fr.pp.x + 8, fr.pp.y); g.moveTo(fr.pp.x, fr.pp.y - 8); g.lineTo(fr.pp.x, fr.pp.y + 8); g.stroke()
     }
-    // hover sync (UV-14): the face under the pointer in a 3D view
-    const hf = interaction.hoverFace
-    hov3d.current = hf?.from === '3d' && m.faces[hf.face] ? hf.face : -1
-    cv.current!.dataset.hover = String(hov3d.current)
-    if (hov3d.current >= 0) {
-      const pts = m.faces[hov3d.current].uv.map(toPx)
-      g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
-      g.fillStyle = 'rgba(255,209,102,0.18)'; g.fill()
-      g.strokeStyle = '#1b1f27'; g.lineWidth = 4; g.stroke(); g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.stroke(); g.lineWidth = 1
-    }
+    drawHover.current()
     if (drag.current?.kind === 'rect' && drag.current.moved) {
       const d = drag.current
       g.strokeStyle = '#8ab4ff'; g.setLineDash([4, 3]); g.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); g.setLineDash([])
@@ -670,15 +681,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }
   }
   /** topmost face whose UV polygon contains (u, v) (drawn last = on top), -1 for none */
+  /** topmost face of the shown image under (u, v): a grid index cached per model revision and image (item 8) */
   const faceAtUV = (u: number, v: number) => {
-    const m = useStore.getState().model, fs = imageFaces()
-    for (let k = fs.length - 1; k >= 0; k--) {
-      const uv = m.faces[fs[k]].uv
-      let inside = false
-      for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) { const [xi, yi] = uv[i], [xj, yj] = uv[j]; if ((yi > v) !== (yj > v) && u < xi + ((v - yi) / (yj - yi)) * (xj - xi)) inside = !inside }
-      if (inside) return fs[k]
-    }
-    return -1
+    const st = useStore.getState()
+    return U.faceAtUVIndexed(st.model, U.cachedUVIndex(st.model, `${st.version}:${texId ? shownMat : 'all'}`, () => imageFaces()), u, v)
   }
   /** Alt+click: every face whose UVs cover the texel under the pointer (finds hidden overlaps); with Ctrl their islands */
   const selectAtTexel = (x: number, y: number, islands: boolean) => {
@@ -1059,6 +1065,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => { showBrush(-1, -1); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }} />
+        <canvas ref={hovCv} className="uv-hover-cv" data-testid="uv-hover-canvas" style={{ width: size.w, height: size.h }} />
         <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
         <div className="uv-topleft">
         <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />

@@ -1119,3 +1119,68 @@ export function primitivePixelUVs(m: Model, faces: number[], o: { density: numbe
   for (const fi of faces) m.faces[fi].uv = m.faces[fi].uv.map(([u, v]) => [u + du, v + dv] as Vec2)
   return { w, h, x: to.x, y: to.y, fits: !!spot }
 }
+
+// ---------- caches per model revision (hover, coverage, seams on big meshes) ----------
+/** Grid index of face UV boxes: `cells[c]` lists positions k into `faces` (ascending), so later faces are on top. */
+export interface UVIndex { faces: number[]; G: number; u0: number; v0: number; du: number; dv: number; cells: Int32Array[] }
+export function buildUVIndex(m: Model, faces: number[]): UVIndex {
+  let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity
+  for (const fi of faces) for (const [u, v] of m.faces[fi]?.uv ?? []) { u0 = Math.min(u0, u); v0 = Math.min(v0, v); u1 = Math.max(u1, u); v1 = Math.max(v1, v) }
+  if (!(u1 >= u0)) return { faces, G: 1, u0: 0, v0: 0, du: 1, dv: 1, cells: [new Int32Array(0)] }
+  const G = Math.max(1, Math.min(256, Math.round(Math.sqrt(faces.length / 2))))
+  const du = Math.max(1e-9, (u1 - u0) / G), dv = Math.max(1e-9, (v1 - v0) / G)
+  const lists: number[][] = Array.from({ length: G * G }, () => [])
+  const cl = (x: number) => Math.max(0, Math.min(G - 1, x))
+  faces.forEach((fi, k) => {
+    const uv = m.faces[fi]?.uv
+    if (!uv || uv.length < 3) return
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity
+    for (const [u, v] of uv) { a = Math.min(a, u); b = Math.min(b, v); c = Math.max(c, u); d = Math.max(d, v) }
+    const x0 = cl(Math.floor((a - u0) / du)), x1 = cl(Math.floor((c - u0) / du)), y0 = cl(Math.floor((b - v0) / dv)), y1 = cl(Math.floor((d - v0) / dv))
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) lists[y * G + x].push(k)
+  })
+  return { faces, G, u0, v0, du, dv, cells: lists.map(l => Int32Array.from(l)) }
+}
+/** Topmost face (latest in the index's face list) whose UV polygon contains (u, v); -1 for none. */
+export function faceAtUVIndexed(m: Model, idx: UVIndex, u: number, v: number): number {
+  const x = Math.floor((u - idx.u0) / idx.du), y = Math.floor((v - idx.v0) / idx.dv)
+  if (x < 0 || y < 0 || x >= idx.G || y >= idx.G) {
+    // on the far edge of the box: clamp into the last cell
+    if (x !== idx.G && y !== idx.G) return -1
+  }
+  const cell = idx.cells[Math.min(idx.G - 1, Math.max(0, y)) * idx.G + Math.min(idx.G - 1, Math.max(0, x))]
+  for (let i = cell.length - 1; i >= 0; i--) {
+    const fi = idx.faces[cell[i]], uv = m.faces[fi]?.uv
+    if (!uv) continue
+    let inside = false
+    for (let a = 0, b = uv.length - 1; a < uv.length; b = a++) { const [xi, yi] = uv[a], [xj, yj] = uv[b]; if ((yi > v) !== (yj > v) && u < xi + ((v - yi) / (yj - yi)) * (xj - xi)) inside = !inside }
+    if (inside) return fi
+  }
+  return -1
+}
+// one entry each: the editor asks again and again for the same revision
+let idxCache: { m: Model; key: string; idx: UVIndex } | null = null
+let covCache: { m: Model; key: string; cov: Coverage } | null = null
+let seamCache: { m: Model; rev: number; set: Set<number> } | null = null
+/** The UV index for this model and key (e.g. `${revision}:${image}`), built once; `faces` is only called on a miss. */
+export function cachedUVIndex(m: Model, key: string, faces: () => number[]): UVIndex {
+  if (idxCache && idxCache.m === m && idxCache.key === key) return idxCache.idx
+  const idx = buildUVIndex(m, faces())
+  idxCache = { m, key, idx }
+  return idx
+}
+/** coverage() cached per model, key (revision + image) and image size. */
+export function cachedCoverage(m: Model, key: string, faces: () => number[], tw: number, th: number): Coverage {
+  const k = `${key}:${tw}x${th}`
+  if (covCache && covCache.m === m && covCache.key === k) return covCache.cov
+  const cov = coverage(m, faces(), tw, th)
+  covCache = { m, key: k, cov }
+  return cov
+}
+/** seamSet() cached per model revision. */
+export function cachedSeamSet(m: Model, rev: number): Set<number> {
+  if (seamCache && seamCache.m === m && seamCache.rev === rev) return seamCache.set
+  const set = seamSet(m)
+  seamCache = { m, rev, set }
+  return set
+}

@@ -12,6 +12,7 @@ if (import.meta.env.DEV) {
   import('./xmirror').then(m => ((window as unknown as Record<string, unknown>).__polyformXMirror = m))
   import('./paint').then(m => ((window as unknown as Record<string, unknown>).__polyformPaint = m.paintDebug))
   import('./textures').then(m => ((window as unknown as Record<string, unknown>).__polyformTextures = m.textures))
+  import('./interaction').then(m => ((window as unknown as Record<string, unknown>).__polyformHover = m.setHoverFace))
   import('./refs').then(m => ((window as unknown as Record<string, unknown>).__polyformRefs = m))
   import('./store').then(m => ((window as unknown as Record<string, unknown>).__polyformHistory = m.history))
   import('./scene').then(m => ((window as unknown as Record<string, unknown>).__polyformScene = m.sceneManager))

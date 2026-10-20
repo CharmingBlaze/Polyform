@@ -119,6 +119,7 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .uv-topleft { position: absolute; top: 6px; left: 6px; right: 60px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
 .uv-topleft > * { pointer-events: auto; }
 .uv-canvas canvas { position: absolute; inset: 0; touch-action: none; }
+.uv-canvas canvas.uv-hover-cv { pointer-events: none; }
 .uv-zoom { position: absolute; top: 6px; right: 6px; padding: 1px 6px; font-size: 11px; font-variant-numeric: tabular-nums; background: #0009; color: var(--dim); border-radius: 4px; }
 .uv-menu { min-width: 190px; outline: none; }
 .uv-split { display: inline-flex; }
