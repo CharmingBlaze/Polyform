@@ -40,7 +40,7 @@ export type PaintTarget = 'image' | 'vertex' | 'weight'
 export interface PaintSettings { color: string; size: number; hardness: number; opacity: number; mode: PaintMode; texSize: number; mirror: boolean; swatches: string[]; target: PaintTarget; /** 0 = auto-detect from the texture */ paletteCols: number; paletteRows: number
   /** UV-13 pixel art: brush shape, whole-texel 1-px lines without L-corners, paint only on existing alpha, what Fill covers */
   shape: 'round' | 'square'; pixelPerfect: boolean; lockAlpha: boolean; fillScope: FillScope }
-export type FillScope = 'face' | 'island' | 'connected' | 'colour'
+export type FillScope = 'face' | 'island' | 'object' | 'connected' | 'colour'
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
 export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }

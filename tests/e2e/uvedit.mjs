@@ -671,6 +671,11 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.mouse.click(c0.x, c0.y); await frame()
   check('Fill "all of this colour" covers every face of the image (6 × 16 texels), not the gaps', (await red()).length === 96, String((await red()).length))
   await p.keyboard.press('Control+z'); await frame()
+  // object fill: every face of the clicked face's object that uses this image (face 5 moved to another object)
+  await S(() => { const s = window.__polyform.getState(); s.edit(m => { m.groups.push({ ...JSON.parse(JSON.stringify(m.groups[0])), name: 'Other' }); m.faces[5].g = m.groups.length - 1 }, 'split'); s.setPaint({ fillScope: 'object' }) })
+  await p.mouse.click(c0.x, c0.y); await frame()
+  check('Fill "object" covers the faces of the clicked object only (5 × 16 texels)', (await red()).length === 80, String((await red()).length))
+  await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z'); await frame()
   // a little pixel art for the screenshot
   await S(() => window.__polyform.getState().setPaint({ mode: 'brush', shape: 'square', size: 1, pixelPerfect: true, color: '#ffd166' }))
   for (const [x0, y0, x1, y1] of [[1, 2, 4, 2], [5, 2, 8, 4], [11, 8, 14, 11], [6, 8, 9, 8]]) { const p0 = await T(x0, y0), p1 = await T(x1, y1); await p.mouse.click(p0.x, p0.y); await p.keyboard.down('Shift'); await p.keyboard.down('Control'); await p.mouse.click(p1.x, p1.y); await p.keyboard.up('Control'); await p.keyboard.up('Shift'); await frame() }

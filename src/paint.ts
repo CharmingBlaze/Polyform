@@ -229,15 +229,16 @@ function fill(a: Active, h: Hit) {
 const facesOnImage = (id: string) => S().model.faces.map((_f, fi) => (texOf(fi) === id ? fi : -1)).filter(fi => fi >= 0)
 
 /**
- * Fill beyond one face: the clicked face's UV island, the texels connected to the clicked one with its colour,
+ * Fill beyond one face: the clicked face's UV island or object (faces using this image), the texels connected to the clicked one with its colour,
  * or every texel of that colour; connected / colour stay inside the UVs of faces using this image.
  */
-function fillScoped(a: Active, id: string, fi: number, u: number, v: number, scope: 'island' | 'connected' | 'colour') {
+function fillScoped(a: Active, id: string, fi: number, u: number, v: number, scope: 'island' | 'object' | 'connected' | 'colour') {
   const t = strokeFor(a, id)
   if (!t) return
   const { width: w, height: h } = t.img, op = PS().opacity, on = facesOnImage(id)
-  if (scope === 'island') {
-    for (const f of islandFaces(S().model, [fi], on)) flush(t, P.fillPolygon(t.s, facePoly(f, w, h), op))
+  if (scope === 'island' || scope === 'object') {
+    const m = S().model, g = m.faces[fi]?.g
+    for (const f of scope === 'island' ? islandFaces(m, [fi], on) : on.filter(f => m.faces[f].g === g)) flush(t, P.fillPolygon(t.s, facePoly(f, w, h), op))
     return
   }
   const cov = P.coverage(w, h, on.map(f => facePoly(f, w, h)))

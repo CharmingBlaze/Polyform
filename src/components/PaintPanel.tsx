@@ -61,7 +61,7 @@ export function PaintPanel() {
         {p.mode === 'fill' && <label className="paint-range" title="What Fill covers">
           <span>Fill</span>
           <select value={p.fillScope} data-testid="paint-fill-scope" onChange={e => setPaint({ fillScope: e.target.value as FillScope })}>
-            <option value="face">Face (or selected faces)</option><option value="island">UV island</option><option value="connected">Connected colour</option><option value="colour">All of this colour</option>
+            <option value="face">Face (or selected faces)</option><option value="island">UV island</option><option value="object">Object</option><option value="connected">Connected colour</option><option value="colour">All of this colour</option>
           </select>
         </label>}
       </>}
