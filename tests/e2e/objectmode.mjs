@@ -105,6 +105,7 @@ check('per workspace: Paint keeps its own (open) side panel', (await sides()).r 
 await p.click('[data-testid="ws-model"]'); await slide()
 check('…and Model remembers its collapsed one', (await sides()).r === 'icons')
 await p.reload(); await p.waitForFunction(() => window.__polyform && window.__polyformScene); await frame(300)
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 check('…after a reload too', (await sides()).r === 'icons' && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).panels.model.right)) === true)
 const tr = () => S(() => getComputedStyle(document.querySelector('.main')).transitionDuration)
 await p.click('[data-testid="side-rail"] .rail-btn.on'); const dur = await tr(); await slide()
@@ -116,6 +117,7 @@ await p.emulateMedia({ reducedMotion: 'no-preference' })
 
 // ---- fit + roomier views at 1024×576 ----
 await S(() => localStorage.clear()); await p.setViewportSize({ width: 1024, height: 576 }); await p.reload(); await p.waitForFunction(() => window.__polyform && window.__polyformScene); await frame(300)
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 await S(() => window.__polyform.getState().openSample('character')); await frame(400)
 const fit = await S(() => { const h = document.querySelector('.header'), r = document.querySelector('[data-testid="export-glb"]').getBoundingClientRect(); return { over: h.scrollWidth - h.clientWidth, exp: r.right <= innerWidth, page: document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight } })
 check('1024×576: header fits (mode switch icons only), nothing scrolls', fit.over <= 0 && fit.exp && fit.page && !(await p.isVisible('[data-testid="mode-object"] .lbl')), JSON.stringify(fit))

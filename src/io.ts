@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, parseProject, ProjectError, projectFile, triangulate, validateModel, defaultProps, type LoadPhase, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
+import { AutoBackup, BackupStore, ago, describeSnapshot, modelStats, snapKey, type KV } from './backup'
+import { ask } from './dialog'
+import { addGeometry, alphaOf, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, parseProject, ProjectError, projectFile, triangulate, validateModel, defaultProps, type LoadPhase, type Model, type SceneProps, type Vec3, MAP_SLOTS, materialTextures } from './model'
 import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
@@ -269,7 +271,7 @@ export async function importImage(file: File): Promise<string> {
  * time: a second call while one is running is refused instead of racing it.
  */
 let loading = false
-export async function openProjectText(text: string | (() => Promise<string>), onPhase: (p: LoadPhase) => void = () => {}) {
+export async function openProjectText(text: string | (() => Promise<string>), onPhase: (p: LoadPhase) => void = () => {}, prepare?: (m: Model) => Promise<void>) {
   if (loading) throw new ProjectError('Another project is still opening')
   loading = true
   try {
@@ -278,6 +280,7 @@ export async function openProjectText(text: string | (() => Promise<string>), on
     const { model, textures: texData } = parseProject(src, onPhase)
     onPhase('applying')
     await textures.loadAll(texData)
+    await prepare?.(model)
     for (const mt of model.materials) { if (mt.texture && !textures.has(mt.texture)) mt.texture = null; for (const s of MAP_SLOTS) if (mt[s.k] && !textures.has(mt[s.k]!)) delete mt[s.k] }
     useStore.getState().loadModel(model)
     onPhase('done')
@@ -338,68 +341,143 @@ export async function importFile(file: File) {
   st.notify(`Imported ${file.name}`)
 }
 
-// ---------- autosave ----------
-const KEY = 'polyform:autosave'
+// ---------- autobackup ----------
+// Rolling snapshots of the model (src/backup.ts); images are stored once per texture id next to them, and the
+// view layout under its own key. The legacy single-copy autosave is adopted as the first snapshot, then removed.
+const LEGACY_KEY = 'polyform:autosave'
 const LEGACY_TEX_KEY = 'polyform:texture'
+const PANES_KEY = 'polyform:panes'
 const texKey = (id: string) => `polyform:tex:${id}`
 const layersKey = (id: string) => `polyform:layers:${id}`
-export async function restoreAutosave() {
-  try {
-    const raw = await idbGet<Record<string, unknown>>(KEY)
-    if (raw && Array.isArray(raw.verts)) {
-      const legacy = raw.version === undefined ? await idbGet<string>(LEGACY_TEX_KEY) : undefined
-      const { model, textures: texData } = migrateProject(legacy ? { ...raw, texture: legacy } : raw)
-      validateModel(model)
-      await textures.loadAll(texData)
-      for (const mt of model.materials) {
-        if (mt.texture && !textures.has(mt.texture)) {
-          const url = await idbGet<string>(texKey(mt.texture))
-          if (url) await textures.load(url, mt.texture).catch(() => {})
-          const bundle = await idbGet<Record<string, string>>(layersKey(mt.texture))
-          if (bundle && textures.has(mt.texture)) await textures.loadAll(bundle)
-          if (!textures.has(mt.texture)) mt.texture = null
-        }
-        for (const s of MAP_SLOTS) {
-          const id = mt[s.k]
-          if (!id || textures.has(id)) continue
-          const url = await idbGet<string>(texKey(id))
-          if (url) await textures.load(url, id).catch(() => {})
-          if (!textures.has(id)) delete mt[s.k]
-        }
-      }
-      const panes = raw.__panes
-      useStore.getState().loadModel(model)
-      if (Array.isArray(panes) && panes.length === 4) useStore.setState({ panes: panes as never, layout: (raw.__layout as never) ?? '4' })
-      return true
+const kv: KV = { get: k => idbGet(k), set: (k, v) => idbSet(k, v), del: k => idbDel(k) }
+export const backups = new BackupStore(kv)
+
+/** Bring back the images a restored model points at (base image and the material map slots); a missing image is dropped from its material. */
+async function restoreTextures(model: Model) {
+  for (const mt of model.materials) {
+    if (mt.texture && !textures.has(mt.texture)) {
+      const url = await idbGet<string>(texKey(mt.texture)).catch(() => undefined)
+      if (url) await textures.load(url, mt.texture).catch(() => {})
+      const bundle = await idbGet<Record<string, string>>(layersKey(mt.texture)).catch(() => undefined)
+      if (bundle && textures.has(mt.texture)) await textures.loadAll(bundle)
+      if (!textures.has(mt.texture)) mt.texture = null
     }
-  } catch { /* corrupt autosave: start fresh */ }
-  return false
-}
-let saveTimer = 0, texTimer = 0
-const written = new Map<string, number>()
-export function startAutosave() {
-  written.clear()
-  textures.ids().forEach(id => written.set(id, textures.entryVersion(id)))
-  const saveTextures = () => {
-    const m = useStore.getState().model
-    for (const id of usedTextures(m)) {
-      if (written.get(id) === textures.entryVersion(id)) continue
-      const url = textures.toDataURL(id)
-      if (url) { written.set(id, textures.entryVersion(id)); idbSet(texKey(id), url).catch(() => {}) }
-      const bundle = textures.layerBundle(id)
-      if (bundle) idbSet(layersKey(id), bundle).catch(() => {})
-      else idbDel(layersKey(id)).catch(() => {})
+    for (const s of MAP_SLOTS) {
+      const id = mt[s.k]
+      if (!id || textures.has(id)) continue
+      const url = await idbGet<string>(texKey(id)).catch(() => undefined)
+      if (url) await textures.load(url, id).catch(() => {})
+      if (!textures.has(id)) delete mt[s.k]
     }
   }
-  textures.onChange(() => { clearTimeout(texTimer); texTimer = window.setTimeout(saveTextures, 800) })
-  useStore.subscribe((s, p) => {
-    if (s.version === p.version && s.panes === p.panes && s.layout === p.layout) return
-    clearTimeout(saveTimer)
-    saveTimer = window.setTimeout(() => {
-      const st = useStore.getState()
-      idbSet(KEY, { ...st.model, __panes: st.panes, __layout: st.layout }).catch(() => {})
-      saveTextures()
-    }, 600)
+}
+
+/** One-time: turn the old single-copy autosave into the first snapshot (only removed once that is stored). */
+async function adoptLegacy() {
+  const raw = await idbGet<Record<string, unknown>>(LEGACY_KEY)
+  if (!raw || typeof raw !== 'object') return
+  try {
+    const legacyTex = raw.version === undefined ? await idbGet<string>(LEGACY_TEX_KEY) : undefined
+    const { model, textures: texData } = parseProject(legacyTex ? { ...raw, texture: legacyTex } : raw)
+    for (const [id, url] of Object.entries(texData)) await idbSet(texKey(id), url)
+    if (Array.isArray(raw.__panes) && raw.__panes.length === 4) await idbSet(PANES_KEY, { panes: raw.__panes, layout: raw.__layout ?? '4' })
+    await backups.saveText(JSON.stringify(projectFile(model, {})), model.props?.name ?? '', modelStats(model))
+  } catch { /* unreadable legacy autosave: nothing to adopt */ }
+  await idbDel(LEGACY_KEY).catch(() => {})
+  await idbDel(LEGACY_TEX_KEY).catch(() => {})
+}
+
+/**
+ * Start-up: if there are backups, ask before restoring (time + objects/points/faces), offering older ones too.
+ * A damaged backup is reported and the next older one is offered; the loop is bounded by the number of backups.
+ * Resolves true when a backup was restored.
+ */
+export async function restoreAutosave(): Promise<boolean> {
+  await adoptLegacy().catch(() => {})
+  const list = await backups.list()
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i], more = i + 1 < list.length
+    const r = await ask({
+      title: i === 0 ? 'Restore your last session?' : `Restore an older backup? (${i + 1} of ${list.length})`,
+      message: `Backup ${describeSnapshot(s)}`,
+      cancel: 'fresh',
+      buttons: [
+        { label: 'Start fresh', value: 'fresh' },
+        ...(more ? [{ label: 'Older…', value: 'older' }] : []),
+        { label: 'Restore', value: 'restore', primary: true },
+      ],
+    })
+    if (r.value === 'older') continue
+    if (r.value !== 'restore') return false
+    try {
+      await openProjectText(async () => {
+        const text = await idbGet<string>(snapKey(s.id))
+        if (typeof text !== 'string') throw new ProjectError('This backup is missing')
+        return text
+      }, undefined, restoreTextures)
+      const ui = await idbGet<{ panes?: unknown; layout?: unknown }>(PANES_KEY).catch(() => undefined)
+      if (ui && Array.isArray(ui.panes) && ui.panes.length === 4) useStore.setState({ panes: ui.panes as never, layout: (ui.layout as never) ?? '4' })
+      useStore.getState().notify(`Restored the backup from ${ago(Date.now() - s.time)}`)
+      return true
+    } catch (e) {
+      useStore.getState().notify(`That backup could not be opened (${(e as Error)?.message ?? e})${more ? '; choose an older one' : ''}`)
+    }
+  }
+  return false
+}
+
+/** How long after an edit a backup is written, and the most an edit can wait while edits keep coming. */
+export const BACKUP_DELAY_MS = 1500
+export const BACKUP_MAX_WAIT_MS = 10000
+
+/**
+ * Watch the store and write rolling backups. Returns a dispose function that removes every subscription, timer
+ * and listener it added. Backups only start after the first change following start-up (opening the app and
+ * looking around does not push a snapshot).
+ */
+export function startAutosave(): () => void {
+  const written = new Map<string, number>()
+  textures.ids().forEach(id => written.set(id, textures.entryVersion(id)))
+  const saveTextures = async () => {
+    const m = useStore.getState().model
+    for (const id of usedTextures(m)) {
+      const v = textures.entryVersion(id)
+      if (written.get(id) === v) continue
+      const url = textures.toDataURL(id)
+      if (!url) continue
+      await idbSet(texKey(id), url)
+      const bundle = textures.layerBundle(id)
+      if (bundle) await idbSet(layersKey(id), bundle)
+      else await idbDel(layersKey(id))
+      written.set(id, v)
+    }
+  }
+  let warned = false
+  const auto = new AutoBackup(async () => {
+    const st = useStore.getState()
+    await saveTextures() // images first, so a snapshot never points at an image that was not stored
+    await backups.save(st.model)
+  }, BACKUP_DELAY_MS, undefined, (state, err) => {
+    // say so once per session (e.g. private browsing without IndexedDB, or storage full); retries stay bounded
+    if (state !== 'error' || warned) return
+    warned = true
+    useStore.getState().notify(`Backups are not being saved in this browser (${(err as Error)?.message ?? err}). Use File → Save to keep your work.`)
+  }, BACKUP_MAX_WAIT_MS)
+  let uiTimer = 0
+  const offTex = textures.onChange(() => auto.changed())
+  const offStore = useStore.subscribe((s, p) => {
+    if (s.version !== p.version) auto.changed()
+    if (s.panes !== p.panes || s.layout !== p.layout) {
+      clearTimeout(uiTimer)
+      uiTimer = window.setTimeout(() => { const st = useStore.getState(); idbSet(PANES_KEY, { panes: st.panes, layout: st.layout }).catch(() => {}) }, 600)
+    }
   })
-  idbDel(LEGACY_TEX_KEY).catch(() => {})
+  const onHide = () => { if (document.visibilityState === 'hidden') void auto.flush() }
+  document.addEventListener('visibilitychange', onHide)
+  window.addEventListener('pagehide', onHide)
+  return () => {
+    offTex(); offStore(); auto.dispose(); clearTimeout(uiTimer)
+    document.removeEventListener('visibilitychange', onHide)
+    window.removeEventListener('pagehide', onHide)
+  }
 }

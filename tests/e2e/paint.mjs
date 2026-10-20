@@ -206,8 +206,9 @@ await p.screenshot({ path: '/workspace/shot-paint.png' })
 {
   const hash = await S(t => window.__polyformPaint.hash(t), tex)
   const painted = await S(t => window.__polyformPaint.count(t, '#e05050'), tex)
-  await p.waitForTimeout(1600) // autosave debounce (model 600 ms, images 800 ms)
+  await p.waitForTimeout(3000) // rolling backup debounce (1.5 s) + write
   await p.reload()
+  await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
   await p.waitForFunction(() => window.__polyform && window.__polyformPaint && window.__polyform.getState().model.faces.length === 6, null, { timeout: 10000 }).catch(() => {})
   await p.waitForTimeout(300)
   const tex2 = await S(() => window.__polyform.getState().model.materials[0].texture)

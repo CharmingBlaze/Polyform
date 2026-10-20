@@ -55,6 +55,7 @@ let side2 = 0
   check('…and narrowing is clamped (≥ 140)', side2 >= 140 && side2 < side1, `${side1} → ${side2}`)
 }
 await p.reload(); await boot()
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 check('sidebar widths persist', Math.abs((await p.locator('[data-testid="tool-rail"]').boundingBox()).width - rail1) < 2 && Math.abs((await p.locator('.right-col').boundingBox()).width - side2) < 2)
 
 // collapse to icons by hand, expand from an icon
@@ -69,12 +70,14 @@ check('…and expands again', await p.locator('[data-testid="outliner"]').isVisi
 
 // narrow window: both start as icons automatically; still no overflow
 await S(() => { localStorage.removeItem('polyform.ui.v1') }); await p.setViewportSize({ width: 1100, height: 700 }); await p.reload(); await boot()
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 check('narrow window (1100 px): both sidebars are icon strips', (await p.locator('[data-testid="tool-rail"]').getAttribute('data-collapsed')) === 'true' && (await p.locator('.right-col').getAttribute('data-collapsed')) === 'true')
 const bad = await overflow()
 check('narrow window: no overflow', bad.length === 0, bad.join(', '))
 
 await S(() => localStorage.removeItem('polyform.ui.v1'))
 await p.setViewportSize({ width: 1366, height: 768 }); await p.reload(); await boot()
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 await S(() => window.__polyform.getState().openSample('character')); await frame()
 await p.click('[data-testid="ws-animate"]'); await frame()
 if (process.env.SHOT_1366) await p.screenshot({ path: process.env.SHOT_1366 })

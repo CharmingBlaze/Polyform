@@ -49,6 +49,7 @@ check('double-click again → last height', Math.abs(hb2 - hMax) < 4, `${hb2} vs
 
 // persisted
 await p.reload(); await boot()
+await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt
 await S(() => window.__polyform.getState().openSample('character')); await frame()
 const hr = (await p.locator('[data-testid="timeline"]').boundingBox()).height
 check('height persists across reloads', Math.abs(hr - hMax) < 4, `${hr} vs ${hMax}`)
