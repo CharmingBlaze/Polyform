@@ -175,9 +175,17 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       const n = 8, cs = side / n
       for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { g.fillStyle = (i + j) % 2 ? '#2a2f3a' : '#3a4150'; g.fillRect(x + i * cs, y + j * cs, cs + 0.5, cs + 0.5) }
     }
-    g.globalAlpha = 0.15
-    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) if (tx || ty) drawImg(originX + tx * side, originY + ty * side)
-    g.globalAlpha = 1
+    // neighbour tiles show what UVs outside 0..1 sample: repeated, mirrored, or nothing (clamp)
+    const wrap = useStore.getState().model.materials[shownMat]?.wrap ?? 'repeat'
+    if (wrap !== 'clamp') {
+      g.globalAlpha = 0.15
+      for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) {
+        if (!tx && !ty) continue
+        const x = originX + tx * side, y = originY + ty * side
+        if (wrap === 'mirror' && (tx || ty)) { g.save(); g.translate(x + side / 2, y + side / 2); g.scale(tx ? -1 : 1, ty ? -1 : 1); drawImg(-side / 2, -side / 2); g.restore() } else drawImg(x, y)
+      }
+      g.globalAlpha = 1
+    }
     drawImg(originX, originY)
     // pixel grid at high zoom
     const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0

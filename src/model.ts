@@ -96,8 +96,11 @@ export interface Material {
   texture: string | null
   /** Image filtering; nearest (crisp pixels) when absent. Exported as the glTF sampler. */
   filter?: TexFilter
+  /** How UVs outside 0..1 sample the image; repeat when absent. Exported as the glTF sampler wrap. */
+  wrap?: TexWrap
 }
 export type TexFilter = 'nearest' | 'linear'
+export type TexWrap = 'repeat' | 'clamp' | 'mirror'
 export interface Bone { name: string; parent: number; pos: Vec3 }
 export type Ease = 'linear' | 'step' | 'easeIn' | 'easeOut' | 'easeInOut'
 export interface Key { rot: Vec3; pos: Vec3; /** Easing of the segment from this key to the next. */ ease?: Ease }
@@ -346,6 +349,7 @@ export function validateModel(m: Model) {
     if (!num(mt.roughness, 0, 1) || !num(mt.metalness, 0, 1)) throw new Error(`Material ${i} has invalid roughness/metalness`)
     if (mt.texture !== null && !(typeof mt.texture === 'string' && TEX_ID.test(mt.texture))) throw new Error(`Material ${i} has an invalid texture id`)
     if (mt.filter !== undefined && mt.filter !== 'nearest' && mt.filter !== 'linear') throw new Error(`Material ${i} has an invalid filter`)
+    if (mt.wrap !== undefined && mt.wrap !== 'repeat' && mt.wrap !== 'clamp' && mt.wrap !== 'mirror') throw new Error(`Material ${i} has an invalid wrap`)
   })
   m.groups.forEach((g, i) => {
     if (!g || typeof g.name !== 'string' || typeof g.visible !== 'boolean') throw new Error(`Group ${i} is invalid`)

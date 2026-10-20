@@ -3,7 +3,7 @@ import { octaBone } from './bonesviz'
 import { useStore, type Shading, type ViewType } from './store'
 import { posedJoints, posedVerts } from './anim'
 import { cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
-import { applyFilter, textures } from './textures'
+import { applyFilter, applyWrap, textures } from './textures'
 import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
@@ -269,7 +269,7 @@ class SceneManager {
     Object.values(this.meshes).forEach(dispose)
     const make = (flat: boolean, tex: boolean) => mats.map((mt, mi) => {
       const own = tex && !weightMode ? textures.three(mt.texture) : null
-      if (own) applyFilter(own, mt.filter)
+      if (own) { applyFilter(own, mt.filter); applyWrap(own, mt.wrap) }
       // the UV checker previews unmapped materials, but would hide vertex colours; weight paint hides maps so the heat map reads
       const map = tex && !weightMode ? own ?? (st.showTexture && !vcm.has(mi) ? this.checker : null) : null
       const alpha = !!(own && textures.hasAlpha(mt.texture))

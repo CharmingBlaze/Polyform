@@ -55,3 +55,20 @@ describe('vertex colours', () => {
     expect(fwd.faces[2].vc).toEqual(Array(4).fill('#123456'))
   })
 })
+
+describe('material wrap (UV-9)', () => {
+  it('repeat / clamp / mirror validate; anything else is rejected; absent = repeat', () => {
+    for (const w of ['repeat', 'clamp', 'mirror', undefined] as const) { const m = emptyModel(); if (w) m.materials[0].wrap = w; expect(() => validateModel(m)).not.toThrow() }
+    const bad = emptyModel(); (bad.materials[0] as { wrap?: string }).wrap = 'tile'
+    expect(() => validateModel(bad)).toThrow(/wrap/)
+  })
+  it('applyWrap sets the three.js wrap modes the glTF exporter writes (10497 / 33071 / 33648)', async () => {
+    const THREE = await import('three')
+    const { applyWrap } = await import('../src/textures')
+    const t = new THREE.Texture()
+    expect(applyWrap(t, 'clamp').wrapS).toBe(THREE.ClampToEdgeWrapping)
+    expect(THREE.ClampToEdgeWrapping).toBe(1001)
+    expect(applyWrap(t, 'mirror').wrapT).toBe(THREE.MirroredRepeatWrapping)
+    expect(applyWrap(t, undefined).wrapS).toBe(THREE.RepeatWrapping)
+  })
+})

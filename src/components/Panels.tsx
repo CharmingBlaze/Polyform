@@ -371,6 +371,8 @@ function Images() {
             <span className="meta" data-testid={`img-uses-${i}`}>{uses(i)} f</span>
             <button className="mini-toggle" data-testid={`img-filter-${i}`} title={mt.filter === 'linear' ? 'Linear filtering (smooth). Click for nearest (crisp pixels)' : 'Nearest filtering (crisp pixels). Click for linear (smooth)'}
               onClick={e => { e.stopPropagation(); st.setImageFilter(i, mt.filter === 'linear' ? 'nearest' : 'linear') }}>{mt.filter === 'linear' ? 'Smooth' : 'Pixel'}</button>
+            <button className="mini-toggle" data-testid={`img-wrap-${i}`} title={`Outside 0–1 the image ${mt.wrap === 'clamp' ? 'stretches its edge pixels (clamp)' : mt.wrap === 'mirror' ? 'repeats mirrored' : 'repeats'}. Click to cycle Repeat → Clamp → Mirror (exported as the glTF sampler)`}
+              onClick={e => { e.stopPropagation(); st.setImageWrap(i, mt.wrap === 'clamp' ? 'mirror' : mt.wrap === 'mirror' ? 'repeat' : 'clamp') }}>{mt.wrap === 'clamp' ? 'Clamp' : mt.wrap === 'mirror' ? 'Mirror' : 'Repeat'}</button>
             <button className="icon-btn" data-testid={`img-remove-${i}`} title="Remove from the library (faces fall back to the default material; Ctrl+Z restores)" onClick={e => { e.stopPropagation(); st.removeImage(i) }}><Trash2 size={13} /></button>
           </div>
         )

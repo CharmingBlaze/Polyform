@@ -255,6 +255,8 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   await p.screenshot({ path: '/workspace/shot-images.png' })
   await p.click(`[data-testid="img-filter-${Bm}"]`); await frame()
   check('filter toggle: blue becomes linear (undoable model change)', (await S(n => window.__polyform.getState().model.materials[n].filter, Bm)) === 'linear' && (await p.textContent(`[data-testid="img-filter-${Bm}"]`)) === 'Smooth')
+  await p.click(`[data-testid="img-wrap-${Bm}"]`); await frame()
+  check('wrap toggle: blue becomes Clamp (undoable model change)', (await S(n => window.__polyform.getState().model.materials[n].wrap, Bm)) === 'clamp' && (await p.textContent(`[data-testid="img-wrap-${Bm}"]`)) === 'Clamp')
   // export (give the blue image's material a red base colour: it must not tint the image)
   await S(n => window.__polyform.getState().edit(m => { m.materials[n].color = '#ff0000' }, 'tint'), Bm)
   const [dl] = await Promise.all([p.waitForEvent('download'), p.keyboard.press('Control+e')])
@@ -278,6 +280,9 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   function sizeOfPrim(pr) { return sizeOf(gltf.images[gltf.textures[texOf(pr)].source]) }
   const samp = pr => { const t = gltf.textures[texOf(pr)]; const sm = gltf.samplers?.[t.sampler] ?? {}; return [sm.magFilter, sm.minFilter] }
   const byImg = Object.fromEntries(prims.map(pr => [sizeOfPrim(pr), samp(pr)]))
+  const wrapOf = pr => { const t = gltf.textures[texOf(pr)]; const sm = gltf.samplers?.[t.sampler] ?? {}; return [sm.wrapS ?? 10497, sm.wrapT ?? 10497] }
+  const wraps = Object.fromEntries(prims.map(pr => [sizeOfPrim(pr), wrapOf(pr)]))
+  check('export: samplers carry the wrap (8×8 repeat 10497, 16×8 clamp 33071)', JSON.stringify(wraps['8x8']) === '[10497,10497]' && JSON.stringify(wraps['16x8']) === '[33071,33071]', JSON.stringify(wraps))
   check('export: samplers carry the filtering (8×8 nearest, 16×8 linear)', JSON.stringify(byImg['8x8']) === '[9728,9984]' && JSON.stringify(byImg['16x8']) === '[9729,9987]', JSON.stringify(byImg))
   check('re-import: the two embedded images are the 16×8 and 8×8 files', JSON.stringify(sizes) === '["16x8","8x8"]', JSON.stringify(sizes))
   check('export: primitive triangle counts 8 (red) + 4 (blue)', JSON.stringify(prims.map(pr => gltf.accessors[pr.indices].count / 3).sort()) === '[4,8]', JSON.stringify(prims.map(pr => pr.indices !== undefined && gltf.accessors[pr.indices].count)))

@@ -8,6 +8,13 @@ export function applyFilter(tex: THREE.Texture, filter: 'nearest' | 'linear' | u
   return tex
 }
 
+/** Set a texture's wrap mode (glTF sampler wrapS / wrapT): repeat, clamp to edge or mirrored repeat. */
+export function applyWrap(tex: THREE.Texture, wrap: 'repeat' | 'clamp' | 'mirror' | undefined) {
+  const w = wrap === 'clamp' ? THREE.ClampToEdgeWrapping : wrap === 'mirror' ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping
+  if (tex.wrapS !== w || tex.wrapT !== w) { tex.wrapS = tex.wrapT = w; tex.needsUpdate = true }
+  return tex
+}
+
 /** A rectangle of pixels saved for undo/redo of a paint stroke. */
 export interface TexPatch { id: string; x: number; y: number; data: ImageData }
 

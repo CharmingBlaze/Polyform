@@ -41,6 +41,10 @@ export async function gltfToModel(gltf: GLTF, name = 'Imported'): Promise<Model>
           c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
           nm.texture = await textures.loadBlob(await new Promise<Blob>((res, rej) => c.toBlob(b => b ? res(b) : rej(), 'image/png')))
         } catch { /* keep untextured */ }
+        // sampler: filtering and wrap round-trip
+        if (std.map.magFilter === THREE.LinearFilter) nm.filter = 'linear'
+        if (std.map.wrapS === THREE.ClampToEdgeWrapping) nm.wrap = 'clamp'
+        else if (std.map.wrapS === THREE.MirroredRepeatWrapping) nm.wrap = 'mirror'
       }
       m.materials.push(nm)
       matMap.set(mt, i)
