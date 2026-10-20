@@ -26,7 +26,7 @@ import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
 export const WORKSPACES: Workspace[] = ['model', 'uv', 'paint', 'rig', 'animate', 'export']
 export type RailTab = 'Create' | 'Modify' | 'Multiply' | 'Construct' | 'Map' | 'Paint' | 'Setup' | 'Animate' | 'Export'
-export type SideTab = 'scene' | 'joints' | 'uv'
+export type SideTab = 'scene' | 'joints' | 'uv' | 'uvtools'
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
 export type EditMode = 'vertex' | 'edge' | 'face'
 export type SelectMode = 'object' | EditMode | 'joint'
@@ -109,7 +109,6 @@ interface State {
   /** UV workspace: 3D view left, UV editor right */
   uvSpace: boolean
   /** width of the 3D side, 0..1 */
-  uvSplit: number
   /** one side of the UV workspace maximized */
   uvMax: '3d' | 'uv' | null
   setUVSpace: (on: boolean) => void
@@ -352,7 +351,6 @@ export const useStore = create<State>((set, get) => ({
   maximized: null,
   uvSpace: false,
   uvSel: null,
-  uvSplit: 0.5,
   uvMax: null,
   setUVSpace: on => {
     const s = get()
@@ -380,7 +378,7 @@ export const useStore = create<State>((set, get) => ({
   setWorkspace: w => {
     const s = get()
     const RAIL: Record<Workspace, RailTab> = { model: 'Create', uv: 'Map', paint: 'Paint', rig: 'Setup', animate: 'Animate', export: 'Export' }
-    const SIDE: Record<Workspace, SideTab> = { model: 'scene', uv: 'uv', paint: 'uv', rig: 'joints', animate: 'joints', export: 'scene' }
+    const SIDE: Record<Workspace, SideTab> = { model: 'scene', uv: 'uvtools', paint: 'uv', rig: 'joints', animate: 'joints', export: 'scene' }
     const was = s.workspace
     s.setMode(w === 'animate' ? 'animate' : 'model')
     s.setUVSpace(w === 'uv')

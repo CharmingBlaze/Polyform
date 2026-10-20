@@ -17,7 +17,9 @@ export function useWinW() {
 export function useSides() {
   const winW = useWinW()
   const ui = useStore(s => s.ui)
-  const leftCollapsed = ui.leftCollapsed ?? winW < NARROW_W
+  const uvSpace = useStore(s => s.uvSpace)
+  // the UV workspace keeps its own rail setting (icons by default: the UV editor needs the room)
+  const leftCollapsed = uvSpace ? ui.uvLeftCollapsed : ui.leftCollapsed ?? winW < NARROW_W
   const rightCollapsed = ui.rightCollapsed ?? winW < NARROW_W
   return {
     leftCollapsed, rightCollapsed,
@@ -43,6 +45,12 @@ export function sideHandle(side: 'left' | 'right', collapsed: boolean) {
       const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up) }
       el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up)
     },
-    onDoubleClick: () => useStore.getState().setUI(side === 'left' ? { leftCollapsed: !collapsed } : { rightCollapsed: !collapsed }),
+    onDoubleClick: () => (side === 'left' ? setLeftCollapsed(!collapsed) : useStore.getState().setUI({ rightCollapsed: !collapsed })),
   }
+}
+
+/** Collapse / expand the tool rail; in the UV workspace that is its own setting. */
+export function setLeftCollapsed(on: boolean) {
+  const s = useStore.getState()
+  s.setUI(s.uvSpace ? { uvLeftCollapsed: on } : { leftCollapsed: on })
 }

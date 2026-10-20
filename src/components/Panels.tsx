@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Wrench } from 'lucide-react'
 import { useStore, type SideTab, type Workspace } from '../store'
 import { faceMat } from '../model'
 import { textures } from '../textures'
@@ -8,6 +8,7 @@ import { UVEditor } from './UVEditor'
 import { Outliner } from './Outliner'
 import { DopeSheet } from './DopeSheet'
 import { RefsPanel } from './RefsPanel'
+import { setHost } from '../portalhost'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 
@@ -17,23 +18,25 @@ export function Sidebar() {
   const mode = useStore(s => s.mode)
   const uvSpace = useStore(s => s.uvSpace)
   useEffect(() => { const s = useStore.getState(); if (mode === 'animate' && s.sideTab === 'scene' && s.model.bones.length) setTab('joints') }, [mode])
-  useEffect(() => { if (uvSpace) setTab('uv') }, [uvSpace])
+  useEffect(() => { if (uvSpace) setTab('uvtools'); else if (useStore.getState().sideTab === 'uvtools') setTab(useStore.getState().workspace === 'paint' ? 'uv' : 'scene') }, [uvSpace])
   const workspace = useStore(s => s.workspace)
   const tool = useStore(s => s.tool)
-  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [])
-  const tabs = SIDE_ORDER.filter(t => want.includes(t) || t === tab)
+  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [], uvSpace ? ['uvtools'] : [])
+  const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
   return (
     <aside className="sidebar">
       <div className={`tabs n${tabs.length}`}>
         <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Icons only" onClick={() => useStore.getState().setUI({ rightCollapsed: true })}><ChevronsRight size={14} /></button>
         {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" onClick={() => setTab('scene')}><Layers size={14} /> Outliner</button>}
         {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" onClick={() => setTab('joints')}><Bone size={14} /> Joints</button>}
+        {tabs.includes('uvtools') && <button className={tab === 'uvtools' ? 'on' : ''} data-testid="side-uvtools" onClick={() => setTab('uvtools')}><Wrench size={14} /> UV Tools</button>}
         {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>}
       </div>
       <div className="tab-body">
         {tab === 'scene' && <><Outliner />{workspace === 'model' && <RefsFold />}</>}
         {tab === 'joints' && <Joints />}
         {tab === 'uv' && <UVSide />}
+        {tab === 'uvtools' && <div className="uv-tools" data-testid="uv-tools" ref={el => setHost('uv-tools', el)} />}
       </div>
     </aside>
   )
@@ -60,10 +63,11 @@ export function SideIcons() {
   const tab = useStore(s => s.sideTab)
   const workspace = useStore(s => s.workspace)
   const tool = useStore(s => s.tool)
-  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [])
-  const tabs = SIDE_ORDER.filter(t => want.includes(t) || t === tab)
-  const ICON = { scene: Layers, joints: Bone, uv: Image } as const
-  const LABEL = { scene: 'Outliner', joints: 'Joints', uv: 'Images' } as const
+  const uvSpace = useStore(s => s.uvSpace)
+  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [], uvSpace ? ['uvtools'] : [])
+  const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
+  const ICON = { scene: Layers, joints: Bone, uv: Image, uvtools: Wrench } as const
+  const LABEL = { scene: 'Outliner', joints: 'Joints', uv: 'Images', uvtools: 'UV Tools' } as const
   const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); useStore.getState().setUI({ rightCollapsed: false }) }
   return (
     <aside className="side-icons" data-testid="side-icons">
@@ -74,7 +78,7 @@ export function SideIcons() {
 }
 
 /** Sidebar sections relevant per workspace: the Outliner always, Images for UV/Paint, Joints for Rig/Animate (the active one always stays). */
-const SIDE_ORDER: SideTab[] = ['scene', 'joints', 'uv']
+const SIDE_ORDER: SideTab[] = ['scene', 'joints', 'uvtools', 'uv']
 const SIDE_TABS: Record<Workspace, SideTab[]> = { model: ['scene'], uv: ['scene', 'uv'], paint: ['scene', 'uv'], rig: ['scene', 'joints'], animate: ['scene', 'joints'], export: ['scene'] }
 
 function Joints() {

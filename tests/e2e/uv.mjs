@@ -24,14 +24,22 @@ const reset = () => S(() => {
 const area = a => { let s = 0; for (let i = 0; i < a.length; i++) { const p = a[i], q = a[(i + 1) % a.length]; s += p[0] * q[1] - q[0] * p[1] } return s / 2 }
 /** the UV action buttons live on tabs (Project / Adjust / Seams) */
 const UV_TAB = { proj: 'project', auto: 'project', flip: 'adjust', fit: 'adjust', pack: 'adjust', snap: 'adjust', palette: 'adjust', island: 'adjust', seam: 'seams', pin: 'seams', unpin: 'seams', stitch: 'seams' }
-const uvBtn = async id => { await p.click(`[data-testid="uv-tab-${UV_TAB[id.split('-')[0]]}"]`); await p.click(`[data-testid="uv-${id}"]`) }
+/** UV tool groups: collapsible folds in the UV Tools tab of the right sidebar (tabs in the small editor) */
+const openGroup = async tab => {
+  const side = p.locator('[data-testid="side-uvtools"]')
+  if (await side.count() && !((await side.getAttribute('class')) || '').includes('on')) await side.click()
+  const el = p.locator(`[data-testid="uv-tab-${tab}"]`)
+  if ((await el.getAttribute('aria-expanded')) !== 'true') await el.click()
+}
+const showImages = async () => { const t = p.locator('[data-testid="side-uv"]'); if (await t.count() && !((await t.getAttribute('class')) || '').includes('on')) await t.click() }
+const uvBtn = async id => { await openGroup(UV_TAB[id.split('-')[0]]); await p.click(`[data-testid="uv-${id}"]`) }
 const faces = () => S(() => window.__polyform.getState().model.faces.map(f => f.uv))
 
 // 1. Auto UV
 await reset()
 await S(() => { const s = window.__polyform.getState(); s.edit(m => m.faces.forEach(f => (f.uv = f.uv.map(() => [0, 0]))), 'zero UVs') })
 await p.click('[data-testid="ws-uv"]')
-await p.click('[data-testid="auto-uv"]')
+await openGroup('project'); await p.click('[data-testid="uv-auto"]') // Auto UV lives in the UV Tools panel (the rail is icons here)
 await p.waitForFunction(() => window.__polyform.getState().model.faces.every(f => f.uv.some(u => u[0] || u[1])), null, { timeout: 15000 }).catch(() => {})
 {
   const uv = await faces()
@@ -57,22 +65,29 @@ const rect = sel => p.locator(sel).boundingBox()
 {
   await S(() => window.__polyform.getState().selectNone())
   const work = await rect('.work'), views = await rect('[data-testid="views"]'), uvp = await rect('[data-testid="uv-pane"]')
-  check('UV tab opens a vertical split: 3D left, UV editor right', uvp && views.x < uvp.x && Math.abs(views.width - uvp.width) < 30 && Math.abs(views.height - uvp.height) < 2, JSON.stringify({ views, uvp }))
+  check('UV tab opens a vertical split: 3D preview left (~1/3), UV editor right (~2/3)', uvp && views.x < uvp.x && Math.abs(views.width / (work.width - 10) - 0.32) < 0.03 && uvp.width > work.width * 0.64 && Math.abs(views.height - uvp.height) < 2, JSON.stringify({ views, uvp }))
+  check('the tool rail is icons in the UV workspace', (await p.getAttribute('[data-testid="tool-rail"]', 'data-collapsed')) === 'true')
+  check('UV tools sit in the right sidebar (UV Tools tab), not under the canvas', await p.isVisible('[data-testid="uv-tools"] [data-testid="uv-auto"]') && !(await p.locator('[data-testid="uv-pane"] .uv-actions').count()))
   const shown = await S(() => [0, 1, 2, 3].filter(i => { const r = document.querySelector(`[data-testid="pane-${i}"]`).getBoundingClientRect(); return r.width > 0 && getComputedStyle(document.querySelector(`[data-testid="pane-${i}"]`)).display !== 'none' }))
   check('the 3D side shows one perspective view', JSON.stringify(shown) === '[1]', JSON.stringify(shown))
   const dv = await rect('[data-testid="uv-divider"]')
   await p.mouse.move(dv.x + dv.width / 2, dv.y + 20); await p.mouse.down(); await p.mouse.move(work.x + work.width * 0.7, dv.y + 20, { steps: 4 }); await p.mouse.up(); await frame()
   const v2 = await rect('[data-testid="views"]')
-  check('dragging the divider resizes the split (70%)', Math.abs(v2.width / (work.width - 14) - 0.7) < 0.03, (v2.width / work.width).toFixed(3))
+  check('dragging the divider resizes the split (70%)', Math.abs(v2.width / (work.width - 10) - 0.7) < 0.03, (v2.width / work.width).toFixed(3))
+  check('the split is saved in the UI prefs', Math.abs((await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvView3D)) - 0.7) < 0.03)
   await p.click('[data-testid="uv-max-uv"]'); await frame()
   const v3 = await rect('[data-testid="views"]'), u3 = await rect('[data-testid="uv-pane"]')
   check('maximize UV: the editor takes the whole width', (!v3 || v3.width < 2) && u3.width > work.width - 30, JSON.stringify({ v3, u3 }))
   await p.click('[data-testid="uv-max-uv"]'); await p.click('[data-testid="uv-max-3d"]'); await frame()
   const v4 = await rect('[data-testid="views"]')
   check('maximize 3D: the view takes the whole width', v4.width > work.width - 30, JSON.stringify(v4))
-  await p.click('[data-testid="uv-max-3d"]'); await p.dblclick('[data-testid="uv-divider"]', { position: { x: 7, y: 5 } }); await frame()
+  await p.click('[data-testid="uv-max-3d"]'); await p.dblclick('[data-testid="uv-divider"]', { position: { x: 5, y: 5 } }); await frame()
   const v5 = await rect('[data-testid="views"]')
-  check('double-click on the divider resets to 50%', Math.abs(v5.width / (work.width - 14) - 0.5) < 0.03, (v5.width / work.width).toFixed(3))
+  check('double-click on the divider resets the 3D preview to ~1/3', Math.abs(v5.width / (work.width - 10) - 0.32) < 0.03, (v5.width / work.width).toFixed(3))
+  await p.click('[data-testid="uv-swap"]'); await frame()
+  const v6 = await rect('[data-testid="views"]'), u6 = await rect('[data-testid="uv-pane"]')
+  check('Swap: UV editor left, 3D preview right, same sizes', u6.x < v6.x && Math.abs(v6.width - v5.width) < 3, JSON.stringify({ v6, u6 }))
+  await p.click('[data-testid="uv-swap"]'); await frame()
   await p.click('[data-testid="ws-model"]'); await frame()
   check('leaving the Map tab closes the UV workspace and restores the views', !(await p.locator('[data-testid="uv-pane"]').count()) && (await S(() => window.__polyform.getState().maximized)) === null)
   await p.click('[data-testid="ws-uv"]'); await frame()
@@ -225,6 +240,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 2, 2); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
   const red = Buffer.from(await png(8, 8, '#e04040'), 'base64'), blue = Buffer.from(await png(16, 8, '#4060e0'), 'base64')
   const mats0 = await S(() => window.__polyform.getState().model.materials.length)
+  await showImages()
   await p.setInputFiles('[data-testid="img-add"]', [{ name: 'red.png', mimeType: 'image/png', buffer: red }, { name: 'blue.png', mimeType: 'image/png', buffer: blue }])
   await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n + 2, mats0, { timeout: 5000 }).catch(() => {})
   const A = mats0, Bm = mats0 + 1

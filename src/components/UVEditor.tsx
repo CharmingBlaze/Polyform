@@ -1,6 +1,9 @@
 import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, ChevronRight } from 'lucide-react'
+import { useHost } from '../portalhost'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { interaction, setHoverFace } from '../interaction'
@@ -21,6 +24,8 @@ type Drag = any
 /** copied face UVs (Copy / Paste UVs), shared by every UV editor */
 let uvClip: U.UVClip | null = null
 
+type ToolGroup = 'project' | 'adjust' | 'align' | 'seams'
+const TOOL_GROUPS: [ToolGroup, string][] = [['project', 'Project'], ['adjust', 'Adjust'], ['align', 'Align'], ['seams', 'Seams & pins']]
 type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean } | 'sep'
 /** right-click menu of the UV editor: same look as the menu bar; Esc / outside press closes; arrows + Enter work */
 function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuItem[]; close: () => void }) {
@@ -112,11 +117,15 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [units, setUnits] = useState<'px' | '01'>('px')
   const [packOpen, setPackOpen] = useState(false)
   const packPrefs = useStore(s => s.ui.uvPack)
-  const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
+  const [tab, setTab] = useState<ToolGroup>('project')
+  const toolsHost = useHost('uv-tools')
+  const toolsOpen = useStore(s => s.ui.uvToolsOpen)
   /** right-click menu: canvas-local px */
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const brushEl = useRef<HTMLDivElement>(null)
   const [imgMenu, setImgMenu] = useState<{ x: number; y: number } | null>(null)
+  const [uvMenu, setUVMenu] = useState<{ x: number; y: number } | null>(null)
+  const [viewMenu, setViewMenu] = useState<{ x: number; y: number } | null>(null)
   const [imgDlg, setImgDlg] = useState<'new' | 'resize' | null>(null)
   const paintTexSize = useStore(s => s.paint.texSize)
   const version = useStore(s => s.version)
@@ -936,80 +945,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     <button data-testid={`uv-${id}`} className={on ? 'on' : ''} title={tip ?? label} onClick={onClick}>{label}</button>
   )
 
-  return (
-    <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
-      <div className="uv-toolbar">
-        <div className="seg" data-testid="uv-sync" title="Selection sync. UV: pick this island's copy of a point or edge (seams stay apart). 3D: picking takes the mesh point in every island">
-          {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
-        </div>
-        <select data-testid="uv-snap" value={snapSetting} title={`Snap while dragging to the image's pixel grid${tw ? '' : ' (when an image is shown)'} · Ctrl inverts · Shift = 4× finer`} onChange={e => useStore.getState().setUI({ uvSnap: +e.target.value as 0 | 1 | 2 | 4 })}>
-          <option value={0}>Snap off</option><option value={1}>Snap: pixel</option><option value={2}>Snap: ½ px</option><option value={4}>Snap: ¼ px</option>
-        </select>
-        <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
-          {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
-        </select>
-        <button data-testid="uv-image-menu" className={imgMenu ? 'on' : ''} title="Image: New (blank or UV template), Resize, Flip, Rotate" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setImgMenu(imgMenu ? null : { x: r.left, y: r.bottom + 2 }) }}>Image ▾</button>
-        <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share (faces marked Shared UVs are left out). Unused: pixels no face uses. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
-          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option><option value="unused">Unused pixels</option>
-        </select>
-        {globalTool === 'paint' && <B id="paint-uvs" label="UVs" on={paintUVs} tip="Show the UV wireframe over the image while painting" onClick={() => useStore.getState().setUI({ paintUVs: !paintUVs })} />}
-        <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
-      </div>
-      <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
-      <div className="uv-canvas" ref={wrap}>
-        <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
-          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => { showBrush(-1, -1); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }} />
-        <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
-        {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
-          {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
-        </div>}
-        {heat === 'unused' && <div className="uv-overlay-info" data-testid="uv-unused-info" title="Magenta: painted pixels no face uses · dark: empty unused pixels">
-          {!tw ? <span>Show an image first</span> : <><span className={unused?.n ? 'bad' : ''}>{unused?.n ? `${unused.n} unused painted px` : 'No unused paint'}</span><button className="small" data-testid="uv-unused-clear" disabled={!unused?.n} title="Make every pixel no face uses transparent (Ctrl+Z undoes)" onClick={() => useStore.getState().imageClearUnused(shownMat)}>Clear unused</button></>}
-        </div>}
-        {heat === 'density' && <div className="uv-overlay-info" data-testid="uv-density-legend" title="Face colour: px per unit against the project's texel density (File → Properties)">
-          <span className="uv-legend" /><span>target {model.props.texelDensity} px/u{densNow ? ` · selection ${densNow} px/u` : ''}</span>
-          <button className="small" data-testid="uv-density-equalize" title="Scale the selected islands (or all) to the target" onClick={setDensity}>Equalize</button>
-        </div>}
-        <button className="uv-zoom ghost small" data-testid="uv-zoom" title="Zoom · click: show all (Home) · F frames the selection" onClick={() => frameSel(true)}>{Math.round(view.zoom * 100)}%</button>
-        {imgMenu && <UVMenu x={imgMenu.x} y={imgMenu.y} close={() => setImgMenu(null)} items={[
-          { id: 'img-new', label: 'New…', run: () => setImgDlg('new') },
-          { id: 'img-resize', label: 'Resize…', enabled: !!tw, run: () => setImgDlg('resize') },
-          'sep',
-          { id: 'img-flip-h', label: 'Flip horizontally', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipH') },
-          { id: 'img-flip-v', label: 'Flip vertically', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipV') },
-          { id: 'img-rot-cw', label: 'Rotate 90° CW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCW') },
-          { id: 'img-rot-ccw', label: 'Rotate 90° CCW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCCW') },
-        ]} />}
-        {imgDlg === 'new' && <NewImageDialog close={() => setImgDlg(null)} />}
-        {imgDlg === 'resize' && <ResizeImageDialog mat={shownMat} close={() => setImgDlg(null)} />}
-        {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={[
-          { id: 'rot-cw', label: 'Rotate 90° CW', keys: 'Shift+R', run: () => rotOp('cw') },
-          { id: 'rot-ccw', label: 'Rotate 90° CCW', keys: 'Shift+Alt+R', run: () => rotOp('ccw') },
-          { id: 'rot-180', label: 'Rotate 180°', run: () => rotOp('180') },
-          { id: 'flip-u', label: 'Flip horizontal', run: () => op('UV flip', U.flipU) },
-          { id: 'flip-v', label: 'Flip vertical', run: () => op('UV flip', U.flipV) },
-          'sep',
-          { id: 'maximize', label: 'Maximize', run: () => op('UV maximize', U.maximize) },
-          { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, ctx.x, ctx.y) },
-          { id: 'straighten', label: 'Straighten', run: straighten },
-          { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(ctx.x, ctx.y) },
-          (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
-          { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
-          'sep',
-          { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },
-          { id: 'paste', label: 'Paste UVs', keys: 'Ctrl+V', run: pasteUVs, enabled: !!uvClip },
-          'sep',
-          { id: 'island', label: 'Select island', keys: 'L', run: () => selectIsland(pickAt(ctx.x, ctx.y)) },
-          { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
-        ]} />}
-        {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}${U.isPow2(tw) && U.isPow2(th) ? '' : ' (not a power of two)'}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
-      </div>
-      <div className="uv-actions">
-        <div className="seg uv-tabs" role="tablist">
-          {(['project', 'adjust', 'align', 'seams'] as const).map(t => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
-        </div>
-        {tab === 'project' && <div className="btn-row">
+  // tool groups: tabs under the canvas in the small (sidebar) editor; collapsible folds in the UV Tools panel of
+  // the right sidebar in the UV workspace (portalled, so the handlers stay here)
+  const groups: Record<ToolGroup, React.ReactNode> = {
+    project: <div className="btn-row">
           <B id="auto" label="Auto UV" tip="Unwrap the selected faces (or all) with xatlas; with an image, packed at the texel density" onClick={() => { void useStore.getState().autoUV() }} />
           <B id="auto-px" label="Auto px" tip="Pixel-true: every flat face group laid out straight at the texel density (File → Properties), on whole pixels" onClick={autoPx} />
           <B id="proj-cross" label="Box cross" tip="Box layout (Minecraft cross): top and bottom above, the four sides in a strip, sized by the texel density" onClick={boxCross} />
@@ -1020,8 +959,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="proj-box" label="Box" tip="Per face along its main axis, stacked (fitted into 0–1)" onClick={() => project('box')} />
           <B id="proj-cyl" label="Cylinder" tip="Wrap around the vertical axis; caps go flat into the top strip" onClick={() => project('cyl')} />
           <B id="proj-sphere" label="Sphere" tip="Longitude / latitude about the selection's centre" onClick={() => project('sphere')} />
-        </div>}
-        {tab === 'adjust' && <div className="btn-row">
+        </div>,
+    adjust: <><div className="btn-row">
           <B id="flip-u" label="Flip H" onClick={() => op('UV flip', U.flipU)} />
           <B id="flip-v" label="Flip V" onClick={() => op('UV flip', U.flipV)} />
           <B id="rot-180" label="180°" tip="Rotate 180° (⟲ / ⟳ 90° are next to the numbers)" onClick={() => rotOp('180')} />
@@ -1035,15 +974,15 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="snap" label="Snap px" tip="Snap the selected UVs to the image's pixel grid" onClick={() => op('UV snap', (m, ids) => U.snapPixels(m, ids, tw || paintTexSize, th || paintTexSize))} />
           <B id="palette-snap" label="Palette" tip="Snap selected faces to the paint-colour swatch on this image (low-poly palette workflow)" onClick={() => useStore.getState().snapToPalette()} />
           <B id="island" label="Island (L)" tip="Select the whole UV island of the selected faces" onClick={() => selectIsland(null)} />
-        </div>}
-        {tab === 'adjust' && packOpen && <div className="btn-row uv-packopts" data-testid="uv-pack-options">
+        </div>
+      {packOpen && <div className="btn-row uv-packopts" data-testid="uv-pack-options">
           <label title="Gap between islands, in image pixels">Gap <input data-testid="uv-pack-pad" type="number" min={0} max={64} value={packPrefs.pad} onChange={e => setPack({ pad: Math.max(0, Math.min(64, Math.round(+e.target.value || 0))) })} /> px</label>
           <label title="Island sizes and positions on whole pixels"><input type="checkbox" data-testid="uv-pack-align" checked={packPrefs.align} onChange={e => setPack({ align: e.target.checked })} /> Pixels</label>
           <label title="Turn tall islands 90° for a tighter fit"><input type="checkbox" data-testid="uv-pack-rotate" checked={packPrefs.rotate} onChange={e => setPack({ rotate: e.target.checked })} /> Rotate</label>
           <label title="Pack at the project's texel density; refuse instead of shrinking"><input type="checkbox" data-testid="uv-pack-keep" checked={packPrefs.keep} onChange={e => setPack({ keep: e.target.checked })} /> Keep density</label>
           <select data-testid="uv-pack-into" value={packPrefs.into} title="Pack into the whole image or the selection's current box" onChange={e => setPack({ into: e.target.value as 'image' | 'sel' })}><option value="image">Into image</option><option value="sel">Into selection box</option></select>
-        </div>}
-        {tab === 'align' && <div className="btn-row">
+        </div>}</>,
+    align: <div className="btn-row">
           <B id="align-left" label="⇤" tip="Align left: line the selected UV points up on the left edge" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'min'))} />
           <B id="align-cu" label="↔" tip="Align centre: on the vertical centre line" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'mid'))} />
           <B id="align-right" label="⇥" tip="Align right" onClick={() => op('UV align', (m, ids) => U.align(m, ids, 'u', 'max'))} />
@@ -1054,16 +993,116 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="dist-v" label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
           <B id="straighten" label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
           <B id="merge" label="Merge" tip="Weld the selected UV points at their centre · Alt+M (Shift+Alt+M: onto the point nearest the cursor)" onClick={() => merge(false, 0, 0)} />
-        </div>}
-        {tab === 'seams' && <div className="btn-row">
+        </div>,
+    seams: <div className="btn-row">
           <B id="seam-mark" label="Mark seam" tip="Selected edges (or the outline of the selected faces) become seams: Auto UV cuts there" onClick={() => useStore.getState().markSeams(true)} />
           <B id="seam-clear" label="Clear seam" onClick={() => useStore.getState().markSeams(false)} />
           <B id="pin" label="Pin" tip="Pinned UVs stay put during projections and Auto UV" onClick={() => useStore.getState().pinUVs(true)} />
           <B id="unpin" label="Unpin" onClick={() => useStore.getState().pinUVs(false)} />
           <B id="stitch" label="Stitch" tip="Join the UV islands of the selected faces (or both sides of the selected edges) along their shared edges" onClick={() => useStore.getState().stitchUVs()} />
           {!big && <label className="btn">Load image…<input type="file" accept=".png,.jpg,.jpeg,.webp" hidden onChange={e => e.target.files?.[0] && loadTexture(e.target.files[0])} /></label>}
-        </div>}
+        </div>,
+  }
+  /** UV operations: the right-click menu (at the pointer) and the toolbar's UV ▾ menu (at the canvas centre) */
+  const opsItems = (cx: number, cy: number): UVMenuItem[] => [
+          { id: 'rot-cw', label: 'Rotate 90° CW', keys: 'Shift+R', run: () => rotOp('cw') },
+          { id: 'rot-ccw', label: 'Rotate 90° CCW', keys: 'Shift+Alt+R', run: () => rotOp('ccw') },
+          { id: 'rot-180', label: 'Rotate 180°', run: () => rotOp('180') },
+          { id: 'flip-u', label: 'Flip horizontal', run: () => op('UV flip', U.flipU) },
+          { id: 'flip-v', label: 'Flip vertical', run: () => op('UV flip', U.flipV) },
+          'sep',
+          { id: 'maximize', label: 'Maximize', run: () => op('UV maximize', U.maximize) },
+          { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, cx, cy) },
+          { id: 'straighten', label: 'Straighten', run: straighten },
+          { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(cx, cy) },
+          (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
+          { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },
+          'sep',
+          { id: 'copy', label: 'Copy UVs', keys: 'Ctrl+C', run: copyUVs },
+          { id: 'paste', label: 'Paste UVs', keys: 'Ctrl+V', run: pasteUVs, enabled: !!uvClip },
+          'sep',
+          { id: 'island', label: 'Select island', keys: 'L', run: () => selectIsland(pickAt(cx, cy)) },
+          { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
+  ]
+  const ck = (on: boolean, label: string) => (on ? `✓ ${label}` : label)
+  /** View ▾: checker, snapping, units and the 3D preview side */
+  const viewItems = (): UVMenuItem[] => [
+    { id: 'checker', label: ck(checker, 'Checker instead of the image'), run: () => setChecker(c => !c) },
+    'sep',
+    ...([[0, 'Snap off'], [1, 'Snap to pixels'], [2, 'Snap to ½ px'], [4, 'Snap to ¼ px']] as const).map(([n, l]) => ({ id: `snap-${n}`, label: ck(snapSetting === n, l), run: () => useStore.getState().setUI({ uvSnap: n }) })),
+    'sep',
+    { id: 'units', label: units === 'px' ? 'Numbers in 0–1 UV units' : 'Numbers in pixels', run: () => setUnits(units === 'px' ? '01' : 'px') },
+    { id: 'show-all', label: 'Show all', keys: 'Home', run: () => frameSel(true) },
+    { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
+    ...(big ? ['sep' as const, { id: 'swap', label: '3D preview on the other side', run: () => useStore.getState().setUI({ uvSwap: !useStore.getState().ui.uvSwap }) }] : []),
+  ]
+  const menuAt = (e: React.MouseEvent, open: unknown, set: (v: { x: number; y: number } | null) => void) => { const r = e.currentTarget.getBoundingClientRect(); setImgMenu(null); setUVMenu(null); setViewMenu(null); set(open ? null : { x: r.left, y: r.bottom + 2 }) }
+
+  return (
+    <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
+      <div className="uv-toolbar">
+        <div className="seg" data-testid="uv-sync" title="Selection sync. UV: pick this island's copy of a point or edge (seams stay apart). 3D: picking takes the mesh point in every island">
+          {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
+        </div>
+        <select data-testid="uv-image" className="uv-pick" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
+          {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
+        </select>
+        <button data-testid="uv-image-menu" className={imgMenu ? 'on' : ''} title="Image: New (blank or UV template), Resize, Flip, Rotate" onClick={e => menuAt(e, imgMenu, setImgMenu)}>Image ▾</button>
+        <button data-testid="uv-uv-menu" className={uvMenu ? 'on' : ''} title="UV: rotate, flip, merge, straighten, copy / paste… (also on right-click)" onClick={e => menuAt(e, uvMenu, setUVMenu)}>UV ▾</button>
+        <button data-testid="uv-view-menu" className={viewMenu ? 'on' : ''} title={`View: checker, snapping (now ${snapSetting ? `1/${snapSetting} px` : 'off'}), units`} onClick={e => menuAt(e, viewMenu, setViewMenu)}>View ▾</button>
+        <select data-testid="uv-stretch" className="uv-pick" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share (faces marked Shared UVs are left out). Unused: pixels no face uses. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option><option value="unused">Unused pixels</option>
+        </select>
+        {globalTool === 'paint' && <B id="paint-uvs" label="UVs" on={paintUVs} tip="Show the UV wireframe over the image while painting" onClick={() => useStore.getState().setUI({ paintUVs: !paintUVs })} />}
+        {checker && <B id="checker" label="Checker" on tip="Checker shown instead of the image: click to show the image" onClick={() => setChecker(false)} />}
       </div>
+      <div className="uv-canvas" ref={wrap}>
+        <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => { showBrush(-1, -1); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }} />
+        <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
+        <div className="uv-topleft">
+        <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
+        {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
+          {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
+        </div>}
+        {heat === 'unused' && <div className="uv-overlay-info" data-testid="uv-unused-info" title="Magenta: painted pixels no face uses · dark: empty unused pixels">
+          {!tw ? <span>Show an image first</span> : <><span className={unused?.n ? 'bad' : ''}>{unused?.n ? `${unused.n} unused painted px` : 'No unused paint'}</span><button className="small" data-testid="uv-unused-clear" disabled={!unused?.n} title="Make every pixel no face uses transparent (Ctrl+Z undoes)" onClick={() => useStore.getState().imageClearUnused(shownMat)}>Clear unused</button></>}
+        </div>}
+        {heat === 'density' && <div className="uv-overlay-info" data-testid="uv-density-legend" title="Face colour: px per unit against the project's texel density (File → Properties)">
+          <span className="uv-legend" /><span>target {model.props.texelDensity} px/u{densNow ? ` · selection ${densNow} px/u` : ''}</span>
+          <button className="small" data-testid="uv-density-equalize" title="Scale the selected islands (or all) to the target" onClick={setDensity}>Equalize</button>
+        </div>}
+        </div>
+        <button className="uv-zoom ghost small" data-testid="uv-zoom" title="Zoom · click: show all (Home) · F frames the selection" onClick={() => frameSel(true)}>{Math.round(view.zoom * 100)}%</button>
+        {imgMenu && <UVMenu x={imgMenu.x} y={imgMenu.y} close={() => setImgMenu(null)} items={[
+          { id: 'img-new', label: 'New…', run: () => setImgDlg('new') },
+          { id: 'img-resize', label: 'Resize…', enabled: !!tw, run: () => setImgDlg('resize') },
+          'sep',
+          { id: 'img-flip-h', label: 'Flip horizontally', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipH') },
+          { id: 'img-flip-v', label: 'Flip vertically', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'flipV') },
+          { id: 'img-rot-cw', label: 'Rotate 90° CW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCW') },
+          { id: 'img-rot-ccw', label: 'Rotate 90° CCW', enabled: !!tw, run: () => useStore.getState().imageTransform(shownMat, 'rotCCW') },
+        ]} />}
+        {imgDlg === 'new' && <NewImageDialog close={() => setImgDlg(null)} />}
+        {imgDlg === 'resize' && <ResizeImageDialog mat={shownMat} close={() => setImgDlg(null)} />}
+        {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={opsItems(ctx.x, ctx.y)} />}
+        {uvMenu && <UVMenu x={uvMenu.x} y={uvMenu.y} close={() => setUVMenu(null)} items={opsItems(size.w / 2, size.h / 2)} />}
+        {viewMenu && <UVMenu x={viewMenu.x} y={viewMenu.y} close={() => setViewMenu(null)} items={viewItems()} />}
+        {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
+        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}${U.isPow2(tw) && U.isPow2(th) ? '' : ' (not a power of two)'}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
+      </div>
+      {!big && <div className="uv-actions">
+        <div className="seg uv-tabs" role="tablist">
+          {TOOL_GROUPS.map(([t, label]) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} data-testid={`uv-tab-${t}`} onClick={() => setTab(t)}>{label}</button>)}
+        </div>
+        {groups[tab]}
+      </div>}
+      {big && toolsHost && createPortal(<div className="uv-tools-body">
+        {TOOL_GROUPS.map(([t, label]) => { const open = toolsOpen.includes(t); return <section key={t} className={`uv-fold ${open ? 'open' : ''}`}>
+          <button className="uv-fold-head" role="tab" aria-expanded={open} aria-selected={open} data-testid={`uv-tab-${t}`} onClick={() => useStore.getState().setUI({ uvToolsOpen: open ? toolsOpen.filter(x => x !== t) : [...toolsOpen, t] })}>{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {label}</button>
+          {open && groups[t]}
+        </section> })}
+      </div>, toolsHost)}
     </div>
   )
 }
@@ -1099,6 +1138,7 @@ function UVNumeric({ tw, th, units, setUnits }: { tw: number; th: number; units:
   }
   const rot = (deg: number) => { if (b) useStore.getState().edit(m => U.rotateDeg(m, ids, deg), 'UV rotate') }
   const d = px ? 2 : 4, step = px ? 1 : 1 / tw
+  if (!b || !val) return null
   const tip = (what: string) => `${what} of the selection's box ${px ? `in pixels of the ${tw}×${th} image` : 'in UV units'} · Enter applies · wheel nudges (Shift finer)`
   return (
     <div className="uv-numbar" data-testid="uv-numeric">

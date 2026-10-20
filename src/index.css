@@ -56,7 +56,10 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .work { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; }
 .work > .views { min-width: 0; }
 .uv-divider { background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line); cursor: col-resize; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; user-select: none; }
-.uv-divider button { width: 12px; height: 28px; padding: 0; font-size: 10px; line-height: 1; border-radius: 3px; cursor: pointer; }
+.uv-divider button { width: 10px; height: 26px; padding: 0; font-size: 9px; line-height: 1; border-radius: 3px; cursor: pointer; }
+.work.swap > .views { order: 3; }
+.work.swap > .uv-divider { order: 2; }
+.work.swap > .uv-pane { order: 1; }
 .uv-pane { display: flex; min-width: 0; min-height: 0; background: var(--panel); overflow: hidden; }
 .uv-pane > .uv-editor { flex: 1; min-width: 0; }
 .uv-editor.big .uv-actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
@@ -106,10 +109,15 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .empty .eb { line-height: 1.5; font-size: 12.5px; }
 
 .uv-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.uv-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-.uv-toolbar select { max-width: 130px; }
-.uv-toolbar button { font-size: 12px; padding: 3px 8px; }
-.uv-canvas { flex: 1; min-height: 200px; position: relative; overflow: hidden; }
+.uv-toolbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; padding: 4px 6px; border-bottom: 1px solid var(--line); min-width: 0; overflow: hidden; }
+.uv-toolbar > * { flex: 0 0 auto; }
+.uv-toolbar select { max-width: 130px; font-size: 12px; padding: 2px 4px; }
+.uv-toolbar .uv-pick { flex: 0 1 auto; min-width: 64px; }
+.uv-toolbar button { font-size: 12px; padding: 3px 8px; white-space: nowrap; }
+.uv-toolbar .seg button { padding: 3px 7px; }
+.uv-canvas { flex: 1; min-height: 160px; position: relative; overflow: hidden; }
+.uv-topleft { position: absolute; top: 6px; left: 6px; right: 60px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; pointer-events: none; }
+.uv-topleft > * { pointer-events: auto; }
 .uv-canvas canvas { position: absolute; inset: 0; touch-action: none; }
 .uv-zoom { position: absolute; top: 6px; right: 6px; padding: 1px 6px; font-size: 11px; font-variant-numeric: tabular-nums; background: #0009; color: var(--dim); border-radius: 4px; }
 .uv-menu { min-width: 190px; outline: none; }
@@ -119,7 +127,7 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .uv-packopts { font-size: 11.5px; color: var(--dim); align-items: center; }
 .uv-packopts label { display: inline-flex; align-items: center; gap: 3px; }
 .uv-packopts input[type=number] { width: 42px; padding: 1px 3px; }
-.uv-overlay-info { position: absolute; top: 6px; left: 6px; display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; font-size: 11px; background: #000b; border-radius: 4px; color: var(--text); }
+.uv-overlay-info { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; font-size: 11px; background: #000b; border-radius: 4px; color: var(--text); }
 .uv-overlay-info .bad { color: #ff7a6a; }
 .uv-overlay-info button { padding: 1px 7px; font-size: 11px; }
 .uv-legend { width: 54px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, rgb(70,120,255), rgb(70,200,110), rgb(240,70,60)); }
@@ -432,7 +440,7 @@ button.danger { color: #ff9a9a; }
 @media (max-width: 600px) { .pp { grid-template-columns: 1fr; } }
 
 /* ---- UV numeric bar + action tabs ---- */
-.uv-numbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 6px; border-bottom: 1px solid var(--line); font-size: 11.5px; }
+.uv-numbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 6px; background: #000c; border-radius: 4px; font-size: 11.5px; max-width: 100%; }
 .uv-num { display: flex; align-items: center; gap: 3px; color: var(--dim); }
 .uv-num input { width: 36px; padding: 2px 3px; font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
 .uv-num input:disabled { opacity: .5; }
@@ -456,3 +464,13 @@ button.danger { color: #ff9a9a; }
 /* UV-13 brush outline in the UV editor: true texel size */
 .uv-brush { position: absolute; pointer-events: none; border: 1px solid rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6); box-sizing: border-box; }
 .uv-brush.round { border-radius: 50%; }
+
+/* UV Tools panel (right sidebar, UV workspace): collapsible groups */
+.uv-tools { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.uv-tools-body { padding: 4px 8px 10px; }
+.uv-fold { border-bottom: 1px solid var(--line); }
+.uv-fold-head { display: flex; align-items: center; gap: 4px; width: 100%; border: none; background: transparent; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; padding: 8px 2px 6px; cursor: pointer; text-align: left; }
+.uv-fold-head:hover, .uv-fold.open .uv-fold-head { color: var(--text); }
+.uv-fold .btn-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 0 8px; }
+.uv-fold .btn-row button { font-size: 12px; padding: 3px 8px; }
+.uv-fold .uv-packopts { gap: 8px; }

@@ -77,7 +77,16 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
 
 // helpers: a real PNG image on the box (through the Images panel), shown in the UV editor
 const png = (w, h, color) => S(([w, h, color]) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(0, 0, 1, 1); return c.toDataURL('image/png').split(',')[1] }, [w, h, color])
+/** UV tool groups: collapsible folds in the UV Tools tab of the right sidebar (tabs in the small editor) */
+const openGroup = async tab => {
+  const side = p.locator('[data-testid="side-uvtools"]')
+  if (await side.count() && !((await side.getAttribute('class')) || '').includes('on')) await side.click()
+  const el = p.locator(`[data-testid="uv-tab-${tab}"]`)
+  if ((await el.getAttribute('aria-expanded')) !== 'true') await el.click()
+}
+const showImages = async () => { const t = p.locator('[data-testid="side-uv"]'); if (await t.count() && !((await t.getAttribute('class')) || '').includes('on')) await t.click() }
 const addImage = async (w, h, name = 'tex') => {
+  await showImages()
   const n0 = await S(() => window.__polyform.getState().model.materials.length)
   await p.setInputFiles('[data-testid="img-add"]', [{ name: `${name}.png`, mimeType: 'image/png', buffer: Buffer.from(await png(w, h, '#6080c0'), 'base64') }])
   await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n + 1, n0, { timeout: 5000 })
@@ -95,7 +104,7 @@ const dragPx = async (from, dx, dy, mods = []) => { await p.mouse.move(from.x, f
 // ---- UV-3: snap to the image's pixel grid while dragging
 await addImage(16, 16)
 {
-  check('Snap defaults to Pixel', (await p.inputValue('[data-testid="uv-snap"]')) === '1')
+  check('Snap defaults to Pixel', (await S(() => window.__polyform.getState().ui.uvSnap)) === 1)
   await gridLayout(); await selFace(4)
   const before = (await uvs())[4]
   await dragPx(await uvC(...await centroid(4)), 37, -23)
@@ -107,18 +116,18 @@ await addImage(16, 16)
   const free = (await uvs())[4]
   check('Ctrl held: moves freely (by the mouse delta, off the grid)', close(free[0][0] - before[0][0], 37 / sd, 0.004) && !onGrid(free, 16), `${free[0][0] - before[0][0]} vs ${37 / sd}`)
   await p.keyboard.press('Control+z'); await frame()
-  await p.selectOption('[data-testid="uv-snap"]', '0')
+  await p.click('[data-testid="uv-view-menu"]'); await p.click('[data-testid="uvm-snap-0"]'); await frame()
   await dragPx(await uvC(...await centroid(4)), 37, 0)
   check('Snap off: free drag', !onGrid((await uvs())[4], 16))
   await p.keyboard.press('Control+z')
   check('snap setting persists in the UI prefs', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvSnap)) === 0)
-  await p.selectOption('[data-testid="uv-snap"]', '1'); await frame()
+  await p.click('[data-testid="uv-view-menu"]'); check('View ▾ shows the snap setting', ((await p.textContent('[data-testid="uvm-snap-0"]')) || '').startsWith('✓')); await p.click('[data-testid="uvm-snap-1"]'); await frame()
 }
 
 // ---- UV-4: selection frame with scale / rotate handles and a pivot
 const box = fi => S(fi => { const f = window.__polyform.getState().model.faces[fi]; const us = f.uv.map(q => q[0]), vs = f.uv.map(q => q[1]); return { minU: Math.min(...us), maxU: Math.max(...us), minV: Math.min(...vs), maxV: Math.max(...vs) } }, fi)
 const H = () => S(() => window.__polyformUV.handles())
-const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}"]`); await p.click(`[data-testid="uv-${id}"]`); await frame() }
+const uvBtnTab = async (tab, id) => { await openGroup(tab); await p.click(`[data-testid="uv-${id}"]`); await frame() }
 {
   await gridLayout(); await selFace(4); await frame()
   let h = await H()
@@ -249,9 +258,9 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('typing U = 0.5 moves the box', close((await box(4)).minU, 0.5))
   await p.locator('[data-testid="uv-num-x"]').blur()
   await p.click('[data-testid="uv-units"]'); await frame()
-  // nothing selected: disabled
+  // nothing selected: the numbers row is not shown (it only appears with a selection)
   await S(() => window.__polyform.getState().selectNone()); await frame()
-  check('no selection: the fields and ⟲ ⟳ are disabled', await p.isDisabled('[data-testid="uv-num-x"]') && await p.isDisabled('[data-testid="uv-rot-cw"]'))
+  check('no selection: no numbers row', (await p.locator('[data-testid="uv-numeric"]').count()) === 0)
   // screenshot: frame + handles + numeric panel
   await gridLayout(); await selFace(4); await frame()
   await p.mouse.move(640, 700); await frame()
@@ -346,7 +355,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await addImage(64, 64, 'tex64')
   // a 1×1×1 box: every face 1 unit²; density = sqrt(UV px² / 1)
   const dens = () => S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => { let a = 0; f.uv.forEach((q, i) => { const r = f.uv[(i + 1) % f.uv.length]; a += q[0] * r[1] - r[0] * q[1] }); return Math.sqrt(Math.abs(a / 2) * 64 * 64) }) })
-  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-auto"]')
+  await openGroup('project'); await p.click('[data-testid="uv-auto"]')
   await p.waitForFunction(() => /Auto UV: unwrapped/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {})
   await frame(200)
   let d = await dens()
@@ -359,12 +368,12 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.fill('[data-testid="props-density"]', '8'); await p.click('[data-testid="props-ok"]'); await frame()
   check('density saved in the scene props', (await S(() => window.__polyform.getState().model.props.texelDensity)) === 8)
   await S(() => window.__polyform.getState().selectNone())
-  await p.click('[data-testid="uv-auto"]'); await frame(1500)
+  await openGroup('project'); await p.click('[data-testid="uv-auto"]'); await frame(1500)
   d = await dens()
   check('Auto UV follows the new density (8 px per unit)', d.every(x => close(x, 8, 0.05)), JSON.stringify(d))
   // Set density on a selection
   await gridLayout(); await selFace(4); await frame()
-  await p.click('[data-testid="uv-tab-adjust"]'); await p.click('[data-testid="uv-density"]'); await frame()
+  await openGroup('adjust'); await p.click('[data-testid="uv-density"]'); await frame()
   d = await dens()
   check('Density scales the selected island to 8 px / unit; others untouched', close(d[4], 8, 1e-6) && close(d[3], 16, 1e-6), JSON.stringify(d))
   await p.keyboard.press('Control+z'); await frame()
@@ -378,7 +387,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'density 16'))
   const pxBoxes = (tw, th) => S(([tw, th]) => window.__polyform.getState().model.faces.map(f => { const us = f.uv.map(q => q[0] * tw), vs = f.uv.map(q => (1 - q[1]) * th); return { x0: Math.min(...us), x1: Math.max(...us), y0: Math.min(...vs), y1: Math.max(...vs) } }), [tw, th])
   const areas = () => S(() => window.__polyform.getState().model.faces.map(f => { let a = 0; f.uv.forEach((q, i) => { const r = f.uv[(i + 1) % f.uv.length]; a += q[0] * r[1] - r[0] * q[1] }); return a / 2 }))
-  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-auto-px"]'); await frame()
+  await openGroup('project'); await p.click('[data-testid="uv-auto-px"]'); await frame()
   let bx = await pxBoxes(64, 64)
   check('Auto px: every side of the 1×1×1 box is 16×16 px on whole pixels', bx.every(r => close(r.x1 - r.x0, 16, 1e-6) && close(r.y1 - r.y0, 16, 1e-6) && close(r.x0, Math.round(r.x0), 1e-6) && close(r.y0, Math.round(r.y0), 1e-6)), JSON.stringify(bx))
   check('Auto px: no two sides overlap', bx.every((a, i) => bx.every((b, j) => i === j || a.x1 <= b.x0 + 1e-6 || b.x1 <= a.x0 + 1e-6 || a.y1 <= b.y0 + 1e-6 || b.y1 <= a.y0 + 1e-6)))
@@ -388,7 +397,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   // Box cross on a 2×1×1 box, 128-px image
   await S(() => { const s = window.__polyform.getState(); s.edit(m => { m.verts = m.verts.map(([x, y, z]) => [x * 2, y, z]) }, 'wide'); s.selectNone() })
   await addImage(128, 128, 'px128')
-  await p.click('[data-testid="uv-proj-cross"]'); await frame()
+  await openGroup('project'); await p.click('[data-testid="uv-proj-cross"]'); await frame()
   bx = await pxBoxes(128, 128)
   const X0 = Math.min(...bx.map(r => r.x0)), X1 = Math.max(...bx.map(r => r.x1)), Y0 = Math.min(...bx.map(r => r.y0)), Y1 = Math.max(...bx.map(r => r.y1))
   check('Box cross: 2×1×1 at 16 px/unit is 96 × 32 px', close(X1 - X0, 96, 1e-6) && close(Y1 - Y0, 32, 1e-6), JSON.stringify([X0, X1, Y0, Y1]))
@@ -402,7 +411,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   const pb = await pane.boundingBox()
   await p.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2); await frame()
   const before = JSON.stringify(await uvs())
-  await p.click('[data-testid="uv-proj-view"]'); await frame()
+  await openGroup('project'); await p.click('[data-testid="uv-proj-view"]'); await frame()
   const after = await uvs()
   const flat = after.flat()
   check('From view: UVs change, fit inside 0..1 and touch both ends of the longer side', JSON.stringify(after) !== before && flat.every(([u, v]) => u >= -1e-9 && u <= 1 + 1e-9 && v >= -1e-9 && v <= 1 + 1e-9) && (close(Math.max(...flat.map(q => q[0])) - Math.min(...flat.map(q => q[0])), 1, 1e-6) || close(Math.max(...flat.map(q => q[1])) - Math.min(...flat.map(q => q[1])), 1, 1e-6)))
@@ -416,7 +425,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
   await addImage(64, 64, 'ov64')
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'density 16'))
-  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-proj-box"]'); await frame()
+  await openGroup('project'); await p.click('[data-testid="uv-proj-box"]'); await frame()
   await p.selectOption('[data-testid="uv-stretch"]', 'overlap'); await frame()
   const info = () => p.textContent('[data-testid="uv-overlap-info"]')
   check('Overlap: stacked box projection reports all 6 faces overlapping', /6 faces overlap \(\d+ px\)/.test(await info()), await info())
@@ -433,7 +442,7 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('a partial overlap: 2 faces', (await info()).startsWith('2 faces overlap (64 px)'), await info())
   await p.mouse.move(640, 700); await frame()
   await p.screenshot({ path: '/workspace/shot-uv-overlays.png' })
-  await p.click('[data-testid="uv-auto-px"]'); await frame()
+  await openGroup('project'); await p.click('[data-testid="uv-auto-px"]'); await frame()
   check('after Auto px: no overlaps', (await info()).includes('No overlaps'), await info())
   // density overlay
   await p.selectOption('[data-testid="uv-stretch"]', 'density'); await frame()
@@ -498,31 +507,31 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
   await addImage(64, 64, 'pk64')
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16; m.faces.forEach((f, i) => { const o = 0.1 + i * 0.05; f.uv = [[o, o], [o + 0.13, o], [o + 0.13, o + 0.13], [o, o + 0.13]] }) }, 'messy'))
-  await p.click('[data-testid="uv-tab-adjust"]'); await p.click('[data-testid="uv-pack-opts"]'); await frame()
+  await openGroup('adjust'); await p.click('[data-testid="uv-pack-opts"]'); await frame()
   check('Pack options row shows (gap 2 px, pixels on)', await p.isVisible('[data-testid="uv-pack-options"]') && (await p.inputValue('[data-testid="uv-pack-pad"]')) === '2' && await p.isChecked('[data-testid="uv-pack-align"]'))
-  await p.click('[data-testid="uv-pack"]'); await frame()
+  await openGroup('adjust'); await p.click('[data-testid="uv-pack"]'); await frame()
   const pb = await S(() => window.__polyform.getState().model.faces.map(f => { const us = f.uv.map(q => q[0] * 64), vs = f.uv.map(q => q[1] * 64); return [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)] }))
   const gapOk = pb.every((a, i) => pb.every((b, j) => i === j || Math.max(b[0] - a[1], a[0] - b[1], b[2] - a[3], a[2] - b[3]) >= 2 - 1e-6))
   check('Pack: whole-pixel origins and ≥ 2 px gaps', pb.every(b => close(b[0], Math.round(b[0])) && close(b[2], Math.round(b[2]))) && gapOk, JSON.stringify(pb))
   // keep density 16 on a 64 px image: 6 sides of 16 px fit
-  await p.check('[data-testid="uv-pack-keep"]'); await p.click('[data-testid="uv-pack"]'); await frame()
+  await p.check('[data-testid="uv-pack-keep"]'); await openGroup('adjust'); await p.click('[data-testid="uv-pack"]'); await frame()
   const sides = await S(() => window.__polyform.getState().model.faces.map(f => Math.round((Math.max(...f.uv.map(q => q[0])) - Math.min(...f.uv.map(q => q[0]))) * 64 * 1000) / 1000))
   check('Keep density: sides stay 16 px', sides.every(x => x === 16), JSON.stringify(sides))
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 100 }, 'too dense'))
   const before = JSON.stringify(await uvs()), hist = await S(() => window.__polyform.getState().histRev)
-  await p.click('[data-testid="uv-pack"]'); await frame()
+  await openGroup('adjust'); await p.click('[data-testid="uv-pack"]'); await frame()
   check('Keep density that does not fit: refused, nothing moves, no undo step', JSON.stringify(await uvs()) === before && (await S(() => window.__polyform.getState().histRev)) === hist)
   await p.uncheck('[data-testid="uv-pack-keep"]')
   // into the selection box
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'd16'))
   await gridLayout(); await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0, 1] }) }); await frame()
   const sb = await S(() => { const m = window.__polyform.getState().model, us = [0, 1].flatMap(i => m.faces[i].uv.map(q => q[0])), vs = [0, 1].flatMap(i => m.faces[i].uv.map(q => q[1])); return [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)] })
-  await p.selectOption('[data-testid="uv-pack-into"]', 'sel'); await p.click('[data-testid="uv-pack"]'); await frame()
+  await p.selectOption('[data-testid="uv-pack-into"]', 'sel'); await openGroup('adjust'); await p.click('[data-testid="uv-pack"]'); await frame()
   const inside = await S(b => { const m = window.__polyform.getState().model; return [0, 1].every(i => m.faces[i].uv.every(([u, v]) => u >= b[0] - 1e-9 && u <= b[1] + 1e-9 && v >= b[2] - 1e-9 && v <= b[3] + 1e-9)) }, sb)
   check('Into selection box: the islands stay inside it', inside)
   await p.selectOption('[data-testid="uv-pack-into"]', 'image')
   check('pack options persist in prefs', (await S(() => JSON.parse(localStorage.getItem('polyform.ui') || localStorage.getItem(Object.keys(localStorage).find(k => /ui|pref/i.test(k))) || '{}').uvPack?.pad)) === 2)
-  await p.click('[data-testid="uv-pack-opts"]')
+  await openGroup('adjust'); await p.click('[data-testid="uv-pack-opts"]')
 }
 
 // Ctrl+drag marquee in the UV editor (same rule as the 3D views): replace / +Shift add / +Alt remove; Ctrl+click toggles

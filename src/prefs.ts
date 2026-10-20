@@ -22,11 +22,21 @@ export interface UIPrefs {
   uvPack: { pad: number; align: boolean; rotate: boolean; keep: boolean; into: 'image' | 'sel' }
   /** Paint tool: draw the UV wireframe over the image in the UV editor */
   paintUVs: boolean
+  /** UV workspace: share of the width the 3D preview takes (the UV editor gets the rest) */
+  uvView3D: number
+  /** UV workspace: 3D preview on the right instead of the left */
+  uvSwap: boolean
+  /** UV workspace: the tool rail as icons (its own setting, so the other workspaces keep theirs) */
+  uvLeftCollapsed: boolean
+  /** UV Tools panel: which groups are open */
+  uvToolsOpen: string[]
 }
+export const UV_VIEW3D_DEFAULT = 0.32
+export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvLeftCollapsed: true, uvToolsOpen: ['project', 'adjust'] }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -54,6 +64,10 @@ export function loadPrefs(): UIPrefs {
       return { pad: typeof q.pad === 'number' && q.pad >= 0 && q.pad <= 64 ? Math.round(q.pad) : d.pad, align: bool(q.align, d.align), rotate: bool(q.rotate, d.rotate), keep: bool(q.keep, d.keep), into: q.into === 'sel' ? 'sel' as const : 'image' as const }
     })(),
       paintUVs: bool(p.paintUVs, DEFAULT_PREFS.paintUVs),
+      uvView3D: typeof p.uvView3D === 'number' && Number.isFinite(p.uvView3D) ? clampView3D(p.uvView3D) : UV_VIEW3D_DEFAULT,
+      uvSwap: p.uvSwap === true,
+      uvLeftCollapsed: bool(p.uvLeftCollapsed, true),
+      uvToolsOpen: Array.isArray(p.uvToolsOpen) ? p.uvToolsOpen.filter((x): x is string => typeof x === 'string').slice(0, 8) : [...DEFAULT_PREFS.uvToolsOpen],
     }
   } catch { return { ...DEFAULT_PREFS } }
 }

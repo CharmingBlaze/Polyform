@@ -60,7 +60,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
   const gridOn = panes.every(p => p.grid)
   // same rule as useSides(): explicit choice, else auto-collapsed on narrow windows
   const narrow = typeof window !== 'undefined' && window.innerWidth < NARROW_W
-  const leftC = ui.leftCollapsed ?? narrow, rightC = ui.rightCollapsed ?? narrow
+  const leftC = S().uvSpace ? ui.uvLeftCollapsed : ui.leftCollapsed ?? narrow, rightC = ui.rightCollapsed ?? narrow
   const layouts: [Layout, string][] = [['1', 'Single view'], ['2h', 'Two side by side'], ['2v', 'Two stacked'], ['3', 'Three views'], ['4', 'Four views']]
 
   const file: MenuEntry[] = [
@@ -98,7 +98,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
     { id: 'view.layout', label: 'Viewport Layout', sub: layouts.map(([l, label]) => ({ id: `view.layout.${l}`, label, radio: true, checked: layout === l, run: () => S().set({ layout: l, maximized: null }) })) },
     { id: 'view.gizmoSpace', label: 'Gizmo Axes', sub: (['global', 'local'] as const).map(g => ({ id: `view.gizmo.${g}`, label: g === 'global' ? 'Global (world)' : 'Local (object)', radio: true, checked: gizmoSpace === g, run: () => S().set({ gizmoSpace: g }) })) },
     'sep',
-    { id: 'view.toolPanel', label: 'Tool Panel', checked: !leftC, run: () => S().setUI({ leftCollapsed: !leftC }) },
+    { id: 'view.toolPanel', label: 'Tool Panel', checked: !leftC, run: () => S().setUI(S().uvSpace ? { uvLeftCollapsed: !leftC } : { leftCollapsed: !leftC }) },
     { id: 'view.sidePanel', label: 'Side Panel', checked: !rightC, run: () => S().setUI({ rightCollapsed: !rightC }) },
     { id: 'view.timeline', label: animate ? 'Timeline' : 'Timeline (Animate)', checked: !ui.timelineHidden, run: () => S().setUI({ timelineHidden: !ui.timelineHidden }) },
     { id: 'view.grid', label: 'Grid', checked: gridOn, run: () => S().set({ panes: S().panes.map(p => ({ ...p, grid: !gridOn })) }) },

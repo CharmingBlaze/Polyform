@@ -1,7 +1,7 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
-import { sideHandle, useSides } from '../useLayout'
+import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { OPS, opById } from '../ops'
@@ -64,16 +64,16 @@ export function ToolRail() {
   const { leftCollapsed } = useSides()
   if (leftCollapsed) return (
     <aside className="rail collapsed" data-testid="tool-rail" data-collapsed="true">
-      <button className="icon-btn" data-testid="rail-expand" title="Show the tool panel" onClick={() => useStore.getState().setUI({ leftCollapsed: false })}><ChevronsRight size={16} /></button>
+      <button className="icon-btn" data-testid="rail-expand" title="Show the tool panel" onClick={() => setLeftCollapsed(false)}><ChevronsRight size={16} /></button>
       {tabs.map(t => { const I = TAB_ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`railicon-${TAB_ID[t]}`} title={t}
-        onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map'); useStore.getState().setUI({ leftCollapsed: false }) }}><I size={16} /></button> })}
+        onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map'); setLeftCollapsed(false) }}><I size={16} /></button> })}
     </aside>
   )
   const ops = (t: string) => OPS.filter(o => o.tab === t && !o.id.startsWith('prim.')).map(o => <CmdBtn key={o.id} cmd={`op.${o.id}`} testid={`op-${o.id}`} />)
   return (
     <aside className="rail" data-testid="tool-rail">
       <div className="side-handle right" data-testid="rail-handle" {...sideHandle('left', false)} />
-      <button className="icon-btn collapse-btn" data-testid="rail-collapse" title="Icons only" onClick={() => useStore.getState().setUI({ leftCollapsed: true })}><ChevronsLeft size={14} /></button>
+      <button className="icon-btn collapse-btn" data-testid="rail-collapse" title="Icons only" onClick={() => setLeftCollapsed(true)}><ChevronsLeft size={14} /></button>
       <div className={`tabs n${tabs.length}`}>
         {tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>
