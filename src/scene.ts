@@ -5,7 +5,7 @@ import { posedJoints, posedVerts } from './anim'
 import { alphaOf, cornerColor, cornerNormals, edgeEnds, faceMat, vcMaterials, triangulate, type Face, type Vec3 } from './model'
 import { applyFilter, applyWrap, textures } from './textures'
 import { threeMaps } from './pbrmaps'
-import { usesAlpha } from './alphause'
+import { alphaMaterialOpts, usesAlpha } from './alphause'
 import type { RefImage } from './model'
 import { ensureSkin, weightOf } from './skin'
 import { seamSet } from './uvops'
@@ -298,7 +298,7 @@ class SceneManager {
       const a = alphaOf(mt, !!own && alphaKey[mi] === '1'), alpha = a.blend
       const common = {
         color: own || vcm.has(mi) ? '#ffffff' : mt.color, vertexColors: true, map, side: THREE.DoubleSide,
-        transparent: alpha, depthWrite: !alpha, opacity: mt.opacity ?? 1, alphaTest: a.mask ? Math.max(0.001, mt.alphaCutoff ?? 0.5) : 0,
+        opacity: mt.opacity ?? 1, ...alphaMaterialOpts(alpha, a.mask ? mt.alphaCutoff ?? 0.5 : null),
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
       }
       // the Materials tab's look shows in every view: unlit (flat), emissive glow, opacity / alpha, normal map

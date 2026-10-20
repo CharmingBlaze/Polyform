@@ -28,3 +28,13 @@ export function usesAlpha(m: Model, mat: number, rev: number | null): boolean {
   if (rev !== null) cache.set(key, found)
   return found
 }
+
+/**
+ * Material flags for alpha. Blended materials still write depth: with depthWrite off, back faces drawn after
+ * front faces painted over them, so solid models looked hollow / inside-out. Masked materials cut at their
+ * cutoff; blended ones discard only fully clear texels so cutouts still show what is behind them.
+ */
+export function alphaMaterialOpts(blend: boolean, maskCutoff: number | null = null) {
+  const alphaTest = maskCutoff !== null ? Math.max(0.001, maskCutoff) : blend ? 0.02 : 0
+  return { transparent: blend, depthWrite: true, alphaTest }
+}
