@@ -1,6 +1,6 @@
 import { textures } from '../textures'
 import { importImage } from '../io'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../store'
 import { interaction } from '../interaction'
@@ -105,7 +105,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 })
   const [size, setSize] = useState({ w: 300, h: 300 })
   const [checker, setChecker] = useState(false)
-  const [heat, setHeat] = useState<'off' | U.StretchKind>('off')
+  const [heat, setHeat] = useState<'off' | U.StretchKind | 'overlap' | 'density'>('off')
   const [units, setUnits] = useState<'px' | '01'>('px')
   const [tab, setTab] = useState<'project' | 'adjust' | 'align' | 'seams'>('project')
   /** right-click menu: canvas-local px */
@@ -135,6 +135,18 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const texImg = texId && !checker ? textures.canvas(texId) : null
   const [, force] = useState(0)
   const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
+  /** faces drawn on the shown image (others use another image: their overlaps don't matter here) */
+  const imageFaces = () => { const all = uvFaces(); return texId ? all.filter(fi => faceMat(model, model.faces[fi]) === shownMat) : all }
+  // overlap overlay: coverage at image resolution, cached per model revision / image
+  const cov = useMemo(() => {
+    if (heat !== 'overlap') return null
+    const w = tw || paintTexSize, h = th || paintTexSize, c = U.coverage(model, imageFaces(), w, h)
+    const cnv = document.createElement('canvas'); cnv.width = w; cnv.height = h
+    const g = cnv.getContext('2d')!, img = g.createImageData(w, h)
+    for (let i = 0; i < c.count.length; i++) if (c.count[i] >= 2) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 40; img.data[i * 4 + 2] = 40; img.data[i * 4 + 3] = 190 }
+    g.putImageData(img, 0, 0)
+    return { c, cnv }
+  }, [heat, version, model, tw, th, paintTexSize, shownMat]) // eslint-disable-line react-hooks/exhaustive-deps
   const drag = useRef<Drag>(null)
   /** user-moved rotation pivot (UV); cleared when the selection changes */
   const pivot = useRef<Vec2 | null>(null)
@@ -201,15 +213,18 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const st = useStore.getState()
     const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
     g.lineWidth = 1.2
-    const heatVals = heat !== 'off' ? U.stretch(m, faces, heat) : null
+    const heatVals = heat === 'area' || heat === 'angle' ? U.stretch(m, faces, heat) : null
+    const target = m.props.texelDensity, densVals = heat === 'density' ? U.texelDensity(m, faces, tw || paintTexSize, th || paintTexSize) : null
+    const overSet = cov ? new Set(cov.c.overlapping) : null
     faces.forEach((fi, k) => {
       const f = m.faces[fi]
       const p = f.uv.map(toPx)
       g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
       const on = st.selFaces.has(fi) && (faceMode || f.uv.every((_, i) => sel.has(fi * 1024 + i)))
-      g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
-      g.strokeStyle = on ? '#ffa04a' : '#7fb0ff'; g.stroke()
+      g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : densVals ? U.densityColor(densVals[k], target) : on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
+      g.strokeStyle = on ? '#ffa04a' : overSet?.has(fi) ? '#ff5050' : '#7fb0ff'; g.stroke()
     })
+    if (cov) { const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false; g.drawImage(cov.cnv, originX, originY, side, side); g.imageSmoothingEnabled = sm }
     // selected edges
     g.strokeStyle = '#ffa04a'; g.lineWidth = 2.2; g.beginPath()
     for (const fi of faces) {
@@ -772,8 +787,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <select data-testid="uv-image" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
           {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
         </select>
-        <select data-testid="uv-stretch" title="Overlay: stretch heatmap (blue = true to the 3D shape, red = distorted)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
-          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option>
+        <select data-testid="uv-stretch" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option>
         </select>
         <B id="checker" label="Checker" on={checker} tip="Show a checker instead of the image" onClick={() => setChecker(c => !c)} />
       </div>
@@ -781,6 +796,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
+        {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
+          {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
+        </div>}
+        {heat === 'density' && <div className="uv-overlay-info" data-testid="uv-density-legend" title="Face colour: px per unit against the project's texel density (File → Properties)">
+          <span className="uv-legend" /><span>target {model.props.texelDensity} px/u{densNow ? ` · selection ${densNow} px/u` : ''}</span>
+          <button className="small" data-testid="uv-density-equalize" title="Scale the selected islands (or all) to the target" onClick={setDensity}>Equalize</button>
+        </div>}
         <button className="uv-zoom ghost small" data-testid="uv-zoom" title="Zoom · click: show all (Home) · F frames the selection" onClick={() => frameSel(true)}>{Math.round(view.zoom * 100)}%</button>
         {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={[
           { id: 'rot-cw', label: 'Rotate 90° CW', keys: 'Shift+R', run: () => rotOp('cw') },

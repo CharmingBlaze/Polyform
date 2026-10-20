@@ -411,6 +411,45 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   check('From view: faces turned to the camera keep a positive UV area', front.some(x => x) && front.every((f, i) => !f || ar[i] > 0), JSON.stringify([front, ar]))
 }
 
+// UV-10: overlap and texel-density overlays
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(64, 64, 'ov64')
+  await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'density 16'))
+  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-proj-box"]'); await frame()
+  await p.selectOption('[data-testid="uv-stretch"]', 'overlap'); await frame()
+  const info = () => p.textContent('[data-testid="uv-overlap-info"]')
+  check('Overlap: stacked box projection reports all 6 faces overlapping', /6 faces overlap \(\d+ px\)/.test(await info()), await info())
+  // the overlay paints red over the shared texels
+  const c4 = await uvC(0.5, 0.5)
+  const red = await p.evaluate(([x, y]) => { const cv = document.querySelector('[data-testid="uv-canvas"]'), r = cv.getBoundingClientRect(), d = devicePixelRatio; const px = cv.getContext('2d').getImageData(Math.round((x - r.left) * d), Math.round((y - r.top) * d), 1, 1).data; return [...px] }, [c4.x, c4.y])
+  check('Overlap: shared texels are tinted red', red[0] > 150 && red[1] < 120, JSON.stringify(red))
+  await p.click('[data-testid="uv-overlap-select"]'); await frame()
+  check('Select overlapping selects the 6 faces', (await S(() => window.__polyform.getState().selFaces.size)) === 6)
+  // a partial overlap for the screenshot: face 4 slid half onto face 3
+  await S(() => window.__polyform.getState().selectNone())
+  await gridLayout(); await S(() => window.__polyform.getState().edit(m => { m.faces[4].uv = m.faces[4].uv.map(([u, v]) => [u - 3 / 16, v + 2 / 16]) }, 'slide'))
+  await frame()
+  check('a partial overlap: 2 faces', (await info()).startsWith('2 faces overlap (64 px)'), await info())
+  await p.mouse.move(640, 700); await frame()
+  await p.screenshot({ path: '/workspace/shot-uv-overlays.png' })
+  await p.click('[data-testid="uv-auto-px"]'); await frame()
+  check('after Auto px: no overlaps', (await info()).includes('No overlaps'), await info())
+  // density overlay
+  await p.selectOption('[data-testid="uv-stretch"]', 'density'); await frame()
+  await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectAll() }); await frame()
+  const leg = await p.textContent('[data-testid="uv-density-legend"]')
+  check('Density legend reads target 16 px/u and the cube at 16 px/u', leg.includes('target 16 px/u') && leg.includes('selection 16 px/u'), leg)
+  await S(() => window.__polyform.getState().edit(m => { m.faces[0].uv = m.faces[0].uv.map(([u, v]) => [u * 0.5, v * 0.5]) }, 'shrink'))
+  await frame()
+  check('a shrunk face reads lower density', !(await p.textContent('[data-testid="uv-density-legend"]')).includes('selection 16 px/u'))
+  await p.click('[data-testid="uv-density-equalize"]'); await frame()
+  check('Equalize brings the selection back to 16 px/u', (await p.textContent('[data-testid="uv-density-legend"]')).includes('selection 16 px/u'), await p.textContent('[data-testid="uv-density-legend"]'))
+  await p.mouse.move(640, 700); await frame()
+  await p.screenshot({ path: '/workspace/shot-uv-density.png' })
+  await p.selectOption('[data-testid="uv-stretch"]', 'off')
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

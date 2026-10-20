@@ -1,5 +1,6 @@
 // Pure UV operations on face corners (corner id = face * MAX_CORNERS + corner). Used by the UV editor and tests.
 import { cornerFace, cornerId, cornerIdx, edgeEnds, edgeKey, faceNormal, newell, type Model, type Vec2 } from './model'
+import { scanPolygon } from './paintcore'
 
 export type UVAxis = 'x' | 'y' | 'z' | 'box'
 export const uvArea = (uv: Vec2[]) => polyArea(uv)
@@ -864,4 +865,55 @@ export function boxCross(m: Model, faces: number[], density: number, tw: number,
     f.uv = f.v.map(vi => { const [s, t] = fr(m.verts[vi]); return [(x + r[0] + s * r[2]) / tw, 1 - (y + r[1] + (1 - t) * r[3]) / th] as Vec2 })
   }
   return { w: cw, h: ch, x, y }
+}
+
+// ---------- coverage (UV-10) ----------
+export interface Coverage {
+  w: number; h: number
+  /** faces covering each texel (texel centres, image rows top-down) */
+  count: Uint16Array
+  /** the first face that covered each texel, -1 for none */
+  first: Int32Array
+  /** faces sharing at least one texel with another face */
+  overlapping: number[]
+  /** texels covered twice or more */
+  overlapPx: number
+  /** texels covered at least once */
+  coveredPx: number
+}
+/** Rasterize each face's UV polygon at image resolution (inside 0..1 only). */
+export function coverage(m: Model, faces: number[], tw: number, th: number): Coverage {
+  const count = new Uint16Array(tw * th), first = new Int32Array(tw * th).fill(-1), over = new Set<number>()
+  let overlapPx = 0, coveredPx = 0
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length < 3) continue
+    scanPolygon(tw, th, f.uv.map(([u, v]) => [u * tw, (1 - v) * th] as [number, number]), i => {
+      const c = count[i]
+      if (c < 65535) count[i] = c + 1
+      if (c === 0) { first[i] = fi; coveredPx++ } else { if (c === 1) overlapPx++; over.add(first[i]); over.add(fi) }
+    })
+  }
+  return { w: tw, h: th, count, first, overlapping: [...over].sort((a, b) => a - b), overlapPx, coveredPx }
+}
+/** Faces whose UVs cover texel (x, y) (image px, top-left origin). */
+export function facesAtTexel(m: Model, faces: number[], tw: number, th: number, x: number, y: number): number[] {
+  const out: number[] = [], tx = Math.floor(x), ty = Math.floor(y)
+  if (tx < 0 || ty < 0 || tx >= tw || ty >= th) return out
+  const want = ty * tw + tx
+  for (const fi of faces) {
+    const f = m.faces[fi]
+    if (!f || f.uv.length < 3) continue
+    let hit = false
+    scanPolygon(tw, th, f.uv.map(([u, v]) => [u * tw, (1 - v) * th] as [number, number]), i => { if (i === want) hit = true })
+    if (hit) out.push(fi)
+  }
+  return out
+}
+/** Colour for density relative to the target: green on target, blue below, red above (±1 octave = full colour). */
+export function densityColor(d: number, target: number, alpha = 0.55): string {
+  if (!(d > 0) || !(target > 0)) return `rgba(120,120,120,${alpha})`
+  const t = Math.max(-1, Math.min(1, Math.log2(d / target)))
+  const g = [70, 200, 110], lo = [70, 120, 255], hi = [240, 70, 60], c = t < 0 ? lo : hi, k = Math.abs(t)
+  return `rgba(${g.map((x, i) => Math.round(x + (c[i] - x) * k)).join(',')},${alpha})`
 }
