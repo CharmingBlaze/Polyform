@@ -3,7 +3,7 @@
  * content-interned full snap. Unchanged verts/faces stay shared by reference. Texture strokes carry a
  * pixel patch. Capped by estimated bytes; dropping the oldest step flattens the new base to a full snap.
  */
-import type { Face, Model, Skin, Vec3 } from './model'
+import { defaultProps, type Face, type Model, type Skin, type Vec3 } from './model'
 import { ensureSkin, primaryJoint, singleSkin } from './skin'
 import { textures, type TexPatch } from './textures'
 
@@ -51,7 +51,7 @@ const skinEq = (a: Skin, b: Skin) => a.joints.every((j, i) => j === b.joints[i])
 const freezeSkin = (sk: Skin): Skin => Object.freeze({ joints: Object.freeze([...sk.joints]) as Skin['joints'], weights: Object.freeze([...sk.weights]) as Skin['weights'] })
 const freezeVert = (v: Vec3): Vec3 => Object.freeze([v[0], v[1], v[2]]) as Vec3
 
-const restOf = (m: Model) => JSON.stringify({ version: m.version, groups: m.groups, materials: m.materials, bones: m.bones, clips: m.clips, wires: m.wires, refs: m.refs ?? [] })
+const restOf = (m: Model) => JSON.stringify({ version: m.version, groups: m.groups, materials: m.materials, bones: m.bones, clips: m.clips, wires: m.wires, refs: m.refs ?? [], props: m.props })
 
 /** Apply a sparse diff onto a snap (new arrays only where something changed). */
 export function applyDiff(base: Snap, d: Diff): Snap {
@@ -186,7 +186,7 @@ export function materialize(s: Snap): Model {
     vbone: skin.map(primaryJoint),
     skin,
     faces: s.faces.map(f => { const o: Face = { v: [...f.v], uv: f.uv.map(u => [u[0], u[1]] as [number, number]), g: f.g }; if (f.hidden) o.hidden = true; if (f.pin) o.pin = [...f.pin]; if (f.seam) o.seam = [...f.seam]; if (f.sharp) o.sharp = [...f.sharp]; if (f.vc) o.vc = [...f.vc]; if (f.mat !== undefined) o.mat = f.mat; return o }),
-    groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips, wires: rest.wires ?? [], refs: rest.refs ?? [],
+    groups: rest.groups, materials: rest.materials, bones: rest.bones, clips: rest.clips, wires: rest.wires ?? [], refs: rest.refs ?? [], props: rest.props ?? defaultProps(),
   }
 }
 

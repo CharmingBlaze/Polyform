@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, type Model, type Vec3 } from './model'
+import { addGeometry, baseColor, cornerColor, cornerNormals, vcMaterials, faceMat, migrateProject, projectFile, triangulate, validateModel, defaultProps, type Model, type SceneProps, type Vec3 } from './model'
+import { applySceneMeta, patchGlbJson } from './gltfmeta'
 import { usedRefTextures } from './refs'
 import { keyFrames, posedVerts, sampleObject, skinnedGroups } from './anim'
 import { applyFilter, textures } from './textures'
@@ -124,7 +125,9 @@ export function buildExportScene(m: Model) {
 
   const animations: THREE.AnimationClip[] = []
   const warnings: string[] = []
-  for (const clip of m.clips) {
+  // the default clip (File → Properties) is exported first
+  const dc = m.props?.defaultClip ?? 0
+  for (const clip of [m.clips[dc], ...m.clips.filter((_, i) => i !== dc)].filter(Boolean)) {
     const tracks: THREE.KeyframeTrack[] = []
     const interp = clip.interp === 'step' ? THREE.InterpolateDiscrete : THREE.InterpolateLinear
     if (hasBones) m.bones.forEach((_, i) => {
@@ -159,13 +162,45 @@ export function buildExportScene(m: Model) {
     })
     if (tracks.length) animations.push(new THREE.AnimationClip(clip.name || 'Animation', (clip.frames - 1) / clip.fps, tracks))
   }
+  convertUnits(root, m.props ?? defaultProps(), name)
   return { root, animations, warnings }
+}
+
+/**
+ * Units / export scale / Z-up → glTF metres, Y-up: one SceneRoot node carries the conversion. Skinned meshes stay root
+ * nodes (glTF ignores their transform and validators warn otherwise); their joints sit under SceneRoot, so they follow.
+ */
+function convertUnits(root: THREE.Object3D, p: SceneProps, name: (n: string) => string) {
+  if (p.name) root.name = p.name
+  const k = (p.units === 'cm' ? 0.01 : 1) * p.scale
+  if (k === 1 && p.upAxis === 'Y') return
+  const wrap = new THREE.Group()
+  wrap.name = name('SceneRoot')
+  wrap.scale.setScalar(k)
+  if (p.upAxis === 'Z') wrap.rotation.x = -Math.PI / 2
+  for (const c of [...root.children]) if (!(c as THREE.SkinnedMesh).isSkinnedMesh) wrap.add(c)
+  root.add(wrap)
 }
 
 export async function exportGLBBuffer(m: Model): Promise<{ glb: ArrayBuffer; warnings: string[] }> {
   const { root, animations, warnings } = buildExportScene(m)
-  const glb = (await new GLTFExporter().parseAsync(root, { binary: true, animations, onlyVisible: false })) as ArrayBuffer
+  const raw = (await new GLTFExporter().parseAsync(root, { binary: true, animations, onlyVisible: false })) as ArrayBuffer
+  const glb = patchGlbJson(raw, j => applySceneMeta(j, m.props ?? defaultProps()))
   return { glb, warnings }
+}
+
+/** glTF JSON with the buffers embedded as data URIs (one self-contained .gltf file). */
+export async function exportGLTFJson(m: Model): Promise<{ gltf: Record<string, unknown>; warnings: string[] }> {
+  const { root, animations, warnings } = buildExportScene(m)
+  const gltf = (await new GLTFExporter().parseAsync(root, { binary: false, animations, onlyVisible: false, embedImages: true })) as Record<string, unknown>
+  applySceneMeta(gltf, m.props ?? defaultProps())
+  return { gltf, warnings }
+}
+
+export async function exportGLTF(m: Model, name = 'model'): Promise<string[]> {
+  const { gltf, warnings } = await exportGLTFJson(m)
+  download(JSON.stringify(gltf), `${name}.gltf`, 'model/gltf+json')
+  return warnings
 }
 
 /** Export and download; returns warnings (also logged) so the caller can show them. */

@@ -116,7 +116,36 @@ export interface Clip {
   okeys: Record<number, Record<number, OKey>>
 }
 
-export const PROJECT_VERSION = 5
+export const PROJECT_VERSION = 6
+
+/** Scene settings (File → Properties…): saved in the project; name / author / notes go into the glTF asset extras. */
+export interface SceneProps {
+  name: string
+  author: string
+  notes: string
+  /** what one modeling unit means; glTF is metres, so cm exports at 0.01 */
+  units: 'm' | 'cm'
+  /** extra uniform scale applied on export */
+  scale: number
+  /** the up axis the model was built in; Z-up is rotated to glTF's Y-up on export */
+  upAxis: 'Y' | 'Z'
+  /** scene frame rate (applied to every clip) */
+  fps: number
+  /** clip exported first and selected when the project opens */
+  defaultClip: number
+}
+export const defaultProps = (): SceneProps => ({ name: 'Untitled', author: '', notes: '', units: 'm', scale: 1, upAxis: 'Y', fps: 24, defaultClip: 0 })
+/** Coerce anything into valid scene properties (unknown / bad values fall back to defaults). */
+export function sanitizeProps(raw: unknown, clips = 1): SceneProps {
+  const d = defaultProps(), r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const str = (v: unknown, dv: string, max: number) => (typeof v === 'string' ? v.slice(0, max) : dv)
+  const num = (v: unknown, dv: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : dv)
+  return {
+    name: str(r.name, d.name, 200), author: str(r.author, d.author, 200), notes: str(r.notes, d.notes, 5000),
+    units: r.units === 'cm' ? 'cm' : 'm', scale: num(r.scale, 1, 1e-4, 1e4), upAxis: r.upAxis === 'Z' ? 'Z' : 'Y',
+    fps: Math.round(num(r.fps, d.fps, 1, 240)), defaultClip: Math.min(Math.max(0, clips - 1), Math.round(num(r.defaultClip, 0, 0, 1e6))),
+  }
+}
 
 /** Up to 4 bone influences (glTF JOINTS_0 / WEIGHTS_0). joints[i] = bone index or -1; weight 0 = unused. */
 export type Skin = { joints: [number, number, number, number]; weights: [number, number, number, number] }
@@ -151,6 +180,8 @@ export interface Model {
   wires: [number, number][]
   /** Viewport reference images (guides). */
   refs: RefImage[]
+  /** scene settings (v6) */
+  props: SceneProps
 }
 
 export const newMaterial = (name = 'Material', color = '#ffffff'): Material => ({ name, color, roughness: 0.8, metalness: 0, texture: null })
@@ -158,7 +189,7 @@ export const newClip = (name = 'Animation'): Clip => ({ name, frames: 30, fps: 2
 export const newGroup = (name: string, mat = 0): Group => ({ name, visible: true, mat, smooth: 0, xf: identityXform() })
 
 export function emptyModel(): Model {
-  return { version: PROJECT_VERSION, verts: [], vbone: [], skin: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [], refs: [] }
+  return { version: PROJECT_VERSION, verts: [], vbone: [], skin: [], faces: [], groups: [], materials: [newMaterial()], bones: [], clips: [newClip()], wires: [], refs: [], props: defaultProps() }
 }
 
 
@@ -220,6 +251,12 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
     return { ...r, version: 4, skin, vbone: vbone.length === verts.length ? vbone : verts.map(() => -1) }
   },
   4: (r) => ({ ...r, version: 5, refs: Array.isArray(r.refs) ? r.refs : [] }),
+  /** v5 -> v6: scene properties; the frame rate starts from the first clip's */
+  5: r => {
+    const clips = Array.isArray(r.clips) ? (r.clips as Clip[]) : []
+    const fps = typeof clips[0]?.fps === 'number' ? clips[0].fps : 24
+    return { ...r, version: 6, props: { ...defaultProps(), fps } }
+  },
 }
 
 /**
@@ -250,8 +287,8 @@ export function migrateProject(raw: unknown): { model: Model; textures: Record<s
         : { joints: [-1, -1, -1, -1], weights: [0, 0, 0, 0] }
     })
   }
-  const { verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs } = r as unknown as Model
-  return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs: Array.isArray(refs) ? refs : [] }, textures }
+  const { verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs, props } = r as unknown as Model
+  return { model: { version: PROJECT_VERSION, verts, vbone, skin, faces, groups, materials, bones, clips, wires, refs: Array.isArray(refs) ? refs : [], props: sanitizeProps(props, Array.isArray(clips) ? clips.length : 1) }, textures }
 }
 
 /** The JSON written to a .polyform.json file. */
@@ -272,6 +309,7 @@ const TEX_ID = /^[\w-]{1,64}$/
 export function validateModel(m: Model) {
   if (!m || typeof m !== 'object') throw new Error('Not a Polyform project')
   if (!Array.isArray(m.refs)) m.refs = []
+  m.props = sanitizeProps(m.props, Array.isArray(m.clips) ? m.clips.length : 1)
   for (const k of ['verts', 'vbone', 'skin', 'faces', 'groups', 'materials', 'bones', 'clips', 'wires', 'refs'] as const) if (!Array.isArray(m[k])) throw new Error(`Project is missing ${k}`)
   const nv = m.verts.length, nb = m.bones.length, ng = m.groups.length, nm = m.materials.length
   const int = (i: unknown, lo: number, hi: number) => Number.isInteger(i) && (i as number) >= lo && (i as number) < hi
