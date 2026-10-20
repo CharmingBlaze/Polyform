@@ -475,7 +475,19 @@ export const faceArea3D = (m: Model, fi: number) => newell(m.verts, m.faces[fi].
  * proportional to 3D area), turned upright when taller than wide, then shelf-packed tallest first with padding,
  * at the largest uniform scale that fits. Shapes are kept (no stretching). Returns the island count.
  */
-export function packIslands(m: Model, faces: number[], padding = 0.01): number {
+export interface PackOpts {
+  /** keep this many UV-width units per world unit (texel density / image width) when everything fits; else fit */
+  fixed?: number
+  /** image height / width: islands are packed in square pixels on a non-square image */
+  aspect?: number
+}
+/**
+ * Pack islands into 0..1 with equal texel density and no overlaps. Returns the number of islands; `fitted` on the
+ * result tells whether a fixed density had to shrink to fit (see packIslandsEx).
+ */
+export function packIslands(m: Model, faces: number[], padding = 0.01, o: PackOpts = {}): number { return packIslandsEx(m, faces, padding, o).islands }
+export function packIslandsEx(m: Model, faces: number[], padding = 0.01, o: PackOpts = {}): { islands: number; scale: number; shrunk: boolean } {
+  const aspect = o.aspect && o.aspect > 0 ? o.aspect : 1
   const isl = islands(m, faces)
   const groups = new Map<number, number[]>()
   for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
@@ -484,41 +496,74 @@ export function packIslands(m: Model, faces: number[], padding = 0.01): number {
   for (const fs of groups.values()) {
     const a3 = fs.reduce((a, f) => a + faceArea3D(m, f), 0)
     const auv = fs.reduce((a, f) => a + Math.abs(polyArea(m.faces[f].uv)), 0)
-    const k = auv > 1e-12 && a3 > 1e-12 ? Math.sqrt(a3 / auv) : 1
+    const k = auv > 1e-12 && a3 > 1e-12 ? Math.sqrt(a3 / (auv * aspect)) : 1
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const f of fs) for (const [u, v] of m.faces[f].uv) { x0 = Math.min(x0, u); y0 = Math.min(y0, v); x1 = Math.max(x1, u); y1 = Math.max(y1, v) }
-    let w = (x1 - x0) * k, h = (y1 - y0) * k
+    // islands measured in square pixels (u-width units): v spans `aspect` times as many
+    let w = (x1 - x0) * k, h = (y1 - y0) * k * aspect
     const rot = h > w * 1.0001
     if (rot) [w, h] = [h, w]
     items.push({ faces: fs, w: Math.max(w, 1e-6), h: Math.max(h, 1e-6), x0, y0, k, rot })
   }
-  if (!items.length) return 0
+  if (!items.length) return { islands: 0, scale: 0, shrunk: false }
   items.sort((a, b) => b.h - a.h || b.w - a.w)
   const fits = (s: number) => {
     let x = padding, y = padding, rowH = 0
     for (const it of items) {
       const w = it.w * s, h = it.h * s
-      if (w + 2 * padding > 1 || h + 2 * padding > 1) return false
+      if (w + 2 * padding > 1 || h + 2 * padding > aspect) return false
       if (x + w + padding > 1) { x = padding; y += rowH + padding; rowH = 0 }
-      if (y + h + padding > 1) return false
+      if (y + h + padding > aspect) return false
       it.x = x; it.y = y; x += w + padding; rowH = Math.max(rowH, h)
     }
     return true
   }
   // largest scale that fits (bisection)
   const total = items.reduce((a, it) => a + it.w * it.h, 0)
-  let lo = 0, hi = Math.sqrt(1 / total) * 1.01
-  for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid }
+  let lo = 0, hi = Math.sqrt(aspect / total) * 1.01, shrunk = false
+  if (o.fixed && o.fixed > 0 && fits(o.fixed)) lo = o.fixed
+  else {
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid }
+    shrunk = !!o.fixed
+  }
   fits(lo)
   for (const it of items) {
     const s = lo * it.k
     for (const f of it.faces) m.faces[f].uv = m.faces[f].uv.map(([u, v]) => {
       const lx = (u - it.x0) * s, ly = (v - it.y0) * s
       // rotate 90° counter-clockwise (keeps winding): (x, y) -> (H - y, x) with H = original height
-      return (it.rot ? [it.x! + (it.w * lo - ly), it.y! + lx] : [it.x! + lx, it.y! + ly]) as Vec2
+      const ly2 = ly * aspect // square-pixel units
+      const q = it.rot ? [it.x! + (it.w * lo - ly2), it.y! + lx] : [it.x! + lx, it.y! + ly2]
+      return [q[0], q[1] / aspect] as Vec2
     })
   }
-  return items.length
+  return { islands: items.length, scale: lo, shrunk }
+}
+
+// ---------- texel density ----------
+/** px per world unit of each face on a tw×th image: sqrt(UV area in px² / 3D area); 0 for degenerate faces */
+export function texelDensity(m: Model, faces: number[], tw: number, th: number): number[] {
+  return faces.map(fi => { const a3 = faceArea3D(m, fi), au = Math.abs(polyArea(m.faces[fi].uv)) * tw * th; return a3 > 1e-12 ? Math.sqrt(au / a3) : 0 })
+}
+/** Area-weighted density of a set of faces (px per unit), 0 when nothing has area */
+export function meanDensity(m: Model, faces: number[], tw: number, th: number): number {
+  let a3 = 0, au = 0
+  for (const fi of faces) { a3 += faceArea3D(m, fi); au += Math.abs(polyArea(m.faces[fi].uv)) * tw * th }
+  return a3 > 1e-12 ? Math.sqrt(au / a3) : 0
+}
+/** Scale each UV island of `faces` about its own box centre to `target` px per unit. Returns the islands scaled. */
+export function setDensity(m: Model, faces: number[], target: number, tw: number, th: number): number {
+  const isl = islands(m, faces), groups = new Map<number, number[]>()
+  for (const f of faces) groups.set(isl.get(f)!, [...(groups.get(isl.get(f)!) || []), f])
+  let n = 0
+  for (const fs of groups.values()) {
+    const d = meanDensity(m, fs, tw, th)
+    if (d <= 0) continue
+    const k = target / d
+    mapCorners(m, fs.flatMap(fi => m.faces[fi].uv.map((_, c) => cornerId(fi, c))), (u, c) => [c[0] + (u[0] - c[0]) * k, c[1] + (u[1] - c[1]) * k])
+    n++
+  }
+  return n
 }
 
 // ---------- stretch ----------

@@ -116,7 +116,7 @@ export interface Clip {
   okeys: Record<number, Record<number, OKey>>
 }
 
-export const PROJECT_VERSION = 6
+export const PROJECT_VERSION = 7
 
 /** Scene settings (File → Properties…): saved in the project; name / author / notes go into the glTF asset extras. */
 export interface SceneProps {
@@ -133,8 +133,10 @@ export interface SceneProps {
   fps: number
   /** clip exported first and selected when the project opens */
   defaultClip: number
+  /** texel density: image pixels per world unit, used by Auto UV, pixel-true projection and "Set density" */
+  texelDensity: number
 }
-export const defaultProps = (): SceneProps => ({ name: 'Untitled', author: '', notes: '', units: 'm', scale: 1, upAxis: 'Y', fps: 24, defaultClip: 0 })
+export const defaultProps = (): SceneProps => ({ name: 'Untitled', author: '', notes: '', units: 'm', scale: 1, upAxis: 'Y', fps: 24, defaultClip: 0, texelDensity: 16 })
 /** Coerce anything into valid scene properties (unknown / bad values fall back to defaults). */
 export function sanitizeProps(raw: unknown, clips = 1): SceneProps {
   const d = defaultProps(), r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -144,6 +146,7 @@ export function sanitizeProps(raw: unknown, clips = 1): SceneProps {
     name: str(r.name, d.name, 200), author: str(r.author, d.author, 200), notes: str(r.notes, d.notes, 5000),
     units: r.units === 'cm' ? 'cm' : 'm', scale: num(r.scale, 1, 1e-4, 1e4), upAxis: r.upAxis === 'Z' ? 'Z' : 'Y',
     fps: Math.round(num(r.fps, d.fps, 1, 240)), defaultClip: Math.min(Math.max(0, clips - 1), Math.round(num(r.defaultClip, 0, 0, 1e6))),
+    texelDensity: num(r.texelDensity, d.texelDensity, 1e-3, 1e5),
   }
 }
 
@@ -257,6 +260,8 @@ export const MIGRATIONS: Record<number, (r: Raw) => Raw> = {
     const fps = typeof clips[0]?.fps === 'number' ? clips[0].fps : 24
     return { ...r, version: 6, props: { ...defaultProps(), fps } }
   },
+  /** v6 -> v7: texel density (px per unit) in the scene properties */
+  6: r => ({ ...r, version: 7, props: { ...(r.props && typeof r.props === 'object' ? r.props : {}), texelDensity: 16 } }),
 }
 
 /**

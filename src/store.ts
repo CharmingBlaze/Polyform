@@ -230,6 +230,8 @@ interface State {
   addMaterial: () => number
   /** Auto UV (xatlas) on the selected faces, or every visible face; one undo step */
   autoUV: () => Promise<boolean>
+  /** size of the image on these faces' material (first face with one), null when none has an image */
+  imageSizeOf: (faces: number[]) => { w: number; h: number } | null
   /** visible faces (what the UV editor shows) */
   uvFaces: () => number[]
   /** UV corners covered by the selection */
@@ -1033,6 +1035,15 @@ export const useStore = create<State>((set, get) => ({
     s.notify(`Snapped ${faces.length} face${faces.length === 1 ? '' : 's'} to swatch ${cell.col + 1},${cell.row + 1} (${cell.cols}×${cell.rows})`)
   },
 
+  imageSizeOf: faces => {
+    const m = get().model
+    for (const fi of faces) {
+      const f = m.faces[fi], id = f && m.materials[M.faceMat(m, f)]?.texture
+      const sz = id ? tex.size(id) : null
+      if (sz) return sz
+    }
+    return null
+  },
   autoUV: async () => {
     const s = get()
     let faces = s.activeFaces()
@@ -1044,8 +1055,15 @@ export const useStore = create<State>((set, get) => ({
       const { xatlasUnwrapper } = await import('./xatlas') // lazy: Worker + wasm only in the browser
       const out = await xatlasUnwrapper.unwrap(inp.positions, inp.indices)
       if (get().version !== ver) { get().notify('The model changed while unwrapping; run Auto UV again'); return false }
-      get().edit(m => UV.keepPins(m, faces, () => applyAtlas(m, inp, out)), 'Auto UV')
-      get().notify(`Auto UV: unwrapped ${faces.length} faces`)
+      // with an image: islands at the project's texel density (px per unit), packed; without: fill 0..1 as xatlas did
+      const img = get().imageSizeOf(faces), dens = get().model.props.texelDensity
+      let res: { shrunk: boolean; scale: number } | null = null
+      get().edit(m => UV.keepPins(m, faces, () => {
+        applyAtlas(m, inp, out)
+        if (img) res = UV.packIslandsEx(m, faces, 1 / img.w, { fixed: dens / img.w, aspect: img.h / img.w })
+      }), 'Auto UV')
+      const r = res as { shrunk: boolean; scale: number } | null
+      get().notify(`Auto UV: unwrapped ${faces.length} faces` + (img && r ? (r.shrunk ? ` · ${dens} px/unit did not fit the ${img.w}×${img.h} image: ${Math.round(r.scale * img.w * 10) / 10} px/unit` : ` at ${dens} px/unit`) : ''))
       return true
     } catch (e) {
       get().notify(String((e as Error).message || e))

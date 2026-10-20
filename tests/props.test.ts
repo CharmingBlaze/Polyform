@@ -19,8 +19,8 @@ function tinyGlb(json: object) {
 }
 
 describe('scene properties', () => {
-  it('new projects carry default properties; format is v6', () => {
-    expect(PROJECT_VERSION).toBe(6)
+  it('new projects carry default properties; format is v7', () => {
+    expect(PROJECT_VERSION).toBe(7)
     expect(emptyModel().props).toEqual(defaultProps())
     expect(defaultProps().upAxis).toBe('Y')
   })
@@ -31,12 +31,12 @@ describe('scene properties', () => {
     delete v5.props
     const { model } = migrateProject(v5)
     validateModel(model)
-    expect(model.version).toBe(6)
+    expect(model.version).toBe(7)
     expect(model.props).toEqual({ ...defaultProps(), fps: 30 })
   })
   it('saved properties round-trip through the project file', () => {
     const m = emptyModel()
-    m.props = { ...defaultProps(), name: 'Crate', author: 'Ada', notes: 'n', units: 'cm', scale: 2, upAxis: 'Z', fps: 12, defaultClip: 0 }
+    m.props = { ...defaultProps(), name: 'Crate', author: 'Ada', notes: 'n', units: 'cm', scale: 2, upAxis: 'Z', fps: 12, defaultClip: 0, texelDensity: 32 }
     const { model } = migrateProject(JSON.parse(JSON.stringify(projectFile(m, {}))))
     expect(model.props).toEqual(m.props)
   })

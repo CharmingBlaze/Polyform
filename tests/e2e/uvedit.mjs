@@ -340,6 +340,37 @@ const uvBtnTab = async (tab, id) => { await p.click(`[data-testid="uv-tab-${tab}
   await p.keyboard.press('Escape')
 }
 
+// UV-7: texel density (px per unit) in Properties; Auto UV and Set density use it
+{
+  await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
+  await addImage(64, 64, 'tex64')
+  // a 1×1×1 box: every face 1 unit²; density = sqrt(UV px² / 1)
+  const dens = () => S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => { let a = 0; f.uv.forEach((q, i) => { const r = f.uv[(i + 1) % f.uv.length]; a += q[0] * r[1] - r[0] * q[1] }); return Math.sqrt(Math.abs(a / 2) * 64 * 64) }) })
+  await p.click('[data-testid="uv-tab-project"]'); await p.click('[data-testid="uv-auto"]')
+  await p.waitForFunction(() => /Auto UV: unwrapped/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {})
+  await frame(200)
+  let d = await dens()
+  check('Auto UV with a 64-px image: 16 px per unit on every face (default density)', d.every(x => close(x, 16, 0.05)), JSON.stringify(d))
+  // Properties: density field, invalid values block OK
+  await p.click('[data-testid="mb-file"]'); await p.click('[data-testid="mi-file-properties"]'); await frame()
+  check('Properties shows the texel density (16 px / unit)', (await p.inputValue('[data-testid="props-density"]')) === '16')
+  await p.fill('[data-testid="props-density"]', '0'); await frame()
+  check('density 0 is invalid: OK disabled', await p.isDisabled('[data-testid="props-ok"]'))
+  await p.fill('[data-testid="props-density"]', '8'); await p.click('[data-testid="props-ok"]'); await frame()
+  check('density saved in the scene props', (await S(() => window.__polyform.getState().model.props.texelDensity)) === 8)
+  await S(() => window.__polyform.getState().selectNone())
+  await p.click('[data-testid="uv-auto"]'); await frame(1500)
+  d = await dens()
+  check('Auto UV follows the new density (8 px per unit)', d.every(x => close(x, 8, 0.05)), JSON.stringify(d))
+  // Set density on a selection
+  await gridLayout(); await selFace(4); await frame()
+  await p.click('[data-testid="uv-tab-adjust"]'); await p.click('[data-testid="uv-density"]'); await frame()
+  d = await dens()
+  check('Density scales the selected island to 8 px / unit; others untouched', close(d[4], 8, 1e-6) && close(d[3], 16, 1e-6), JSON.stringify(d))
+  await p.keyboard.press('Control+z'); await frame()
+  check('one undo step', close((await dens())[4], 16, 1e-6))
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

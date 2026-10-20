@@ -13,8 +13,8 @@ export function sceneStats(m: Model) {
 }
 const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(2)} MB`)
 
-type Draft = Omit<SceneProps, 'scale' | 'fps'> & { scale: string; fps: string }
-const toDraft = (p: SceneProps): Draft => ({ ...p, scale: String(p.scale), fps: String(p.fps) })
+type Draft = Omit<SceneProps, 'scale' | 'fps' | 'texelDensity'> & { scale: string; fps: string; texelDensity: string }
+const toDraft = (p: SceneProps): Draft => ({ ...p, scale: String(p.scale), fps: String(p.fps), texelDensity: String(p.texelDensity) })
 
 /** Apply scene properties as one undo step; a new frame rate is applied to every clip. Returns false when nothing changed. */
 export function applySceneProps(next: SceneProps): boolean {
@@ -48,8 +48,10 @@ function PropertiesBody() {
   const scale = Number(d.scale), fps = Number(d.fps)
   const scaleOk = d.scale.trim() !== '' && Number.isFinite(scale) && scale >= 1e-4 && scale <= 1e4
   const fpsOk = Number.isInteger(fps) && fps >= 1 && fps <= 240
-  const valid = scaleOk && fpsOk
-  const value = (): SceneProps => ({ ...d, scale, fps })
+  const dens = Number(d.texelDensity)
+  const densOk = d.texelDensity.trim() !== '' && Number.isFinite(dens) && dens >= 1e-3 && dens <= 1e5
+  const valid = scaleOk && fpsOk && densOk
+  const value = (): SceneProps => ({ ...d, scale, fps, texelDensity: dens })
   const apply = () => { if (valid) applySceneProps(value()) }
   const ok = () => { if (!valid) return; applySceneProps(value()); close() }
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD(x => ({ ...x, [k]: v }))
@@ -71,6 +73,7 @@ function PropertiesBody() {
           {row('Up axis', <div className="seg" data-testid="props-up">{(['Y', 'Z'] as const).map(a => <button key={a} type="button" className={d.upAxis === a ? 'on' : ''} data-testid={`props-up-${a}`} onClick={() => set('upAxis', a)}>{a}-up</button>)}</div>)}
           {d.upAxis === 'Z' && <p className="pp-note">Z-up is rotated to glTF’s Y-up on export.</p>}
           {row('Frame rate', <input data-testid="props-fps" inputMode="numeric" aria-invalid={!fpsOk} value={d.fps} onChange={e => set('fps', e.target.value)} />)}
+          {row('Texel density', <span className="pp-unit"><input data-testid="props-density" inputMode="decimal" aria-invalid={!densOk} value={d.texelDensity} title="Image pixels per world unit: Auto UV, pixel-true projection and Set density use it" onChange={e => set('texelDensity', e.target.value)} /><span>px / unit</span></span>)}
           {row('Default clip', <select data-testid="props-clip" value={d.defaultClip} onChange={e => set('defaultClip', Number(e.target.value))}>{model.clips.map((c, i) => <option key={i} value={i}>{c.name}</option>)}</select>)}
         </div>
         <dl className="pp-stats" data-testid="props-stats">

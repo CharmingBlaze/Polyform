@@ -411,6 +411,9 @@ button.danger { color: #ff9a9a; }
 .pp-row textarea { resize: vertical; font: inherit; }
 .pp-row:has(textarea) { align-items: start; }
 .pp-row input[aria-invalid="true"] { border-color: var(--red); }
+.pp-unit { display: flex; align-items: center; gap: 6px; }
+.pp-unit input { width: 90px; flex: none; }
+.pp-unit span { white-space: nowrap; }
 .pp-note { margin: -2px 0 0 100px; color: var(--dim); font-size: 11.5px; }
 .pp-stats { margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; align-self: start; display: flex; flex-direction: column; gap: 3px; }
 .pp-stats div { display: flex; justify-content: space-between; gap: 8px; }

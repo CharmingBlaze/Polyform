@@ -663,6 +663,16 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const zoom = THREE.MathUtils.clamp(Math.min((size.w * 0.7) / (bw * base), (size.h * 0.7) / (bh * base)), 0.2, 40), sd = base * zoom
     setView({ zoom, ox: sd * (0.5 - b.c[0]), oy: sd * (b.c[1] - 0.5) })
   }
+  /** islands of the target faces to the project's px-per-unit on the shown image (or the paint size without one) */
+  const setDensity = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    const w = tw || paintTexSize, h = th || paintTexSize
+    st.edit(m => U.keepPins(m, faces, () => { U.setDensity(m, faces, m.props.texelDensity, w, h) }), 'UV texel density')
+    st.notify(`${st.model.props.texelDensity} px per unit on the ${w}×${h} image`)
+  }
+  const densFaces = useStore.getState().activeFaces()
+  const densNow = densFaces.length ? Math.round(U.meanDensity(model, densFaces, tw || paintTexSize, th || paintTexSize) * 10) / 10 : 0
   const rotOp = (k: 'cw' | 'ccw' | '180') => op('UV rotate', k === 'cw' ? U.rotCW : k === 'ccw' ? U.rot90 : U.rot180)
   const moveToCursor = (x: number, y: number) => op('UV move to cursor', (m, ids) => U.moveTo(m, ids, toUV(x, y)))
   const runKey = (k: string, x: number, y: number) => {
@@ -764,6 +774,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           <B id="rot-180" label="180°" tip="Rotate 180° (⟲ / ⟳ 90° are next to the numbers)" onClick={() => rotOp('180')} />
           <B id="maximize" label="Maximize" tip="Stretch the selection to fill the whole image" onClick={() => op('UV maximize', U.maximize)} />
           <B id="fit" label="Fit 0–1" tip="Scale uniformly into the image" onClick={() => op('UV fit', U.fit01)} />
+          <B id="density" label="Density" tip={`Scale each selected island to the project's texel density (${model.props.texelDensity} px per unit, File → Properties)${densNow ? ` · now ${densNow} px/unit` : ''}`} onClick={setDensity} />
           <B id="cycle" label="Cycle" tip="Turn the texture one corner on each selected face (Shift: the other way)" onClick={e => { const f = opFaces(), rev = e.shiftKey; if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f, rev), 'Cycle UV corners') }} />
           <B id="copy" label="Copy" tip="Copy the selected faces' UVs · Ctrl+C over the editor" onClick={copyUVs} />
           <B id="paste" label="Paste" tip="Paste onto each selected face's box · Ctrl+V over the editor" onClick={pasteUVs} />
