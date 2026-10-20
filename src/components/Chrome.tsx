@@ -1,9 +1,9 @@
+import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle, MoreHorizontal, SlidersHorizontal, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
 import { sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode, type Layout } from '../store'
 import { byId, commands, type Command } from '../commands'
-import { importFile } from '../io'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
@@ -37,7 +37,7 @@ export function Header({ onPalette }: { onPalette: () => void }) {
       <span className="grow" />
       <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run} title="Export .glb  ·  Ctrl+E"><Download size={15} /> <span className="lbl">Export .glb</span></button>
       <MoreMenu onPalette={onPalette} />
-      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
+      <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void openPicked(f); e.target.value = '' }} />
     </header>
   )
 }

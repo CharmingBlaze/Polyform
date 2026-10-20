@@ -369,3 +369,14 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
   .brand .logo { font-size: 15px; }
   .header .primary .lbl { display: none; }
 }
+
+/* ---- modal windows (dialogs, File → Properties) ---- */
+.modal-bg { position: fixed; inset: 0; z-index: 90; background: rgba(5,6,10,.45); display: flex; align-items: center; justify-content: center; }
+.modal { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+.modal-title { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.modal-body { padding: 12px 14px; overflow: auto; font-size: 12.5px; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px 12px; }
+.modal-msg { margin: 0 0 10px; line-height: 1.45; }
+.modal .field { display: flex; flex-direction: column; gap: 4px; color: var(--dim); }
+.modal .field input, .modal .field textarea, .modal .field select { color: var(--text); }
+button.danger { color: #ff9a9a; }

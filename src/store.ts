@@ -131,6 +131,10 @@ interface State {
   keyClipboard: KeyClip | null
   texRev: number
   toast: string | null
+  /** histRev at the last save / open / new: anything else is unsaved */
+  savedRev: number
+  /** Save As name (else the scene name) */
+  fileName: string | null
   /** per-browser layout / pen settings (localStorage) */
   ui: UIPrefs
   setUI: (p: Partial<UIPrefs>) => void
@@ -386,6 +390,8 @@ export const useStore = create<State>((set, get) => ({
   keyClipboard: null,
   texRev: 0,
   toast: null,
+  savedRev: 0,
+  fileName: null,
   ui: loadPrefs(),
   setUI: p => { const ui = { ...get().ui, ...p }; savePrefs(ui); set({ ui }) },
 
@@ -418,12 +424,12 @@ export const useStore = create<State>((set, get) => ({
   edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
   loadModel: m => {
     history.reset(m)
-    set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, frame: 0, clip: 0, lastOp: null, extruding: false, activeMat: 0, ...clearSel() }))
+    set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, savedRev: s.histRev + 1, frame: 0, clip: Math.min(m.props?.defaultClip ?? 0, Math.max(0, m.clips.length - 1)), lastOp: null, extruding: false, activeMat: 0, ...clearSel() }))
   },
   notify: msg => {
     set({ toast: msg })
     clearTimeout(toastTimer)
-    toastTimer = window.setTimeout(() => set({ toast: null }), 2600)
+    toastTimer = setTimeout(() => set({ toast: null }), 2600) as unknown as number
   },
   curClip: () => { const s = get(); return s.model.clips[Math.min(s.clip, s.model.clips.length - 1)] },
 

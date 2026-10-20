@@ -1,7 +1,7 @@
 import { useStore, WORKSPACES, type EditMode, type Tool, type Workspace } from './store'
-import { exportGLB, exportOBJ, saveProject } from './io'
+import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
 import { pairs as xPairs } from './xmirror'
-import { emptyModel, PRIMITIVES, type PrimitiveKind } from './model'
+import { PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import * as G from './geom'
 import { isModalActive, overUV } from './interaction'
@@ -10,7 +10,6 @@ export interface Command { id: string; label: string; group: string; keys?: stri
 
 const S = () => useStore.getState()
 const WS_NAME: Record<Workspace, string> = { model: 'Model', uv: 'UV', paint: 'Paint', rig: 'Rig', animate: 'Animate', export: 'Export' }
-const openFile = () => document.getElementById('file-open')?.click()
 const tool = (t: Tool, label: string, keys: string): Command => ({ id: `tool.${t}`, label, group: 'Tools', keys, run: () => S().set({ tool: t }) })
 const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}`, label: `${m[0].toUpperCase() + m.slice(1)} mode`, group: 'Selection', keys: String(n), run: () => S().setSelectMode(m) },
@@ -211,13 +210,23 @@ export const commands: Command[] = [
   } },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
   ...WORKSPACES.map(w => ({ id: `ws.${w}`, label: `Workspace: ${WS_NAME[w]}`, group: 'View', run: () => S().setWorkspace(w) })),
-  { id: 'file.new', label: 'New project', group: 'File', run: () => { if (confirm('Start a new project? Unsaved changes will be lost.')) S().loadModel(emptyModel()) } },
+  { id: 'file.new', label: 'New scene', group: 'File', keys: 'Alt+N', run: () => void newScene() },
+  // Ctrl+N belongs to the browser in most tabs; where it reaches the page (installed app) it works too
+  { id: 'file.new2', label: 'New scene', group: 'File', keys: 'Ctrl+N', run: () => void newScene() },
   { id: 'sample.character', label: 'Open sample: Character (rigged, walk cycle)', group: 'File', run: () => S().openSample('character') },
   { id: 'sample.windmill', label: 'Open sample: Windmill (animated prop)', group: 'File', run: () => S().openSample('windmill') },
-  { id: 'file.open', label: 'Open / import…', group: 'File', keys: 'Ctrl+O', run: openFile },
-  { id: 'file.save', label: 'Save project (.json)', group: 'File', keys: 'Ctrl+S', run: () => saveProject(S().model) },
-  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => { const s = S(); if (!s.model.faces.length && !s.model.bones.length) return s.notify('Nothing to export yet — add a shape or open a sample'); return exportGLB(s.model).then(w => s.notify(w.length ? `Exported model.glb with ${w.length} warning(s): ${w[0]}` : 'Exported model.glb')) } },
-  { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => exportOBJ(S().model) },
+  { id: 'file.open', label: 'Open…', group: 'File', keys: 'Ctrl+O', run: () => pickFile('any') },
+  { id: 'file.save', label: 'Save project (.polyform.json)', group: 'File', keys: 'Ctrl+S', run: saveFile },
+  { id: 'file.saveAs', label: 'Save As…', group: 'File', keys: 'Ctrl+Shift+S', run: () => void saveAs() },
+  { id: 'file.import.project', label: 'Import: Polyform project (.json)', group: 'File', run: () => pickFile('project') },
+  { id: 'file.import.gltf', label: 'Import: glTF (.glb / .gltf)', group: 'File', run: () => pickFile('gltf') },
+  { id: 'file.import.ms3d', label: 'Import: MilkShape 3D (.ms3d)', group: 'File', run: () => pickFile('ms3d') },
+  { id: 'file.import.obj', label: 'Import: Wavefront OBJ (.obj)', group: 'File', run: () => pickFile('obj') },
+  { id: 'file.import.image', label: 'Import: image (PNG / JPEG / WebP)', group: 'File', run: () => pickFile('image') },
+  { id: 'file.glb', label: 'Export glTF binary (.glb)', group: 'File', keys: 'Ctrl+E', run: () => void exportAs('glb') },
+  { id: 'file.gltf', label: 'Export glTF (.gltf, embedded)', group: 'File', run: () => void exportAs('gltf') },
+  { id: 'file.obj', label: 'Export OBJ', group: 'File', run: () => void exportAs('obj') },
+  { id: 'file.exit', label: 'Exit', group: 'File', run: () => void exitApp() },
 ]
 
 export const byId = Object.fromEntries(commands.map(c => [c.id, c]))
@@ -248,6 +257,7 @@ export function installShortcuts(openPalette: () => void) {
     const t = e.target as HTMLElement
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
     if (isModalActive()) return // a running transform owns the keyboard (axis keys, typed values, Enter, Esc)
+    if (document.querySelector('[data-modal-open], [data-menu-open]')) return // dialogs and open menus own the keyboard
     const combo = comboOf(e)
     if (!combo) return
     if (['G', 'R', 'S', 'L'].includes(combo) && overUV()) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: e.code })); return }

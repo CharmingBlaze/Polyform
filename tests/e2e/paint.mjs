@@ -185,6 +185,8 @@ await p.screenshot({ path: '/workspace/shot-paint.png' })
   const file = '/tmp/polyform-paint.polyform.json'; await dl.saveAs(file)
   await S(() => { const s = window.__polyform.getState(); s.selectAll?.(); s.edit(m => { m.faces = []; m.verts = []; m.vbone = [] }, 'clear') })
   await p.setInputFiles('#file-open', file)
+  // the scene was just edited, so opening a project offers to save first
+  await p.click('[data-testid="dialog-discard"]')
   await p.waitForFunction(() => window.__polyform.getState().model.faces.length === 6, null, { timeout: 10000 }).catch(() => {})
   const tex3 = await S(() => window.__polyform.getState().model.materials[0].texture)
   check('project file: Ctrl+S then open brings back the painted image pixel-exact', tex3 && (await S(t => window.__polyformPaint.hash(t), tex3)) === hash)
