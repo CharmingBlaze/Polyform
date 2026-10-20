@@ -24,4 +24,6 @@ npm run test:e2e   # needs `npm run dev` in another terminal
 8. **Animate:** scrub the timeline, pose with **G / R**, **I** keys (or auto-key ●), per-key easing in the inspector, onion skin, IK for limbs. Multiple named clips.
 9. **Export:** **Ctrl+E** downloads a `.glb` (mesh, materials/images, skins, all clips) that passes the Khronos glTF validator. Also `.obj` and Save/Open `.polyform.json`. Drop `.glb` / `.gltf` / `.obj` / `.ms3d` / images onto the window to import.
 
+10. **Menu bar** (File, Edit, View, Select, Create, Help): click a title, hover to move between open menus, arrow keys / Enter / Esc, greyed items when unavailable, shortcuts on the right. File has New (**Alt+N**, since browsers keep Ctrl+N), Open, Save / Save As, Import and Export submenus, and Exit. New, Open project and Exit offer to save unsaved changes first. Browsers only let a page close windows it opened itself, so if the tab stays open Exit clears to an empty scene and tells you to close the tab. There is no Open Recent: a web page can't reopen files from disk by itself.
+
 In dev builds the store is exposed as `window.__polyform` for tests.

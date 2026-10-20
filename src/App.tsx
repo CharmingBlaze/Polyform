@@ -25,8 +25,9 @@ export default function App() {
   const uvMax = useStore(s => s.uvMax)
   const animate = useStore(s => s.mode === 'animate')
   const timelineH = useStore(s => s.ui.timelineH)
+  const showTimeline = useStore(s => !s.ui.timelineHidden) && animate
   const sides = useSides()
-  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax, animate, timelineH, sides.leftW, sides.rightW])
+  useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvMax, showTimeline, timelineH, sides.leftW, sides.rightW])
   const cols = uvMax === '3d' ? 'minmax(0, 1fr) 14px 0px' : uvMax === 'uv' ? '0px 14px minmax(0, 1fr)' : `minmax(0, ${uvSplit}fr) 14px minmax(0, ${1 - uvSplit}fr)`
 
   useEffect(() => installShortcuts(() => setPalette(true)), [])
@@ -48,7 +49,7 @@ export default function App() {
       <HintBar />
       <div className="main" style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
         <ToolRail />
-        <div className="center" style={{ gridTemplateRows: animate ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
+        <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : undefined}>
             <div className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
@@ -60,7 +61,7 @@ export default function App() {
               <div className="uv-pane" data-testid="uv-pane">{uvMax !== '3d' && <UVEditor big />}</div>
             </>}
           </div>
-          {animate && <Timeline />}
+          {showTimeline && <Timeline />}
         </div>
         {sides.rightCollapsed ? <div className="right-col collapsed" data-collapsed="true"><SideIcons /></div>
           : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><DrawPanel /><NumericPanel /><Sidebar /></div>}

@@ -19,7 +19,7 @@ const overflow = () => S(() => {
   if (de.scrollWidth > innerWidth || de.scrollHeight > innerHeight) bad.push(`page ${de.scrollWidth}x${de.scrollHeight}`)
   for (const el of document.querySelectorAll('.header, .hint-bar, .status, .rail, .right-col, .center, .tl-controls, .sidebar .tab-body'))
     if (el.scrollWidth > el.clientWidth + 1) bad.push(`${el.className.split(' ')[0]} +${el.scrollWidth - el.clientWidth}`)
-  for (const id of ['export-glb', 'more-menu', 'help-btn', 'undo', 'gizmo-scale', 'ws-export'])
+  for (const id of ['export-glb', 'mb-file', 'mb-help', 'help-btn', 'undo', 'gizmo-scale', 'ws-export'])
     { const r = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect(); if (!r || r.right > innerWidth || r.bottom > innerHeight || r.width === 0) bad.push(`${id} off-screen`) }
   return bad
 })

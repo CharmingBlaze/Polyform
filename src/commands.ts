@@ -9,7 +9,7 @@ import { isModalActive, overUV } from './interaction'
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
 const S = () => useStore.getState()
-const WS_NAME: Record<Workspace, string> = { model: 'Model', uv: 'UV', paint: 'Paint', rig: 'Rig', animate: 'Animate', export: 'Export' }
+export const WS_NAME: Record<Workspace, string> = { model: 'Model', uv: 'UV', paint: 'Paint', rig: 'Rig', animate: 'Animate', export: 'Export' }
 const tool = (t: Tool, label: string, keys: string): Command => ({ id: `tool.${t}`, label, group: 'Tools', keys, run: () => S().set({ tool: t }) })
 const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}`, label: `${m[0].toUpperCase() + m.slice(1)} mode`, group: 'Selection', keys: String(n), run: () => S().setSelectMode(m) },

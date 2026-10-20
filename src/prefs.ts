@@ -4,6 +4,8 @@ export interface UIPrefs {
   timelineH: number
   /** height to return to when double-clicking the handle out of compact */
   timelineLastH: number
+  /** View → Timeline off: Animate shows no timeline strip */
+  timelineHidden: boolean
   leftW: number
   rightW: number
   /** sidebars as icon strips; null = automatic (collapsed below NARROW_W) */
@@ -16,7 +18,7 @@ export interface UIPrefs {
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 168, rightW: 320, leftCollapsed: null, rightCollapsed: null, pressureSize: true, pressureStrength: false }
 const KEY = 'polyform.ui.v1'
 
 export function loadPrefs(): UIPrefs {
@@ -30,6 +32,7 @@ export function loadPrefs(): UIPrefs {
     return {
       timelineH: num(p.timelineH, DEFAULT_PREFS.timelineH),
       timelineLastH: num(p.timelineLastH, DEFAULT_PREFS.timelineLastH),
+      timelineHidden: p.timelineHidden === true,
       leftW: num(p.leftW, DEFAULT_PREFS.leftW),
       rightW: num(p.rightW, DEFAULT_PREFS.rightW),
       leftCollapsed: tri(p.leftCollapsed),

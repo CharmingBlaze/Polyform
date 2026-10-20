@@ -380,3 +380,22 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .modal .field { display: flex; flex-direction: column; gap: 4px; color: var(--dim); }
 .modal .field input, .modal .field textarea, .modal .field select { color: var(--text); }
 button.danger { color: #ff9a9a; }
+
+/* ---- menu bar (File Edit View Select Create Help) ---- */
+.menubar { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
+.mb-title { background: transparent; border: none; color: var(--text); padding: 5px 9px; font-size: 12.5px; border-radius: 6px; min-height: 28px; touch-action: manipulation; }
+.mb-title:hover, .mb-title.on { background: var(--line); }
+.mb-title:focus-visible { outline: 1px solid var(--accent); }
+.mb-panel { position: fixed; z-index: 80; min-width: 210px; padding: 4px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.5); overflow-y: auto; overscroll-behavior: contain; }
+.mi { display: grid; grid-template-columns: 16px 1fr auto 14px; align-items: center; gap: 6px; min-height: 26px; padding: 0 8px 0 6px; border-radius: 5px; font-size: 12.5px; white-space: nowrap; cursor: default; user-select: none; touch-action: manipulation; }
+.mi.active { background: rgba(109,139,255,.22); }
+.mi.disabled { color: var(--dim); opacity: .5; }
+.mi.disabled.active { background: rgba(255,255,255,.04); }
+.mi-check { display: flex; align-items: center; justify-content: center; color: var(--accent); }
+.mi-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mi-keys { color: var(--dim); font-size: 11px; padding-left: 22px; text-align: right; }
+.mi-arrow { display: flex; color: var(--dim); }
+.mi-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+@media (pointer: coarse) { .mi { min-height: 36px; } .mb-title { min-height: 36px; } }
+/* make room for the menus on laptops: logo only */
+@media (max-width: 1500px) { .brand-name { display: none; } }

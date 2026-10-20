@@ -1,8 +1,8 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle, MoreHorizontal, SlidersHorizontal, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
+import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft } from 'lucide-react'
 import { sideHandle, useSides } from '../useLayout'
-import { history, useStore, type EditMode, type Layout } from '../store'
+import { history, useStore, type EditMode } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
@@ -11,6 +11,7 @@ import { CmdBtn } from './CmdBtn'
 import { WorkspaceTabs, shownWorkspace } from './Workspace'
 import { WS_TABS, WS_TIPS } from '../wsconfig'
 import { ClipsPanel } from './ClipsPanel'
+import { MenuBar } from './MenuBar'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -23,7 +24,8 @@ export function Header({ onPalette }: { onPalette: () => void }) {
   const set = useStore(s => s.set)
   return (
     <header className="header">
-      <div className="brand"><span className="logo">◆</span> Polyform</div>
+      <div className="brand" title="Polyform"><span className="logo">◆</span> <span className="brand-name">Polyform</span></div>
+      <MenuBar onPalette={onPalette} />
       <WorkspaceTabs />
       <div className="hdr-group">
         <button className="icon-btn" disabled={!history.canUndo()} onClick={byId['edit.undo'].run} title="Undo  ·  Ctrl+Z" data-testid="undo"><Undo2 size={16} /></button>
@@ -36,56 +38,8 @@ export function Header({ onPalette }: { onPalette: () => void }) {
       </div>
       <span className="grow" />
       <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run} title="Export .glb  ·  Ctrl+E"><Download size={15} /> <span className="lbl">Export .glb</span></button>
-      <MoreMenu onPalette={onPalette} />
       <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void openPicked(f); e.target.value = '' }} />
     </header>
-  )
-}
-
-/** fixed-position anchor under the button (the header clips overflow so it can shrink on laptops) */
-const menuPos = (el: HTMLElement | null): React.CSSProperties => {
-  const r = el?.getBoundingClientRect()
-  return r ? { top: r.bottom + 6, right: Math.max(6, window.innerWidth - r.right) } : {}
-}
-
-/** The header's "…" menu: everything that is not used every minute (layout, gizmo axes, files, palette, help). */
-function MoreMenu({ onPalette }: { onPalette: () => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const layout = useStore(s => s.layout)
-  const gizmoSpace = useStore(s => s.gizmoSpace)
-  const numericOpen = useStore(s => s.numericOpen)
-  const set = useStore(s => s.set)
-  useEffect(() => {
-    if (!open) return
-    const down = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
-    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    window.addEventListener('pointerdown', down); window.addEventListener('keydown', key)
-    return () => { window.removeEventListener('pointerdown', down); window.removeEventListener('keydown', key) }
-  }, [open])
-  const item = (label: string, keys: string, run: () => void, testid: string, icon?: React.ReactNode) =>
-    <button className="menu-item" data-testid={testid} onClick={() => { setOpen(false); run() }}>{icon}<span>{label}</span><kbd>{keys}</kbd></button>
-  return (
-    <div className="more" ref={ref}>
-      <button className={`icon-btn ${open ? 'on' : ''}`} data-testid="more-menu" title="More: layout, gizmo axes, open / save, commands, help" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}><MoreHorizontal size={18} /></button>
-      {open && <div className="menu" role="menu" data-testid="more-panel" style={menuPos(ref.current)}>
-        <label className="menu-row">Layout
-          <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
-            <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
-          </select>
-        </label>
-        <label className="menu-row">Gizmo axes
-          <button className={`ghost small ${gizmoSpace === 'local' ? 'on' : ''}`} data-testid="gizmo-space" title="Gizmo axes: global (world) or local (the object's own)" onClick={() => set({ gizmoSpace: gizmoSpace === 'local' ? 'global' : 'local' })}>{gizmoSpace === 'local' ? 'Local' : 'Global'}</button>
-        </label>
-        <div className="menu-sep" />
-        {item('Open / import…', 'Ctrl+O', byId['file.open'].run, 'menu-open', <Upload size={14} />)}
-        {item('Save project', 'Ctrl+S', byId['file.save'].run, 'menu-save', <Save size={14} />)}
-        <div className="menu-sep" />
-        {item('Search commands', 'Ctrl+K', onPalette, 'menu-palette', <CmdIcon size={14} />)}
-        {item(numericOpen ? 'Hide Numeric panel' : 'Numeric panel', 'N', byId['edit.numeric'].run, 'menu-numeric', <SlidersHorizontal size={14} />)}
-        {item('Help & shortcuts', 'F1', byId['help.shortcuts'].run, 'menu-help', <HelpCircle size={14} />)}
-      </div>}
-    </div>
   )
 }
 
