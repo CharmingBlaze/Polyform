@@ -55,3 +55,19 @@ describe('UV-local selection', () => {
     s.setUI({ uvSync: 'uv' })
   })
 })
+
+import { rotateAbout, scaleAbout } from '../src/uvops'
+describe('frame transforms', () => {
+  const orig = new Map<number, [number, number]>([[0, [0.1, 0.1]], [1, [0.5, 0.1]], [2, [0.5, 0.3]], [3, [0.1, 0.3]]])
+  it('scaleAbout keeps the anchor fixed and scales the box', () => {
+    const r = scaleAbout(orig, [0.1, 0.1], 2, 0.5)
+    expect(r.get(0)).toEqual([0.1, 0.1])
+    expect(r.get(2)![0]).toBeCloseTo(0.9); expect(r.get(2)![1]).toBeCloseTo(0.2)
+  })
+  it('rotateAbout 90° swaps the box sides around the pivot', () => {
+    const r = rotateAbout(orig, [0.3, 0.2], Math.PI / 2)
+    const xs = [...r.values()].map(q => q[0]), ys = [...r.values()].map(q => q[1])
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(0.2); expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(0.4)
+    expect((Math.max(...xs) + Math.min(...xs)) / 2).toBeCloseTo(0.3)
+  })
+})

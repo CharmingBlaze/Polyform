@@ -115,6 +115,86 @@ await addImage(16, 16)
   await p.selectOption('[data-testid="uv-snap"]', '1'); await frame()
 }
 
+// ---- UV-4: selection frame with scale / rotate handles and a pivot
+const box = fi => S(fi => { const f = window.__polyform.getState().model.faces[fi]; const us = f.uv.map(q => q[0]), vs = f.uv.map(q => q[1]); return { minU: Math.min(...us), maxU: Math.max(...us), minV: Math.min(...vs), maxV: Math.max(...vs) } }, fi)
+const H = () => S(() => window.__polyformUV.handles())
+{
+  await gridLayout(); await selFace(4); await frame()
+  let h = await H()
+  check('a selected face shows the frame: 8 handles, rotate handle above, pivot', h && ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].every(k => h[k]) && h.rot.y < h.n.y && h.hs === 4)
+  const b0 = await box(4), sd = await side()
+  // corner handle: scales about the opposite corner, snapped to whole texels (16 px image)
+  await dragPx(h.ne, sd * 2 / 16, -sd * 1 / 16); h = await H()
+  let b1 = await box(4)
+  check('NE handle scales about the SW corner', close(b1.minU, b0.minU) && close(b1.minV, b0.minV) && close(b1.maxU - b1.minU, 6 / 16, 1e-6) && close(b1.maxV - b1.minV, 5 / 16, 1e-6), JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  check('one Ctrl+Z undoes the handle drag', JSON.stringify(await box(4)) === JSON.stringify(b0))
+  // Shift keeps the aspect ratio
+  h = await H()
+  await dragPx(h.se, sd * 4 / 16, sd * 1 / 16, ['Shift'])
+  b1 = await box(4)
+  check('Shift keeps W = H', close(b1.maxU - b1.minU, b1.maxV - b1.minV, 1e-6) && b1.maxU - b1.minU > b0.maxU - b0.minU, JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  // Alt scales from the centre
+  h = await H()
+  await dragPx(h.e, sd * 2 / 16, 0, ['Alt'])
+  b1 = await box(4)
+  check('Alt: the edge handle scales about the centre (both sides move)', b1.minU < b0.minU - 1e-6 && b1.maxU > b0.maxU + 1e-6 && close((b1.minU + b1.maxU) / 2, (b0.minU + b0.maxU) / 2, 1e-6))
+  await p.keyboard.press('Control+z'); await frame()
+  // edge handle: one axis only
+  h = await H()
+  await dragPx(h.n, 0, -sd * 3 / 16)
+  b1 = await box(4)
+  check('N handle stretches V only', close(b1.maxU - b1.minU, b0.maxU - b0.minU) && close(b1.maxV - b1.minV, 7 / 16, 1e-6) && close(b1.minV, b0.minV))
+  await p.keyboard.press('Control+z'); await frame()
+  // rotate handle: drag it to the right side of the pivot = 90° clockwise
+  h = await H()
+  const pv = h.pivot, r = Math.hypot(h.rot.x - pv.x, h.rot.y - pv.y)
+  await p.mouse.move(h.rot.x, h.rot.y); await p.mouse.down()
+  for (let k = 1; k <= 6; k++) { const a = -Math.PI / 2 + (Math.PI / 2) * k / 6; await p.mouse.move(pv.x + r * Math.cos(a), pv.y + r * Math.sin(a)) }
+  await p.mouse.up(); await frame()
+  const rot = (await uvs())[4], u0 = (await S(() => window.__polyform.getState().model.faces[4].uv))
+  b1 = await box(4)
+  check('rotate handle turns the face 90° about the pivot (box keeps its centre)', close(b1.maxU - b1.minU, b0.maxV - b0.minV, 1e-6) && close((b1.minU + b1.maxU) / 2, (b0.minU + b0.maxU) / 2, 1e-6) && close(rot[0][0], u0[0][0]), JSON.stringify(b1))
+  const before = JSON.stringify((await uvs())[4])
+  await p.keyboard.press('Control+z'); await frame()
+  check('rotation was one undo step', JSON.stringify(await box(4)) === JSON.stringify(b0) && before !== JSON.stringify((await uvs())[4]))
+  // Alt-drag the pivot to a corner, then rotate about it
+  h = await H()
+  await p.keyboard.down('Alt'); await p.mouse.move(h.pivot.x, h.pivot.y); await p.mouse.down(); await p.mouse.move(h.sw.x, h.sw.y, { steps: 4 }); await p.mouse.up(); await p.keyboard.up('Alt'); await frame()
+  h = await H()
+  check('Alt-drag moves the pivot (snapped to the SW corner)', Math.abs(h.pivot.x - h.sw.x) < 1.5 && Math.abs(h.pivot.y - h.sw.y) < 1.5, JSON.stringify([h.pivot, h.sw]))
+  await p.mouse.move(h.rot.x, h.rot.y); await p.mouse.down()
+  { const r2 = Math.hypot(h.rot.x - h.pivot.x, h.rot.y - h.pivot.y), a0 = Math.atan2(h.rot.y - h.pivot.y, h.rot.x - h.pivot.x)
+    for (let k = 1; k <= 6; k++) { const a = a0 + (Math.PI / 2) * k / 6; await p.mouse.move(h.pivot.x + r2 * Math.cos(a), h.pivot.y + r2 * Math.sin(a)) } }
+  await p.mouse.up(); await frame()
+  b1 = await box(4)
+  check('rotating about the moved pivot keeps that corner fixed', close(b1.minU, b0.minU, 1e-6) && close(b1.maxV, b0.minV, 1e-6) && close(b1.minV, b0.minV - (b0.maxU - b0.minU), 1e-6), JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await selFace(5); await selFace(4); await frame()
+  // drag inside the frame (not on a corner) moves
+  const c = await uvC(...await centroid(4))
+  await dragPx({ x: c.x + 6, y: c.y + 6 }, sd * 2 / 16, 0)
+  b1 = await box(4)
+  check('dragging inside the frame moves the selection', close(b1.minU - b0.minU, 2 / 16, 1e-6))
+  await p.keyboard.press('Control+z'); await frame()
+  // pen: bigger handles, a press 6 px off the handle centre still grabs it
+  const cdp = await p.context().newCDPSession(p)
+  const pen = (type, pt, o = {}) => cdp.send('Input.dispatchMouseEvent', { type, x: pt.x, y: pt.y, button: 'none', clickCount: type === 'mouseMoved' ? 0 : 1, pointerType: 'pen', ...o })
+  h = await H()
+  await pen('mouseMoved', { x: h.ne.x + 20, y: h.ne.y - 20 }, { force: 0 }); await frame()
+  h = await H()
+  check('pen hover: 14 px handles', h.hs === 7)
+  const st = { x: h.ne.x + 6, y: h.ne.y - 6 }
+  await pen('mouseMoved', st, { force: 0 }); await pen('mousePressed', st, { button: 'left', buttons: 1, force: 0.5 })
+  for (let k = 1; k <= 4; k++) await pen('mouseMoved', { x: st.x + sd * 2 / 16 * k / 4, y: st.y }, { button: 'left', buttons: 1, force: 0.5 })
+  await pen('mouseReleased', { x: st.x + sd * 2 / 16, y: st.y }, { button: 'left', buttons: 0, force: 0 }); await frame()
+  b1 = await box(4)
+  check('pen grabs a handle 6 px off its centre and scales', close(b1.maxU - b1.minU, 6 / 16, 1e-6) && close(b1.minU, b0.minU), JSON.stringify(b1))
+  await p.keyboard.press('Control+z'); await frame()
+  await p.mouse.move(640, 300); await frame()
+  await p.screenshot({ path: '/tmp/uv4.png' })
+}
+
 const failed = results.filter(r => !r[1])
 for (const [n, ok, info] of results) console.log(`${ok ? 'ok' : 'FAIL'}  ${n}${info && !ok ? ' — ' + info : ''}`)
 if (errs.length) { console.error(errs); process.exit(1) }

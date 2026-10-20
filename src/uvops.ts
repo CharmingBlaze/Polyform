@@ -32,6 +32,23 @@ export function cornerBox(m: Model, ids: Iterable<number>) {
   return n ? { minU, minV, maxU, maxV, c: [(minU + maxU) / 2, (minV + maxV) / 2] as Vec2 } : null
 }
 
+/** Scale original corner positions about an anchor: u' = anchor + (o - anchor)·(sx, sy). */
+export function scaleAbout(orig: Map<number, Vec2>, anchor: Vec2, sx: number, sy: number): Map<number, Vec2> {
+  const out = new Map<number, Vec2>()
+  orig.forEach((o, id) => out.set(id, [anchor[0] + (o[0] - anchor[0]) * sx, anchor[1] + (o[1] - anchor[1]) * sy]))
+  return out
+}
+/** Rotate original corner positions about a pivot (radians, counter-clockwise in UV space). */
+export function rotateAbout(orig: Map<number, Vec2>, pivot: Vec2, ang: number): Map<number, Vec2> {
+  const cs = Math.cos(ang), sn = Math.sin(ang), out = new Map<number, Vec2>()
+  orig.forEach((o, id) => { const x = o[0] - pivot[0], y = o[1] - pivot[1]; out.set(id, [pivot[0] + x * cs - y * sn, pivot[1] + x * sn + y * cs]) })
+  return out
+}
+/** Write corner positions into the model. */
+export function setCorners(m: Model, pos: Map<number, Vec2>) {
+  pos.forEach((u, id) => { const f = m.faces[cornerFace(id)]; if (f && f.uv[cornerIdx(id)]) f.uv[cornerIdx(id)] = u })
+}
+
 /** Apply fn(uv, centre of the corners' bounding box) to the corners. */
 export function mapCorners(m: Model, ids: Iterable<number>, fn: (u: Vec2, c: Vec2) => Vec2) {
   const list = [...ids], b = cornerBox(m, list)

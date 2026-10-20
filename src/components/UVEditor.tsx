@@ -7,11 +7,10 @@ import { interaction } from '../interaction'
 import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as UVS from '../uvsel'
-import { gridSub, snapAngle, snapLen, snapMoveDelta } from '../uvpx'
+import { gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart } from '../paint'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
-export type UVTool = 'select' | 'move' | 'rotate' | 'scale'
 type Xf = 'move' | 'rotate' | 'scale'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Drag = any
@@ -36,7 +35,6 @@ const uvLocal = () => { const s = useStore.getState(); return s.ui.uvSync === 'u
 export function UVEditor({ big = false }: { big?: boolean }) {
   const wrap = useRef<HTMLDivElement>(null)
   const cv = useRef<HTMLCanvasElement>(null)
-  const [tool, setTool] = useState<UVTool>('select')
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 })
   const [size, setSize] = useState({ w: 300, h: 300 })
   const [checker, setChecker] = useState(false)
@@ -53,7 +51,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const globalTool = useStore(s => s.tool)
   const uvSync = useStore(s => s.ui.uvSync)
   const snapSetting = useStore(s => s.ui.uvSnap)
-  useStore(s => s.uvSel)
+  const uvSelState = useStore(s => s.uvSel)
+  useEffect(() => { pivot.current = null }, [selFaces, selVerts, selEdges, uvSelState])
   // image of the first selected face's material, else the active material
   const firstSel = [...selFaces].find(f => model.faces[f])
   const [pick, setPick] = useState<{ mat: number; sel: Set<number> } | null>(null)
@@ -65,6 +64,10 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const [, force] = useState(0)
   const tw = texImg ? (texImg as HTMLCanvasElement).width : 0, th = texImg ? (texImg as HTMLCanvasElement).height : 0
   const drag = useRef<Drag>(null)
+  /** user-moved rotation pivot (UV); cleared when the selection changes */
+  const pivot = useRef<Vec2 | null>(null)
+  /** last pointer was a pen or finger: bigger handles */
+  const coarse = useRef(false)
   const mouse = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
@@ -84,7 +87,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   useEffect(() => {
     if (!import.meta.env.DEV) return
     const w = window as unknown as Record<string, unknown>
-    w.__polyformUV = { sel: () => [...uvSelection()], toClient: (u: number, v: number) => { const r = cv.current!.getBoundingClientRect(); const p = toPx([u, v]); return { x: r.left + p.x, y: r.top + p.y } }, side }
+    w.__polyformUV = { sel: () => [...uvSelection()], handles: () => { const f = frameInfo(), r = cv.current!.getBoundingClientRect(); return f ? { ...Object.fromEntries(f.handles.map(([id, x, y]) => [id, { x: r.left + x, y: r.top + y }])), rot: { x: r.left + f.rot.x, y: r.top + f.rot.y }, pivot: { x: r.left + f.pp.x, y: r.top + f.pp.y }, hs: f.hs } : null }, toClient: (u: number, v: number) => { const r = cv.current!.getBoundingClientRect(); const p = toPx([u, v]); return { x: r.left + p.x, y: r.top + p.y } }, side }
   })
 
   useEffect(() => {
@@ -163,12 +166,51 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         g.fillRect(p.x - (s ? 3 : 2), p.y - (s ? 3 : 2), s ? 6 : 4, s ? 6 : 4)
       })
     }
+    const fr = frameInfo()
+    if (fr) {
+      g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 1; g.setLineDash([4, 3])
+      g.strokeRect(Math.round(fr.x0) + 0.5, Math.round(fr.y0) + 0.5, Math.round(fr.x1 - fr.x0), Math.round(fr.y1 - fr.y0)); g.setLineDash([])
+      g.beginPath(); g.moveTo((fr.x0 + fr.x1) / 2, fr.y0); g.lineTo(fr.rot.x, fr.rot.y + fr.hs); g.stroke()
+      for (const [, hx, hy] of fr.handles) { g.fillStyle = '#fff'; g.fillRect(hx - fr.hs, hy - fr.hs, fr.hs * 2, fr.hs * 2); g.strokeStyle = '#1b1f27'; g.strokeRect(hx - fr.hs + 0.5, hy - fr.hs + 0.5, fr.hs * 2 - 1, fr.hs * 2 - 1) }
+      g.fillStyle = '#ffa04a'; g.beginPath(); g.arc(fr.rot.x, fr.rot.y, fr.hs + 1, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#1b1f27'; g.stroke()
+      g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(fr.pp.x, fr.pp.y, 5, 0, Math.PI * 2)
+      g.moveTo(fr.pp.x - 8, fr.pp.y); g.lineTo(fr.pp.x + 8, fr.pp.y); g.moveTo(fr.pp.x, fr.pp.y - 8); g.lineTo(fr.pp.x, fr.pp.y + 8); g.stroke()
+    }
     if (drag.current?.kind === 'rect' && drag.current.moved) {
       const d = drag.current
       g.strokeStyle = '#8ab4ff'; g.setLineDash([4, 3]); g.strokeRect(d.x0, d.y0, d.x1 - d.x0, d.y1 - d.y0); g.setLineDash([])
     }
   })
   void version; void selFaces; void selVerts; void selEdges; void selectMode; void subModes; void texRev
+
+  // ---------- selection frame: dashed box, 8 scale handles, rotate handle, pivot ----------
+  type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rot' | 'pivot'
+  const frameInfo = () => {
+    const st = useStore.getState()
+    if (globalTool === 'paint') return null
+    const ids = uvSelection(), m = st.model
+    const pos = new Set<string>()
+    for (const id of ids) { const u = m.faces[Math.floor(id / 1024)]?.uv[id % 1024]; if (u) pos.add(`${u[0].toFixed(7)},${u[1].toFixed(7)}`); if (pos.size > 1) break }
+    if (pos.size < 2) return null
+    const b = U.cornerBox(m, ids)!
+    const a = toPx([b.minU, b.maxV]), c = toPx([b.maxU, b.minV])
+    const pv = pivot.current ?? b.c
+    const hs = coarse.current ? 7 : 4
+    const cx = (a.x + c.x) / 2, cy = (a.y + c.y) / 2
+    const handles: [HandleId, number, number][] = [['nw', a.x, a.y], ['n', cx, a.y], ['ne', c.x, a.y], ['e', c.x, cy], ['se', c.x, c.y], ['s', cx, c.y], ['sw', a.x, c.y], ['w', a.x, cy]]
+    return { b, x0: a.x, y0: a.y, x1: c.x, y1: c.y, hs, handles, rot: { x: cx, y: a.y - 18 - hs }, pivot: pv, pp: toPx(pv) }
+  }
+  const hitHandle = (x: number, y: number): HandleId | null => {
+    const f = frameInfo()
+    if (!f) return null
+    const r = f.hs + 2
+    if ((x - f.rot.x) ** 2 + (y - f.rot.y) ** 2 <= (r + 1) ** 2) return 'rot'
+    for (const [id, hx, hy] of f.handles) if (Math.abs(x - hx) <= r && Math.abs(y - hy) <= r) return id
+    if ((x - f.pp.x) ** 2 + (y - f.pp.y) ** 2 <= (r + 1) ** 2) return 'pivot'
+    return null
+  }
+  const inFrame = (x: number, y: number) => { const f = frameInfo(); return !!f && x >= f.x0 && x <= f.x1 && y >= f.y0 && y <= f.y1 }
+  const CURSOR: Record<HandleId, string> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', rot: 'grab', pivot: 'move' }
 
   const loc = (e: { clientX: number; clientY: number }) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 
@@ -269,24 +311,32 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   }
 
   // ---------- transforms ----------
-  const beginXf = (kind: Xf, x: number, y: number, modal: boolean) => {
+  const beginXf = (kind: Xf, x: number, y: number, modal: boolean, opt: { handle?: HandleId } = {}) => {
     const st = useStore.getState(), m = st.model
     const ids = uvSelection()
     if (!ids.size) { st.notify('Select something to transform'); return false }
     const orig = new Map<number, Vec2>()
     ids.forEach(id => { const u = m.faces[cornerFace(id)]?.uv[cornerIdx(id)]; if (u) orig.set(id, [...u] as Vec2) })
     const b = U.cornerBox(m, ids)!
-    const cp = toPx(b.c)
+    // rotation (handle or R) turns about the pivot; Alt-scaling from a handle scales about the centre
+    const c: Vec2 = kind === 'rotate' ? (pivot.current ?? b.c) : b.c
+    const cp = toPx(c)
+    let hAnchor: Vec2 | null = null, hPoint: Vec2 | null = null
+    if (opt.handle) {
+      const h = opt.handle, ux = (k: string) => (h.includes(k))
+      hPoint = [ux('e') ? b.maxU : ux('w') ? b.minU : b.c[0], ux('n') ? b.maxV : ux('s') ? b.minV : b.c[1]]
+      hAnchor = [ux('e') ? b.minU : ux('w') ? b.maxU : b.c[0], ux('n') ? b.minV : ux('s') ? b.maxV : b.c[1]]
+    }
     // move snapping keeps the corner nearest the press point on the grid
     let anchor: Vec2 = b.c, ad = Infinity
     orig.forEach(o => { const q = toPx(o), dd = (q.x - x) ** 2 + (q.y - y) ** 2; if (dd < ad) { ad = dd; anchor = o } })
     st.checkpoint(`UV ${kind}`)
-    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c: b.c, cp, modal, anchor, w0: b.maxU - b.minU, h0: b.maxV - b.minV, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
+    drag.current = { kind: 'xf', xf: kind, x0: x, y0: y, orig, c, cp, bc: b.c, modal, anchor, handle: opt.handle, hAnchor, hPoint, w0: b.maxU - b.minU, h0: b.maxV - b.minV, a0: Math.atan2(y - cp.y, x - cp.x), r0: Math.hypot(x - cp.x, y - cp.y) || 1 }
     return true
   }
   /** current grid cells per texel (0 = free) for these modifier keys */
   const grid = (ctrl: boolean, shift: boolean) => gridSub(snapSetting, tw > 0, ctrl, shift)
-  const updateXf = (x: number, y: number, mods: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean }) => {
+  const updateXf = (x: number, y: number, mods: { ctrlKey?: boolean; shiftKey?: boolean; metaKey?: boolean; altKey?: boolean }) => {
     const d = drag.current, st = useStore.getState(), m = st.model
     const ctrl = !!(mods.ctrlKey || mods.metaKey), shift = !!mods.shiftKey, sub = grid(ctrl, shift)
     let [dx, dy] = snapMoveDelta(d.anchor, [(x - d.x0) / side, -(y - d.y0) / side], tw, th, sub)
@@ -296,6 +346,27 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     // scale: the box's larger side lands on whole grid cells
     const big = Math.max(d.w0, d.h0)
     if (sub && big > 1e-9) f = snapLen(big * f, d.w0 >= d.h0 ? tw : th, sub) / big
+    if (d.handle && d.xf === 'scale') {
+      // follow the pointer's movement (a press a few px off the handle centre must not jump); Alt = about the centre
+      const h: string = d.handle, H: Vec2 = d.hPoint, A: Vec2 = mods.altKey ? d.bc : d.hAnchor
+      const p: Vec2 = [H[0] + (x - d.x0) / side, H[1] - (y - d.y0) / side]
+      const hx = h.includes('e') || h.includes('w'), hy = h.includes('n') || h.includes('s')
+      let sx = hx && Math.abs(H[0] - A[0]) > 1e-12 ? (p[0] - A[0]) / (H[0] - A[0]) : 1
+      let sy = hy && Math.abs(H[1] - A[1]) > 1e-12 ? (p[1] - A[1]) / (H[1] - A[1]) : 1
+      if (shift) {
+        // keep the aspect ratio: follow the axis that moved most
+        const k = hx && hy ? (Math.abs(sx) > Math.abs(sy) ? sx : sy) : hx ? sx : sy
+        sx = (hx ? Math.sign(sx || 1) : 1) * Math.abs(k); sy = (hy ? Math.sign(sy || 1) : 1) * Math.abs(k)
+      }
+      // whole grid cells for the new width / height
+      if (sub) {
+        if (d.w0 > 1e-9 && (hx || shift)) sx = snapLen(d.w0 * sx, tw, sub) / d.w0
+        if (d.h0 > 1e-9 && (hy || shift)) sy = snapLen(d.h0 * sy, th, sub) / d.h0
+      }
+      U.setCorners(m, U.scaleAbout(d.orig, A, sx, sy))
+      st.touch()
+      return
+    }
     d.orig.forEach((o: Vec2, id: number) => {
       let u: Vec2
       if (d.xf === 'move') u = [o[0] + dx, o[1] + dy]
@@ -376,9 +447,18 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       if (useStore.getState().paint.mode === 'pick' || useStore.getState().paint.mode === 'fill') return
     }
     const add = e.shiftKey, sub = e.ctrlKey || e.metaKey
-    if (tool !== 'select' && !add && !sub) { if (beginXf(tool, x, y, false)) return }
+    coarse.current = e.pointerType === 'pen' || e.pointerType === 'touch'
+    if (!add && !sub) {
+      const h = hitHandle(x, y)
+      // the pivot sits on the centre, where a plain drag moves the selection: Alt-drag moves the pivot
+      if (h === 'pivot' && e.altKey) { drag.current = { kind: 'pivot' }; return }
+      if (h === 'rot') { if (beginXf('rotate', x, y, false)) return }
+      else if (h && h !== 'pivot' && beginXf('scale', x, y, false, { handle: h })) return
+    }
     // select tool: press on an element selects it (unless already selected) and a drag moves it; else marquee
     const hit = add || sub ? null : pickAt(x, y)
+    // inside the selection frame a drag moves the selection (a click still selects what is under it)
+    if (!add && !sub && (!hit || hitSelected(hit)) && inFrame(x, y)) { drag.current = { kind: 'press', x0: x, y0: y, hit, was: true }; return }
     if (hit) {
       const was = hitSelected(hit)
       if (!was) applyHit(hit, false, false)
@@ -411,7 +491,15 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     mouse.current = { x, y }
     const d = drag.current
-    if (!d) return
+    if (!d) {
+      if (e.pointerType !== 'touch') { coarse.current = e.pointerType === 'pen'; const h = hitHandle(x, y); cv.current!.style.cursor = h ? CURSOR[h] : '' }
+      return
+    }
+    if (d.kind === 'pivot') {
+      const g = grid(e.ctrlKey || e.metaKey, e.shiftKey), q = toUV(x, y)
+      pivot.current = g ? snapUV(q[0], q[1], tw, th, g) : q
+      force(n => n + 1); return
+    }
     if (d.kind === 'paint') { notePen(e); const [u, v] = toUV(x, y); paintUVAt(u, v); return }
     if (d.kind === 'pan') { setView(v => ({ ...v, ox: v.ox + x - d.x, oy: v.oy + y - d.y })); d.x = x; d.y = y; return }
     if (d.kind === 'rect') { d.x1 = x; d.y1 = y; d.moved = d.moved || Math.abs(x - d.x0) > 4 || Math.abs(y - d.y0) > 4; force(n => n + 1); return }
@@ -488,7 +576,6 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         <div className="seg" data-testid="uv-sync" title="Selection sync. UV: pick this island's copy of a point or edge (seams stay apart). 3D: picking takes the mesh point in every island">
           {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
         </div>
-        {(['select', 'move', 'rotate', 'scale'] as UVTool[]).map(t => <B key={t} id={t} on={tool === t} label={t[0].toUpperCase() + t.slice(1)} tip={t === 'select' ? 'Select (click / drag); drag a selected element to move it' : `${t} (or ${t === 'move' ? 'G' : t === 'rotate' ? 'R' : 'S'} while hovering)`} onClick={() => setTool(t)} />)}
         <select data-testid="uv-snap" value={snapSetting} title={`Snap while dragging to the image's pixel grid${tw ? '' : ' (when an image is shown)'} · Ctrl inverts · Shift = 4× finer`} onChange={e => useStore.getState().setUI({ uvSnap: +e.target.value as 0 | 1 | 2 | 4 })}>
           <option value={0}>Snap off</option><option value={1}>Snap: pixel</option><option value={2}>Snap: ½ px</option><option value={4}>Snap: ¼ px</option>
         </select>
@@ -505,7 +592,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} />
-        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click/drag select · G R S · L island · wheel zoom · right-drag pan'}</div>
+        <div className="uv-hint">{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Ctrl+click picks · Fill fills the face under the cursor' : 'click / drag select · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · wheel zoom · right-drag pan'}</div>
       </div>
       <div className="uv-actions">
         <div className="label">Project</div>

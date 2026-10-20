@@ -110,7 +110,7 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .uv-toolbar button { font-size: 12px; padding: 3px 8px; }
 .uv-canvas { flex: 1; min-height: 200px; position: relative; overflow: hidden; }
 .uv-canvas canvas { position: absolute; inset: 0; touch-action: none; }
-.uv-hint { position: absolute; bottom: 6px; left: 8px; font-size: 11px; color: var(--dim); background: #0009; padding: 2px 6px; border-radius: 4px; pointer-events: none; }
+.uv-hint { position: absolute; bottom: 6px; left: 8px; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--dim); background: #0009; padding: 2px 6px; border-radius: 4px; pointer-events: none; }
 .uv-actions { padding: 8px 10px; border-top: 1px solid var(--line); }
 
 .timeline { display: grid; grid-template-rows: 8px 36px minmax(0, 1fr); background: var(--panel); min-height: 0; overflow: hidden; }
