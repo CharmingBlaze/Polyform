@@ -306,3 +306,36 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .help-g { text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; color: var(--dim); margin: 10px 0 4px; }
 .help-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .help-row kbd { flex: none; }
+
+/* ---- declutter: fewer borders and labels, more air (dark theme kept) ---- */
+.header { border-bottom: none; box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.hint-bar { background: transparent; border-bottom: none; color: var(--dim); padding: 0 16px; }
+.hint-bar .hint-text { color: #aab2c3; }
+.hint-bar kbd, .status kbd { border: none; background: #ffffff0d; }
+.status { border-top: none; gap: 16px; padding: 0 14px; }
+.status .seg { border: none; background: transparent; }
+.seg { border-color: transparent; }
+.rail, .right-col { border: none; }
+.rail .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 10px 8px 4px; border-bottom: none; }
+.rail .tabs.n1 { display: flex; }
+.rail .tabs button { border-radius: 6px; padding: 5px 6px; justify-content: center; }
+.rail .tabs button.on { background: var(--panel2); }
+.tool-list { gap: 1px; padding: 6px 8px 18px; }
+.tool-list h4 { margin: 16px 6px 6px; }
+.tool-list h4:first-child { margin-top: 6px; }
+.tool-btn { background: transparent; border-color: transparent; padding: 5px 8px; }
+.tool-btn:hover:not(:disabled) { background: var(--panel2); border-color: transparent; }
+.tool-btn.on { background: var(--panel2); }
+.tool-btn kbd { background: transparent; border: none; opacity: .7; }
+.sidebar .tabs { border-bottom: none; padding: 10px 10px 4px; gap: 4px; }
+.sidebar .tabs button { border-radius: 6px; }
+.tab-body { background: var(--panel); }
+.card { border: none; background: #13161c; margin: 10px 8px 0; }
+.numeric { border-bottom: none; margin: 8px; border-radius: var(--r); }
+.vp-title { border-bottom: none; background: rgba(14,16,21,.55); }
+.vp-label { border: none; }
+.tl-handle { border-top: none; }
+.tl-controls { gap: 6px; padding: 0 14px; }
+.refs-fold { flex: none; max-height: 50%; overflow: auto; padding: 0 0 8px; }
+.refs-fold .ol-head { margin: 0 2px; }
+.refs-fold .ol-head .meta { margin-left: auto; }

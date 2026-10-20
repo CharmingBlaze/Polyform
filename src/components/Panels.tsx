@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore, type SideTab, type Workspace } from '../store'
 import { faceMat } from '../model'
 import { textures } from '../textures'
@@ -30,11 +30,27 @@ export function Sidebar() {
         {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" onClick={() => setTab('uv')}><Image size={14} /> Images</button>}
       </div>
       <div className="tab-body">
-        {tab === 'scene' && <><Outliner />{workspace === 'model' && <RefsPanel />}</>}
+        {tab === 'scene' && <><Outliner />{workspace === 'model' && <RefsFold />}</>}
         {tab === 'joints' && <Joints />}
         {tab === 'uv' && <UVSide />}
       </div>
     </aside>
+  )
+}
+
+/** Model: reference images as a quiet fold under the Outliner (opens by itself once there are references). */
+function RefsFold() {
+  const n = useStore(s => s.model.refs?.length ?? 0)
+  useStore(s => s.version)
+  const [open, setOpen] = useState<boolean | null>(null)
+  const shown = open ?? n > 0
+  return (
+    <div className="refs-fold">
+      <div className="ol-head" data-testid="refs-fold" role="button" aria-expanded={shown} onClick={() => setOpen(!shown)}>
+        {shown ? <ChevronDown size={12} /> : <ChevronRight size={12} />} <Image size={12} /> Reference images <span className="meta">{n || ''}</span>
+      </div>
+      {shown && <RefsPanel />}
+    </div>
   )
 }
 
