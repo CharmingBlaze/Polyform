@@ -1,7 +1,7 @@
 // Blender UV operators that are not the seam unwrap itself: Smart UV Project, Follow Active Quads, Lightmap Pack,
 // Average Islands Scale, Minimize Stretch, Seams from Islands, seams by angle and Split. Pure functions on the model.
 import { edgeKey, faceNormal, type Model, type Vec2 } from './model'
-import { faceArea3D, packIslandsEx, uvArea } from './uvops'
+import { faceArea3D, islands, packIslandsEx, uvArea } from './uvops'
 
 type V3 = [number, number, number]
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
@@ -139,5 +139,28 @@ export function lightmapPack(m: Model, faces: number[], margin = 0.02): number {
   spread(m, fs.map(fi => [fi]))
   packIslandsEx(m, fs, margin)
   return fs.length
+}
+
+// ---------- Average Islands Scale ----------
+/** Scale every island (about its box centre) so all have the same UV area per 3D area; the total UV area stays. Islands with pins stay. */
+export function averageIslandScale(m: Model, faces: number[]): number {
+  const isl = islands(m, faces), groups = new Map<number, number[]>()
+  for (const fi of faces) { const r = isl.get(fi)!; const g = groups.get(r); if (g) g.push(fi); else groups.set(r, [fi]) }
+  let tu = 0, t3 = 0
+  const gs = [...groups.values()].map(g => { const au = g.reduce((s, fi) => s + Math.abs(uvArea(m.faces[fi].uv)), 0), a3 = g.reduce((s, fi) => s + faceArea3D(m, fi), 0); tu += au; t3 += a3; return { g, au, a3 } })
+  if (t3 < 1e-12 || tu < 1e-12) return 0
+  const target = tu / t3
+  let n = 0
+  for (const { g, au, a3 } of gs) {
+    if (au < 1e-14 || a3 < 1e-14 || g.some(fi => m.faces[fi].pin?.length)) continue
+    const k = Math.sqrt((target * a3) / au)
+    if (Math.abs(k - 1) < 1e-9) continue
+    let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity
+    for (const fi of g) for (const [u, v] of m.faces[fi].uv) { u0 = Math.min(u0, u); v0 = Math.min(v0, v); u1 = Math.max(u1, u); v1 = Math.max(v1, v) }
+    const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2
+    for (const fi of g) m.faces[fi].uv = m.faces[fi].uv.map(([u, v]) => [cu + (u - cu) * k, cv + (v - cv) * k] as Vec2)
+    n++
+  }
+  return n
 }
 

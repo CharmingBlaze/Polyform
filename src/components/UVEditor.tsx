@@ -2,7 +2,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scissors, Shrink, SlidersHorizontal, Sparkles, WandSparkles, type LucideIcon } from 'lucide-react'
+import { AlignHorizontalSpaceAround, AlignStartVertical, AlignVerticalSpaceAround, Box, Camera, Cylinder, ChevronDown, ChevronRight, Eraser, FlipHorizontal2, FlipVertical2, Grid2x2, Grid3x3, Image as ImageIcon, LayoutGrid, Link2, Magnet, Maximize2, Minus, Move3d, Palette, Pin, PinOff, RotateCcw, RotateCw, Ruler, Scaling, Scissors, Shrink, SlidersHorizontal, Sparkles, WandSparkles, type LucideIcon } from 'lucide-react'
 import { useHost } from '../portalhost'
 import * as THREE from 'three'
 import { useStore } from '../store'
@@ -17,6 +17,7 @@ import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
 import { viewCtx } from './Viewport'
 import { runUnwrap } from '../uvunwrap'
 import { liveCharts, liveSolve } from '../lscm'
+import * as BL from '../uvblender'
 import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
@@ -873,6 +874,13 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   }
   const densFaces = useStore.getState().activeFaces()
   const densNow = densFaces.length ? Math.round(U.meanDensity(model, densFaces, tw || paintTexSize, th || paintTexSize) * 10) / 10 : 0
+  const avgScale = () => {
+    const faces = targetFaces(), st = useStore.getState()
+    if (!faces.length) return
+    let n = 0
+    st.edit(m => { n = BL.averageIslandScale(m, faces) }, 'Average islands scale')
+    st.notify(n ? `Average Islands Scale: ${n} island${n === 1 ? '' : 's'} rescaled` : 'Average Islands Scale: the islands already match')
+  }
   const rotOp = (k: 'cw' | 'ccw' | '180') => op('UV rotate', k === 'cw' ? U.rotCW : k === 'ccw' ? U.rot90 : U.rot180)
   const moveToCursor = (x: number, y: number) => op('UV move to cursor', (m, ids) => U.moveTo(m, ids, toUV(x, y)))
   const runKey = (k: string, x: number, y: number) => {
@@ -1013,6 +1021,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <T id="straighten" icon={Minus} label="Straighten" tip="3+ points: onto one line. 2 points: turn the island so that edge is level" onClick={straighten} />
       <T id="dist-u" icon={AlignHorizontalSpaceAround} label="Space ↔" tip="Distribute the UV points evenly left to right" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'u'))} />
       <T id="dist-v" icon={AlignVerticalSpaceAround} label="Space ↕" tip="Distribute the UV points evenly bottom to top" onClick={() => op('UV distribute', (m, ids) => U.distribute(m, ids, 'v'))} />
+      <T id="avg-scale" icon={Scaling} label="Avg scale" tip="Average Islands Scale: every island gets the same UV size per 3D area (total UV area kept; islands with pins stay)" onClick={avgScale} />
     </div>
       {packOpen && <div className="uv-packopts" data-testid="uv-pack-options">
           <label title="Gap between islands, in image pixels">Gap <input data-testid="uv-pack-pad" type="number" min={0} max={64} value={packPrefs.pad} onChange={e => setPack({ pad: Math.max(0, Math.min(64, Math.round(+e.target.value || 0))) })} /> px</label>
@@ -1078,6 +1087,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
           { id: 'maximize', label: 'Maximize', run: () => op('UV maximize', U.maximize) },
           { id: 'merge', label: 'Merge', keys: 'Alt+M', run: () => merge(false, cx, cy) },
           { id: 'straighten', label: 'Straighten', run: straighten },
+          { id: 'avg-scale', label: 'Average islands scale', run: avgScale },
           { id: 'to-cursor', label: 'Move here', keys: 'Alt+U', run: () => moveToCursor(cx, cy) },
           (() => { const f = opFaces(), on = f.length > 0 && f.every(fi => model.faces[fi]?.uvShare); return { id: 'share', label: on ? '✓ Shared UVs (overlap OK)' : 'Shared UVs (overlap OK)', enabled: f.length > 0, run: () => useStore.getState().edit(m => U.setShared(m, f, !on), on ? 'Unshare UVs' : 'Share UVs') } })(),
           { id: 'cycle', label: 'Cycle corners', run: () => { const f = opFaces(); if (f.length) useStore.getState().edit(m => U.cycleCorners(m, f), 'Cycle UV corners') } },

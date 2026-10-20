@@ -60,3 +60,16 @@ describe('Lightmap Pack', () => {
     for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) expect(bs[i].maxU <= bs[j].minU + 1e-9 || bs[j].maxU <= bs[i].minU + 1e-9 || bs[i].maxV <= bs[j].minV + 1e-9 || bs[j].maxV <= bs[i].minV + 1e-9).toBe(true)
   })
 })
+
+describe('Average Islands Scale', () => {
+  it('average scale: islands end at the same UV area per 3D area; total UV area kept', () => {
+    const { m, faces } = strip([1, 1])
+    m.faces[faces[0]].uv = [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1]]
+    m.faces[faces[1]].uv = [[0.5, 0.5], [0.8, 0.5], [0.8, 0.8], [0.5, 0.8]]
+    const tot = faces.reduce((s, fi) => s + U.uvArea(m.faces[fi].uv), 0)
+    expect(B.averageIslandScale(m, faces)).toBe(2)
+    const r = faces.map(fi => U.uvArea(m.faces[fi].uv) / U.faceArea3D(m, fi))
+    expect(r[0]).toBeCloseTo(r[1], 9)
+    expect(faces.reduce((s, fi) => s + U.uvArea(m.faces[fi].uv), 0)).toBeCloseTo(tot, 9)
+  })
+})

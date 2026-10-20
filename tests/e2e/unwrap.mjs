@@ -142,8 +142,21 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
   check('Lightmap Pack: every face its own island inside 0..1, none overlapping', (await ISL()).length === n && !overlap && boxes.every(b => b.u0 >= -1e-6 && b.u1 <= 1 + 1e-6 && b.v0 >= -1e-6 && b.v1 <= 1 + 1e-6), JSON.stringify({ isl: (await ISL()).length, n, overlap }))
 }
 
+// ---- Average Islands Scale ----
+{
+  await S(() => window.__polyform.getState().selectNone()); await frame()
+  // after the lightmap pack: blow one face up, then average
+  await S(() => window.__polyform.getState().edit(m => { const f = m.faces[0], cu = f.uv.reduce((a, q) => a + q[0], 0) / 4, cv = f.uv.reduce((a, q) => a + q[1], 0) / 4; f.uv = f.uv.map(([u, v]) => [cu + (u - cu) * 0.3, cv + (v - cv) * 0.3]) }, 'shrink one'))
+  await p.click('[data-testid="side-uvtools"]'); if ((await p.getAttribute('[data-testid="uv-tab-arrange"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-arrange"]')
+  await p.click('[data-testid="uv-avg-scale"]'); await frame(200)
+  const r = await S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => { let a = 0; f.uv.forEach((p, i) => { const q = f.uv[(i + 1) % f.uv.length]; a += p[0] * q[1] - q[0] * p[1] }); return Math.abs(a) / 2 }) })
+  check('Average Islands Scale: every face (island) ends at the same UV area (equal 3D areas)', Math.max(...r) / Math.min(...r) < 1.001, JSON.stringify([Math.min(...r), Math.max(...r)]))
+}
+
 // ---- Live Unwrap: dragging a pin re-solves its island ----
 {
+  if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]')
+  if (!(await p.isVisible('[data-testid="uv-unwrap-live"]'))) await p.click('[data-testid="uv-unwrap-opts"]')
   await p.click('[data-testid="uv-unwrap-live"]'); await frame()
   check('Live option saved', (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).uvUnwrap.live)) === true)
   // the largest island: pin its two farthest-apart UV points
