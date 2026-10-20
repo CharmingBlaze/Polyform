@@ -1,26 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle } from 'lucide-react'
-import { history, useStore, type EditMode, type Layout, type Workspace } from '../store'
+import { Undo2, Redo2, Download, Upload, Save, Command as CmdIcon, X, Circle, MoreHorizontal, SlidersHorizontal, HelpCircle } from 'lucide-react'
+import { history, useStore, type EditMode, type Layout } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { importFile } from '../io'
 import { OPS, opById } from '../ops'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
-import { WorkspaceTabs } from './Workspace'
+import { WorkspaceTabs, shownWorkspace } from './Workspace'
+import { WS_TABS, WS_TIPS } from '../wsconfig'
 import { ClipsPanel } from './ClipsPanel'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
 export type Tab = typeof TABS[number]
-/** Rail tabs relevant to each workspace (the active tab is always shown, so commands that jump tabs never orphan it). */
-export const WS_TABS: Record<Workspace, Tab[]> = { model: ['Create', 'Modify', 'Multiply', 'Construct'], uv: ['Map'], paint: ['Paint'], rig: ['Setup', 'Paint'], animate: ['Animate'], export: ['Export'] }
 
 export function Header({ onPalette }: { onPalette: () => void }) {
   useStore(s => s.histRev)
-  const layout = useStore(s => s.layout)
   const tool = useStore(s => s.tool)
-  const gizmoSpace = useStore(s => s.gizmoSpace)
   const set = useStore(s => s.set)
   return (
     <header className="header">
@@ -35,25 +32,61 @@ export function Header({ onPalette }: { onPalette: () => void }) {
           <button key={t} className={tool === t ? 'on' : ''} data-testid={`gizmo-${t}`} onClick={() => set({ tool: t })}>{t[0].toUpperCase() + t.slice(1)}</button>
         ))}
       </div>
-      <button className={`ghost ${gizmoSpace === 'local' ? 'on' : ''}`} data-testid="gizmo-space" title="Gizmo axes: global (world) or local (the object's own)" onClick={() => set({ gizmoSpace: gizmoSpace === 'local' ? 'global' : 'local' })}>{gizmoSpace === 'local' ? 'Local' : 'Global'}</button>
-      <label className="layout-pick" title="Viewport layout">
-        <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
-          <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
-        </select>
-      </label>
-      <button className="palette-trigger" onClick={onPalette} title="Search commands  ·  Ctrl+K"><CmdIcon size={14} /> <kbd>Ctrl K</kbd></button>
       <span className="grow" />
-      <div className="hdr-group">
-        <button className="ghost" onClick={byId['file.open'].run} title="Open / import  ·  Ctrl+O"><Upload size={15} /></button>
-        <button className="ghost" onClick={byId['file.save'].run} title="Save project  ·  Ctrl+S"><Save size={15} /></button>
-        <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run}><Download size={15} /> Export .glb</button>
-      </div>
+      <button className="primary" data-testid="export-glb" onClick={byId['file.glb'].run} title="Export .glb  ·  Ctrl+E"><Download size={15} /> <span className="lbl">Export .glb</span></button>
+      <MoreMenu onPalette={onPalette} />
       <input id="file-open" type="file" hidden accept=".json,.glb,.gltf,.obj,.ms3d,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) importFile(f).catch(err => useStore.getState().notify(String(err.message || err))); e.target.value = '' }} />
     </header>
   )
 }
 
-/** LightWave Modeler-style left panel: tool tabs with labeled text buttons. Tabs only change the panel, never the mode. */
+/** fixed-position anchor under the button (the header clips overflow so it can shrink on laptops) */
+const menuPos = (el: HTMLElement | null): React.CSSProperties => {
+  const r = el?.getBoundingClientRect()
+  return r ? { top: r.bottom + 6, right: Math.max(6, window.innerWidth - r.right) } : {}
+}
+
+/** The header's "…" menu: everything that is not used every minute (layout, gizmo axes, files, palette, help). */
+function MoreMenu({ onPalette }: { onPalette: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const layout = useStore(s => s.layout)
+  const gizmoSpace = useStore(s => s.gizmoSpace)
+  const numericOpen = useStore(s => s.numericOpen)
+  const set = useStore(s => s.set)
+  useEffect(() => {
+    if (!open) return
+    const down = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('pointerdown', down); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('pointerdown', down); window.removeEventListener('keydown', key) }
+  }, [open])
+  const item = (label: string, keys: string, run: () => void, testid: string, icon?: React.ReactNode) =>
+    <button className="menu-item" data-testid={testid} onClick={() => { setOpen(false); run() }}>{icon}<span>{label}</span><kbd>{keys}</kbd></button>
+  return (
+    <div className="more" ref={ref}>
+      <button className={`icon-btn ${open ? 'on' : ''}`} data-testid="more-menu" title="More: layout, gizmo axes, open / save, commands, help" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}><MoreHorizontal size={18} /></button>
+      {open && <div className="menu" role="menu" data-testid="more-panel" style={menuPos(ref.current)}>
+        <label className="menu-row">Layout
+          <select value={layout} data-testid="layout" onChange={e => set({ layout: e.target.value as Layout, maximized: null })}>
+            <option value="1">1 view</option><option value="2h">2 side by side</option><option value="2v">2 stacked</option><option value="3">3 views</option><option value="4">4 views</option>
+          </select>
+        </label>
+        <label className="menu-row">Gizmo axes
+          <button className={`ghost small ${gizmoSpace === 'local' ? 'on' : ''}`} data-testid="gizmo-space" title="Gizmo axes: global (world) or local (the object's own)" onClick={() => set({ gizmoSpace: gizmoSpace === 'local' ? 'global' : 'local' })}>{gizmoSpace === 'local' ? 'Local' : 'Global'}</button>
+        </label>
+        <div className="menu-sep" />
+        {item('Open / import…', 'Ctrl+O', byId['file.open'].run, 'menu-open', <Upload size={14} />)}
+        {item('Save project', 'Ctrl+S', byId['file.save'].run, 'menu-save', <Save size={14} />)}
+        <div className="menu-sep" />
+        {item('Search commands', 'Ctrl+K', onPalette, 'menu-palette', <CmdIcon size={14} />)}
+        {item(numericOpen ? 'Hide Numeric panel' : 'Numeric panel', 'N', byId['edit.numeric'].run, 'menu-numeric', <SlidersHorizontal size={14} />)}
+        {item('Help & shortcuts', 'F1', byId['help.shortcuts'].run, 'menu-help', <HelpCircle size={14} />)}
+      </div>}
+    </div>
+  )
+}
+
 export function ToolRail() {
   const tab = useStore(s => s.railTab)
   const workspace = useStore(s => s.workspace)
@@ -333,24 +366,9 @@ function fuzzy(text: string, q: string) {
 const MODE_LABEL: Record<EditMode, string> = { vertex: 'Points', edge: 'Edges', face: 'Polygons' }
 
 /** Bottom bar: LightWave-style Object / Points / Edges / Polygons switch, counts, hints. */
-export function StatusBar() {
-  const m = useStore(s => s.model)
-  useStore(s => s.version)
-  const sv = useStore(s => s.selVerts.size)
-  const se = useStore(s => s.selEdges.size)
-  const sf = useStore(s => s.selFaces.size)
-  const sb = useStore(s => s.selBones.size)
-  const tool = useStore(s => s.tool)
-  const selectMode = useStore(s => s.selectMode)
-  const subModes = useStore(s => s.subModes)
-  const numericOpen = useStore(s => s.numericOpen)
-  const modalInfo = useStore(s => s.modalInfo)
-  const xMirror = useStore(s => s.xMirror)
-  const paint = useStore(s => s.paint)
-  const ik = useStore(s => s.ik)
-  const ikDepth = useStore(s => s.ikDepth)
-  const mode = useStore(s => s.mode)
-  const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
+/** The full hint for the active tool (status bar shows its first clause, the ? popover all of it). */
+function toolHint(s: ReturnType<typeof useStore.getState>): string {
+  const { xMirror, paint, ik, ikDepth, mode, tool, modalInfo } = s
   const mir = xMirror ? ' · X-mirror on' : ''
   const paintHint = (() => {
     const base = paint.target === 'weight' ? 'Weight paint' : paint.target === 'vertex' ? 'Vertex colours' : 'Image'
@@ -373,7 +391,26 @@ export function StatusBar() {
     point: 'Click to create a point on the grid plane · Shift adds to selection',
     paint: paintHint,
   }
+  if (modalInfo) return modalInfo
+  return mode === 'animate' && tool !== 'paint' ? `Animate: Space play/pause · I key · scrub the timeline · ${hint[tool] ?? ''}` : hint[tool] ?? ''
+}
+
+export function StatusBar() {
+  const m = useStore(s => s.model)
+  useStore(s => s.version)
+  const sv = useStore(s => s.selVerts.size)
+  const se = useStore(s => s.selEdges.size)
+  const sf = useStore(s => s.selFaces.size)
+  const sb = useStore(s => s.selBones.size)
+  const selectMode = useStore(s => s.selectMode)
+  const subModes = useStore(s => s.subModes)
+  const helpOpen = useStore(s => s.helpOpen)
+  const modalInfo = useStore(s => s.modalInfo)
+  const tris = useMemo(() => triCount(m), [m, useStore.getState().version]) // eslint-disable-line react-hooks/exhaustive-deps
   const st = useStore.getState()
+  const full = useStore(toolHint)
+  const short = modalInfo ?? full.split(' · ')[0]
+  const nsel = sv + se + sf + sb
   return (
     <footer className="status">
       <div className="seg small" data-testid="mode-switch">
@@ -384,15 +421,47 @@ export function StatusBar() {
         ))}
         <button className={selectMode === 'joint' ? 'on' : ''} data-testid="mode-joint" onClick={() => st.setSelectMode('joint')} title="Joints · 4">Joints</button>
       </div>
-      <button className="ghost small" data-testid="select-all" onClick={() => st.selectAll()} title="Select all · A">All</button>
-      <span data-testid="count-verts">{m.verts.length} verts</span>
-      <span data-testid="count-faces">{m.faces.length} faces · {tris} tris</span>
-      <span>{m.groups.length} groups</span><span>{m.bones.length} joints</span>
-      <span className="sel" data-testid="sel-count">Selected: {sv} v · {se} e · {sf} f · {sb} j</span>
+      <span className="counts muted" title={`${m.groups.length} groups · ${m.bones.length} joints · A selects all`}>
+        <span data-testid="count-verts">{m.verts.length} verts</span> · <span data-testid="count-faces">{m.faces.length} faces · {tris} tris</span>
+      </span>
+      {nsel > 0 && <span className="sel" data-testid="sel-count" title="Selected vertices · edges · faces · joints">{[sv && `${sv} v`, se && `${se} e`, sf && `${sf} f`, sb && `${sb} j`].filter(Boolean).join(' · ')} selected</span>}
       <span className="grow" />
-      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint">{modalInfo ?? (mode === 'animate' && tool !== 'paint' ? `Animate: Space play/pause · I key · scrub the timeline · ${hint[tool]}` : hint[tool])}</span>
-      <button className={`ghost small ${numericOpen ? 'on' : ''}`} onClick={byId['edit.numeric'].run} title="Numeric panel · N">Numeric</button>
+      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint" data-full={full} title={full}>{short}</span>
+      <button className={`icon-btn help-btn ${helpOpen ? 'on' : ''}`} data-testid="help-btn" onClick={byId['help.shortcuts'].run} title="Hints and shortcuts · F1"><HelpCircle size={15} /></button>
     </footer>
+  )
+}
+
+/** The ? popover: the full workspace + tool hints and every command with a shortcut. */
+export function HelpPopover() {
+  const open = useStore(s => s.helpOpen)
+  const workspace = useStore(s => s.workspace)
+  const mode = useStore(s => s.mode)
+  const full = useStore(toolHint)
+  const [q, setQ] = useState('')
+  const set = useStore(s => s.set)
+  useEffect(() => {
+    if (!open) return
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') set({ helpOpen: false }) }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [open, set])
+  if (!open) return null
+  const ws = shownWorkspace(workspace, mode)
+  const keyed = commands.filter(c => c.keys && (!q || `${c.label} ${c.keys} ${c.group}`.toLowerCase().includes(q.toLowerCase())))
+  const groups = [...new Set(keyed.map(c => c.group))]
+  return (
+    <div className="help-pop" data-testid="help" role="dialog" aria-label="Hints and shortcuts">
+      <div className="help-head"><b>Hints & shortcuts</b><span className="grow" /><button className="icon-btn" onClick={() => set({ helpOpen: false })} data-testid="help-close"><X size={14} /></button></div>
+      <div className="help-body">
+        <p className="help-tip" data-testid="help-tool">{full}</p>
+        <ul className="help-ws" data-testid="help-ws">{WS_TIPS[ws].map(t => <li key={t}>{t}</li>)}</ul>
+        <input className="help-filter" placeholder="Filter shortcuts…" value={q} onChange={e => setQ(e.target.value)} data-testid="help-filter" />
+        {groups.map(g => <div key={g} className="help-group"><div className="help-g">{g}</div>
+          {keyed.filter(c => c.group === g).map(c => <div key={c.id} className="help-row"><span>{c.label}</span><kbd>{c.keys}</kbd></div>)}
+        </div>)}
+      </div>
+    </div>
   )
 }
 

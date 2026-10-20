@@ -58,36 +58,35 @@ export function HintBar() {
   let text: ReactNode, acts: ReactNode = null
   if (ws === 'model') {
     if (!f.faces) { text = 'Start with a primitive from the Create tab, a sample, or open a file.'; acts = <><Act onClick={() => useStore.getState().addPrimitive('box')} label="Add box" testid="hint-box" primary /><Act cmd="sample.character" label="Sample character" testid="hint-sample" /><Act cmd="file.open" label="Open…" testid="hint-open" /></> }
-    else { text = <>Shape it: <kbd>E</kbd> extrude · <kbd>Ctrl+R</kbd> loop cut · <kbd>K</kbd> knife · <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> point / edge / face · <kbd>Tab</kbd> object.</>; acts = <Next to="uv" /> }
+    else { text = <>Shape it: <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> point · edge · face, <kbd>E</kbd> extrude, <kbd>G</kbd>/<kbd>R</kbd>/<kbd>S</kbd> transform.</>; acts = <Next to="uv" /> }
   } else if (ws === 'uv') {
     if (!f.faces) text = 'Nothing to unwrap yet: add a shape in Model first.'
     else if (f.noUV) { text = `${f.noUV} face${f.noUV === 1 ? ' has' : 's have'} no UVs. Auto UV unwraps everything in one click.`; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
-    else { text = 'UVs ready. Selection is shared with 3D: G/R/S move islands, L picks an island, mark seams and Pack in the toolbar.'; acts = <Next to="paint" /> }
+    else { text = 'UVs ready. Selection is shared with 3D; G/R/S move islands.'; acts = <Next to="paint" /> }
   } else if (ws === 'paint') {
     if (!f.faces) text = 'Nothing to paint yet: add a shape in Model first.'
     else if (f.noUV) { text = 'Paint needs UVs to paint into an image (Vertex painting works without).'; acts = <Act cmd="uv.auto" label="Auto UV" testid="hint-autouv" primary /> }
-    else if (!f.painted) text = 'Drag on the model or in the UV editor to paint; the first stroke creates the image. Fill makes flat faces, Ctrl+click picks a colour.'
-    else if (!f.images && f.vcolor) { text = 'Vertex colours are set. Paint an image (first stroke creates one) or continue — Mirror X, [ ] brush size.'; acts = <Next to="rig" /> }
-    else { text = 'Painted. Each stroke is one undo step; [ ] resize the brush; Mirror X paints both sides.'; acts = <Next to="rig" /> }
+    else if (!f.painted) text = 'Drag on the model to paint; the first stroke creates the image.'
+    else if (!f.images && f.vcolor) { text = 'Vertex colours are set. Paint an image or continue.'; acts = <Next to="rig" /> }
+    else { text = 'Painted. [ ] resize the brush.'; acts = <Next to="rig" /> }
   } else if (ws === 'rig') {
-    if (!f.joints) { text = 'Click in a view with the Joint tool to place a root joint; E extrudes a child joint, Shift+A adds one at the 3D cursor.'; acts = <Act cmd="tool.joint" label="Joint tool" testid="hint-joint" primary /> }
+    if (!f.joints) { text = 'Click in a view with the Joint tool to place a root joint.'; acts = <Act cmd="tool.joint" label="Joint tool" testid="hint-joint" primary /> }
     else if (f.bound < f.points) { text = `${f.points - f.bound} of ${f.points} points are not bound to a joint. Auto bind gives each point its nearest bone.`; acts = <Act cmd="joint.autobind" label="Auto bind" testid="hint-autobind" primary /> }
     else { text = `Rigged: ${f.joints} joint${f.joints === 1 ? '' : 's'}, every point bound.`; acts = <Next to="animate" /> }
   } else if (ws === 'animate') {
     if (!f.keyed) { text = <>Pick a joint or object, move to a frame and pose it with <kbd>R</kbd> / <kbd>G</kbd>. {autoKey ? 'Auto-key (●) is on: every pose becomes a key.' : <>Press <kbd>I</kbd> to key, or turn on auto-key (●).</>}</>; acts = !autoKey ? <Act cmd="anim.autokey" label="Turn on auto-key" testid="hint-autokey" primary /> : null }
-    else if (f.joints) { text = <>Animated. <kbd>Space</kbd> plays · drag keys in the dope sheet · Ease in the inspector · <kbd>Ctrl+Tab</kbd> back to Model.</>; acts = <Next to="export" /> }
-    else { text = <>Animated (object). <kbd>Space</kbd> plays · pick an object in the Outliner · drag keys in the dope sheet · <kbd>Ctrl+Tab</kbd> back to Model.</>; acts = <Next to="export" /> }
+    else if (f.joints) { text = <>Animated. <kbd>Space</kbd> plays.</>; acts = <Next to="export" /> }
+    else { text = <>Animated (object). <kbd>Space</kbd> plays; pick an object in the Outliner.</>; acts = <Next to="export" /> }
   } else {
     const item = (ok: boolean, label: string, opt = false) => <span className={`chk ${ok ? 'ok' : opt ? 'opt' : 'no'}`}>{ok ? <Check size={12} /> : <Circle size={10} />} {label}</span>
     text = <span className="checklist" data-testid="export-checklist">
-      <span className="export-how" data-testid="export-how">Ctrl+E downloads a .glb (mesh, UVs, images, skins, all clips). Open it in a glTF viewer or a game engine.</span>
+      <span className="export-how" data-testid="export-how">Ctrl+E downloads a .glb — open it in any glTF viewer or engine.</span>
       {item(f.faces > 0, `${f.faces} faces`)}{item(f.faces > 0 && !f.noUV, 'UVs', true)}{item(f.painted, 'painted', true)}{item(f.joints > 0 && f.bound === f.points, 'rigged', true)}{item(f.keyed > 0, `${f.keyed} animated clip${f.keyed === 1 ? '' : 's'}`, true)}
     </span>
     acts = <><Act cmd="file.glb" label="Export .glb" testid="hint-export" primary /><Act cmd="file.save" label="Save project" testid="hint-save" /></>
   }
   return (
     <div className="hint-bar" data-testid="hint-bar" data-ws={ws}>
-      <b className="hint-ws">{WS_LABEL[ws]}</b>
       <span className="hint-text" data-testid="hint-text">{text}</span>
       <span className="grow" />
       {acts}

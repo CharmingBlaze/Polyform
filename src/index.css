@@ -235,7 +235,6 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .ws-tabs .ws-n { font-size: 10px; width: 15px; height: 15px; border-radius: 50%; display: inline-grid; place-items: center; background: rgba(255,255,255,.07); color: var(--dim); }
 .ws-tabs button.on .ws-n { background: var(--accent, #7c6cf0); color: #fff; }
 .hint-bar { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: linear-gradient(90deg, rgba(124,108,240,.13), rgba(124,108,240,.03)); border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.hint-bar .hint-ws { color: var(--accent, #9d8cff); font-weight: 600; text-transform: uppercase; font-size: 10.5px; letter-spacing: .7px; }
 .hint-bar .hint-text { overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .hint-bar kbd { font-size: 10.5px; padding: 0 4px; }
 .hint-act { padding: 2px 10px; font-size: 12px; border-radius: 5px; display: inline-flex; align-items: center; gap: 4px; }
@@ -284,3 +283,26 @@ html, body { overflow: hidden; }
 
 .export-how { display: block; color: var(--dim); font-weight: 400; margin-bottom: 4px; }
 aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; border-radius: 4px; }
+
+/* ---- declutter: header … menu, one-line hint / status, ? popover ---- */
+.more { position: relative; }
+.more .menu { position: fixed; z-index: 60; min-width: 250px; padding: 6px; background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; gap: 2px; }
+.menu-item { background: transparent; border: none; justify-content: flex-start; gap: 10px; padding: 7px 10px; border-radius: 6px; width: 100%; color: var(--text); }
+.menu-item span { flex: 1; text-align: left; }
+.menu-item kbd { background: transparent; border: none; }
+.menu-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 10px; color: var(--dim); font-size: 12.5px; }
+.menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.hint-bar .hint-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.status .counts span { color: inherit; }
+.help-btn { width: 24px; height: 22px; padding: 0; border: none; background: transparent; color: var(--dim); }
+.help-btn.on, .help-btn:hover { color: var(--text); }
+.help-pop { position: fixed; right: 12px; bottom: 34px; width: 380px; max-height: min(70vh, 560px); z-index: 70; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.help-head { display: flex; align-items: center; padding: 10px 12px 6px; }
+.help-body { overflow: auto; padding: 0 14px 12px; font-size: 12.5px; }
+.help-tip { color: var(--text); margin: 4px 0 8px; line-height: 1.45; }
+.help-ws { margin: 0 0 10px; padding-left: 16px; color: var(--dim); line-height: 1.5; }
+.help-filter { width: 100%; margin-bottom: 6px; }
+.help-g { text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; color: var(--dim); margin: 10px 0 4px; }
+.help-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.help-row kbd { flex: none; }
