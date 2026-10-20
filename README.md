@@ -24,6 +24,15 @@ Unlit px presets. Every change shows live in the views and is one undo step (a s
 selected** gives whole objects the material in Object mode and just the selected faces in Face mode. Everything
 round-trips through .glb (0 validator errors). No save-format bump: all new fields are optional.
 
+## Materials and the Outliner
+
+- **Materials tab** (right panel in Model, UV and Paint): a list of materials with live preview spheres, and a glTF PBR editor with base colour, metallic, roughness, emissive colour and strength, opacity with Auto / Opaque / Blend / Mask alpha, 2-sided, Unlit, Pixel / Smooth filtering, and Plastic / Metal / Emissive / Glass / Unlit px presets. **Assign to selected** gives whole objects the material in Object mode, or just the selected faces in Face mode. Every edit is one undo step.
+- **Image maps** for each material: base colour, metal/rough, normal (with Bump strength), occlusion (with AO strength) and emissive. Any map can start as a blank 256² image to paint into. Materials and maps round-trip through `.glb` and project files.
+- **Outliner tabs:** Scene, Skeleton, Materials, Clips and Refs, one list at a time, with count badges, a filter, and a tab remembered per workspace.
+- **Drawing primitives:** double-click (or double-tap with a pen) finishes the shape, like Enter.
+
+Full guides: [Materials](docs/materials.md) and [Outliner](docs/outliner.md).
+
 ## What "working" looks like
 
 1. **Empty scene** → click **Character + walk** (or Create → Character). The app jumps to Animate; **Space** plays the walk cycle; **Ctrl+Z** returns to your previous scene.
