@@ -7,7 +7,7 @@ import { PRIMITIVES, type PrimitiveKind } from './model'
 import { OPS } from './ops'
 import * as G from './geom'
 import { isModalActive, overUV } from './interaction'
-import { toggleFocus, togglePanel } from './useLayout'
+import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -117,6 +117,9 @@ export const commands: Command[] = [
   { id: 'sel.joint', label: 'Joint mode (Rig / Animate)', group: 'Selection', keys: '5', run: () => S().setSelectMode('joint') },
   { id: 'view.toolPanel', label: 'Tool panel: show / hide', group: 'View', keys: 'Ctrl+[', run: () => togglePanel('left') },
   { id: 'view.sidePanel', label: 'Side panel: show / hide', group: 'View', keys: 'Ctrl+]', run: () => togglePanel('right') },
+  // right-panel tabs: unbound by default (Alt/Ctrl+digits belong to the browser), rebindable
+  ...([['scene', 'Scene'], ['joints', 'Skeleton'], ['materials', 'Materials'], ['clips', 'Clips'], ['refs', 'Reference images'], ['uvtools', 'UV Tools'], ['uv', 'Images']] as const)
+    .map(([id, label]): Command => ({ id: `panel.tab.${id}`, label: `Side panel: ${label}`, group: 'View', run: () => openSideTab(id) })),
   { id: 'view.focus', label: 'Focus viewports (hide both panels)', group: 'View', keys: 'Ctrl+\\', run: () => toggleFocus() },
   { id: 'sel.all', label: 'Select all', group: 'Selection', keys: 'A', run: () => S().selectAll() },
   { id: 'sel.all2', label: 'Select all', group: 'Selection', keys: 'Ctrl+A', run: () => S().selectAll() },

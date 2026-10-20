@@ -27,7 +27,7 @@ const mats = () => S(() => window.__polyform.getState().model.materials)
 const cur = () => S(() => window.__polyform.getState().activeMat)
 const undo = async () => { await p.mouse.move(640, 300); await p.keyboard.press('Control+z'); await frame() }
 
-await p.click('[data-testid="side-materials"]'); await frame(300)
+await p.$eval('[data-testid="side-materials"]', b => b.classList.contains('on') || b.click()); await frame(300)
 check('Materials tab next to the Outliner in Model; one material listed with a preview sphere', await p.isVisible('[data-testid="materials"]') && (await p.locator('[data-testid^="mat-row-"]').count()) === 1 && /^data:image\/png/.test(await p.getAttribute('[data-testid="mat-row-0"] img', 'src') || ''))
 check('the last material cannot be deleted', await p.isDisabled('[data-testid="mat-del"]'))
 await p.click('[data-testid="mat-new"]'); await frame()
@@ -112,7 +112,7 @@ check('re-import: the copy is unlit', back['Brass copy']?.unlit === true, JSON.s
 // delete reassigns
 const n0 = (await mats()).length
 await S(() => { const s = window.__polyform.getState(); s.set({ activeMat: s.model.materials.findIndex(m => m.name === 'Brass') }) }); await frame()
-await p.click('[data-testid="mat-del"]'); await frame()
+await p.click('[data-testid="mat-del"]'); await p.waitForFunction(n => window.__polyform.getState().model.materials.length === n - 1, n0, { timeout: 5000 }).catch(() => {}); await frame()
 check('Delete removes the material; its faces fall back to the first one (undoable)', (await mats()).length === n0 - 1 && await S(() => { const m = window.__polyform.getState().model; return m.faces.every(f => (f.mat ?? m.groups[f.g].mat) < m.materials.length) }))
 check('no page errors', errs.length === 0, errs.join(' | '))
 await b.close()

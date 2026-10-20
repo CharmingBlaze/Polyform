@@ -12,3 +12,4 @@ these notes describe ideas and behaviour only; no Blockbench code is used.
 | [blockbench-core-gaps.md](blockbench-core-gaps.md) | Blockbench core architecture and Polyform gap analysis |
 | [uv-blockbench.md](uv-blockbench.md) | UV editor spec: match and beat Blockbench (UV-1 … UV-n) |
 | [animation-curves-brief.md](animation-curves-brief.md) | UX brief for animation curves |
+| [smart-materials-brief.md](smart-materials-brief.md) | Design brief: simple Substance-style texturing in Paint (smart materials, bakers, library presets) |

@@ -1,7 +1,7 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
-import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
+import { openSideTab, setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands, type Command } from '../commands'
 import { OPS, opById } from '../ops'
@@ -132,7 +132,7 @@ export function ToolRail() {
           <CmdBtn cmd="sample.windmill" label="Windmill" testid="sample-windmill" />
           <h4>Reference</h4>
           <button className="tool-btn" data-testid="ref-add-rail" title="Add a viewport reference image"
-            onClick={() => { useStore.getState().set({ sideTab: 'uv' }); setTimeout(() => document.querySelector<HTMLElement>('[data-testid="ref-add-btn"]')?.click(), 50) }}>
+            onClick={() => { openSideTab('refs'); setTimeout(() => document.querySelector<HTMLElement>('[data-testid="ref-add-btn"]')?.click(), 50) }}>
             <span>Add reference…</span>
           </button>
         </>}

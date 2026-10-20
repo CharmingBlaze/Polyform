@@ -27,15 +27,13 @@ export interface UIPrefs {
   uvSwap: boolean
   /** UV Tools panel (accordion): the open group, '' for none */
   uvToolsGroup: string
-  /** Outliner tab per workspace (absent = the workspace default: Rig → Skeleton, Animate → Clips, else Objects) */
-  olTab: Record<string, OlTab>
+  /** right-panel tab picked per workspace (absent = the workspace default, see DEFAULT_TAB in panelTabs) */
+  sideTabs: Record<string, string>
+  /** Materials tab: height of the list above the editor (px) */
+  matListH: number
   /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
   uvUnwrap: UnwrapPrefs
 }
-export const OL_TABS = ['objects', 'joints', 'materials', 'clips', 'refs'] as const
-export type OlTab = typeof OL_TABS[number]
-/** The Outliner tab shown in a workspace: the remembered one, else Rig → Skeleton, Animate → Clips, otherwise Objects. */
-export const olTabFor = (ui: Pick<UIPrefs, 'olTab'>, ws: string): OlTab => ui.olTab?.[ws] ?? (ws === 'rig' ? 'joints' : ws === 'animate' ? 'clips' : ws === 'paint' ? 'materials' : 'objects')
 
 export interface PanelState { left: boolean | null; right: boolean | null }
 /** the workspaces that keep their own panel state ('uv' is the UV workspace / Map tab) */
@@ -62,7 +60,7 @@ export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, olTab: {} }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 140, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars */
 const PREFS_V = 2
@@ -82,7 +80,8 @@ export function loadPrefs(): UIPrefs {
       timelineHidden: p.timelineHidden === true,
       // v1 saved the old default widths with everything else: those move to the new, narrower defaults
       leftW: v1 && p.leftW === 168 ? DEFAULT_PREFS.leftW : num(p.leftW, DEFAULT_PREFS.leftW),
-      rightW: v1 && p.rightW === 320 ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
+      // 256 was the default before the icon rail; the slim rail column replaces it
+      rightW: (v1 && p.rightW === 320) || p.rightW === 256 ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
       panels: (() => {
         const q = (p.panels && typeof p.panels === 'object' ? p.panels : null) as Record<string, Record<string, unknown>> | null
         const old = p as Record<string, unknown>
@@ -112,7 +111,8 @@ export function loadPrefs(): UIPrefs {
           follow: q.follow === 'even' ? 'even' as const : 'length_average' as const, lmMargin: rng(q.lmMargin, 0, 0.25, d.lmMargin), sharpAngle: rng(q.sharpAngle, 1, 179, d.sharpAngle),
         }
       })(),
-      olTab: Object.fromEntries(Object.entries(p.olTab && typeof p.olTab === 'object' ? p.olTab : {}).filter(([k, v]) => (PANEL_KEYS as readonly string[]).includes(k) && (OL_TABS as readonly unknown[]).includes(v))) as Record<string, OlTab>,
+      matListH: typeof p.matListH === 'number' && Number.isFinite(p.matListH) ? Math.max(60, Math.min(600, p.matListH)) : 132,
+      sideTabs: Object.fromEntries(Object.entries(p.sideTabs && typeof p.sideTabs === 'object' ? p.sideTabs : {}).filter(([k, v]) => (PANEL_KEYS as readonly string[]).includes(k) && typeof v === 'string' && /^[\w-]{1,32}$/.test(v))) as Record<string, string>,
       uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
     }
   } catch { return { ...DEFAULT_PREFS } }
@@ -130,8 +130,10 @@ export function clampTimeline(h: number, winH = typeof window !== 'undefined' ? 
 /** Below this window width both sidebars start as icon strips (laptops keep the views wide). */
 export const NARROW_W = 1180
 export const ICON_W = 44
-/** Sidebar widths: the tool rail 128…280 px, the right column 220…520 px but never more than a third of the window. */
+/** the right panel's icon rail (32 px buttons + the column border) */
+export const RAIL_W = 34
+/** Sidebar widths: the tool rail 128…280 px, the right column 140…520 px (icon rail included) but never more than a third of the window. */
 export function clampSide(w: number, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
-  const [lo, hi] = side === 'left' ? [128, 280] : [220, Math.max(220, Math.min(520, winW * 0.32))]
+  const [lo, hi] = side === 'left' ? [128, 280] : [140, Math.max(140, Math.min(520, winW * 0.32))]
   return Math.round(Math.max(lo, Math.min(hi, w)))
 }

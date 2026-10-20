@@ -67,15 +67,15 @@ await S(() => window.__polyform.getState().set({ railTab: 'Setup' })); await fra
 check('a command jumping to another tab keeps it visible', (await railTabs()) === 'create,modify,multiply,construct,rig')
 
 // sidebar sections per workspace
-const sideTabs = () => p.locator('.sidebar .tabs button:not(.collapse-btn)').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
-const SIDES = { model: 'scene,materials', uv: 'scene,materials,uvtools,uv', paint: 'scene,materials,uv', rig: 'scene,joints', animate: 'scene,joints', export: 'scene' }
+const sideTabs = () => p.locator('.side-rail button').evaluateAll(bs => bs.map(b => b.dataset.testid.slice(5)).join())
+const SIDES = { model: 'scene,joints,materials,clips,refs', uv: 'scene,joints,materials,clips,refs,uvtools,uv', paint: 'scene,joints,materials,clips,refs,uv', rig: 'scene,joints,materials,clips,refs', animate: 'scene,joints,materials,clips,refs', export: 'scene,joints,clips,refs' }
 for (const [ws, want] of Object.entries(SIDES)) {
   await p.click(`[data-testid="ws-${ws}"]`); await frame()
   const got = await sideTabs()
-  check(`sidebar sections in ${ws}: ${want}`, got === want, got)
+  check(`side rail tabs in ${ws}: ${want}`, got === want, got)
 }
 await p.click('[data-testid="ws-model"]'); await frame()
-check('Model: References are an Outliner tab', await p.locator('[data-testid="ol-tab-refs"]').count() === 1)
+check('Model: References are a rail tab', await p.locator('[data-testid="side-refs"]').count() === 1)
 await S(() => window.__polyform.getState().set({ numericOpen: true, lastOp: null })); await frame()
 check('no Numeric card without an active tool', (await p.locator('[data-testid="numeric"]').count()) === 0)
 await S(() => window.__polyform.getState().set({ numericOpen: false }))

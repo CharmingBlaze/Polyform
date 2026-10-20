@@ -50,7 +50,7 @@ check('after Auto bind (Setup tab): every point bound', await S(() => { const m 
 // 5. Animate: animate mode; Ctrl+Tab back to model highlights Model
 await p.click('[data-testid="ws-animate"]'); await frame()
 s = await st()
-check('Animate workspace switches to Animate mode, Animate tab, Joints panel', s.mode === 'animate' && s.rail === 'Animate' && s.side === 'joints' && await on('ws-animate'), JSON.stringify(s))
+check('Animate workspace switches to Animate mode, Animate tab, Clips panel', s.mode === 'animate' && s.rail === 'Animate' && s.side === 'clips' && await on('ws-animate'), JSON.stringify(s))
 await p.keyboard.press('Control+Tab'); await frame()
 check('Ctrl+Tab back to Model mode highlights the Model tab', (await st()).mode === 'model' && await on('ws-model') && !(await on('ws-animate')))
 await p.keyboard.press('Control+Tab'); await frame()

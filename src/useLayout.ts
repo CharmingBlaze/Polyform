@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
-import { clampSide, ICON_W, NARROW_W, type UIPrefs } from './prefs'
+import { clampSide, DEFAULT_PREFS, ICON_W, NARROW_W, RAIL_W, type UIPrefs } from './prefs'
 
 /** Window width, live. */
 export function useWinW() {
@@ -25,6 +25,11 @@ export function setPanel(side: 'left' | 'right', on: boolean) {
   const s = useStore.getState(), k = panelKey(s), cur = s.ui.panels[k] ?? { left: null, right: null }
   s.setUI({ panels: { ...s.ui.panels, [k]: { ...cur, [side]: on } } })
 }
+/** Show a right-panel tab (remembered for this workspace) and make sure the panel is open. */
+export function openSideTab(id: string) {
+  useStore.getState().setSideTab(id)
+  if (panelCollapsed(useStore.getState(), 'right')) setPanel('right', false)
+}
 export const togglePanel = (side: 'left' | 'right') => setPanel(side, !panelCollapsed(useStore.getState(), side))
 /** Focus mode: both panels to icon strips; again brings both back. */
 export function toggleFocus() {
@@ -32,6 +37,11 @@ export function toggleFocus() {
   const on = !(panelCollapsed(s, 'left') && panelCollapsed(s, 'right'))
   s.setUI({ panels: { ...s.ui.panels, [k]: { left: on, right: on } } })
 }
+
+/** The UV editor folds the tool rail to icons and its UV Tools need three columns, so at the default width the right
+ * column takes that room there (256 px); everywhere else the default is the slim rail column (140 px). */
+export const UV_RIGHT_W = 256
+export const baseRightW = (ui: UIPrefs, uvSpace: boolean) => (uvSpace && ui.rightW === DEFAULT_PREFS.rightW ? UV_RIGHT_W : ui.rightW)
 
 /** Effective sidebar state: collapsed to icons (explicit, or automatically on narrow windows) and pixel widths. */
 export function useSides() {
@@ -45,7 +55,7 @@ export function useSides() {
   return {
     leftCollapsed, rightCollapsed,
     leftW: leftCollapsed ? ICON_W : clampSide(ui.leftW, 'left', winW),
-    rightW: rightCollapsed ? ICON_W : clampSide(ui.rightW, 'right', winW),
+    rightW: rightCollapsed ? RAIL_W : clampSide(baseRightW(ui, uvSpace), 'right', winW),
   }
 }
 
@@ -58,7 +68,7 @@ export function sideHandle(side: 'left' | 'right', collapsed: boolean) {
       if (e.button !== 0 || collapsed) return
       const el = e.currentTarget
       el.setPointerCapture(e.pointerId)
-      const x0 = e.clientX, w0 = clampSide(side === 'left' ? useStore.getState().ui.leftW : useStore.getState().ui.rightW, side)
+      const x0 = e.clientX, w0 = clampSide(side === 'left' ? useStore.getState().ui.leftW : baseRightW(useStore.getState().ui, useStore.getState().uvSpace), side)
       const move = (ev: PointerEvent) => {
         const w = clampSide(w0 + (side === 'left' ? ev.clientX - x0 : x0 - ev.clientX), side)
         useStore.getState().setUI(side === 'left' ? { leftW: w } : { rightW: w })

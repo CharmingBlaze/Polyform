@@ -31,13 +31,13 @@ describe('unwrap options pref', () => {
 describe('side panels per workspace', () => {
   it('defaults: narrower sidebars, automatic everywhere except the UV rail (icons)', () => {
     const p = loadPrefs()
-    expect([p.leftW, p.rightW]).toEqual([144, 256])
+    expect([p.leftW, p.rightW]).toEqual([144, 140])
     expect(p.panels.model).toEqual({ left: null, right: null })
     expect(p.panels.uv).toEqual({ left: true, right: null })
   })
   it('migrates v1 prefs: one rail / side flag for all, the UV rail its own; old default widths move to the new ones', () => {
     const p = withPrefs({ leftW: 168, rightW: 320, leftCollapsed: false, rightCollapsed: true, uvLeftCollapsed: false })
-    expect([p.leftW, p.rightW]).toEqual([144, 256])
+    expect([p.leftW, p.rightW]).toEqual([144, 140])
     expect(p.panels.paint).toEqual({ left: false, right: true })
     expect(p.panels.uv).toEqual({ left: false, right: true })
     expect(withPrefs({ leftW: 200, rightW: 300 }).rightW).toBe(300)

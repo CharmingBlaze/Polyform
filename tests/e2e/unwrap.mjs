@@ -35,7 +35,7 @@ const pickable = async (n, skip = []) => {
   }
   return out
 }
-const tool = async id => { await p.click('[data-testid="side-uvtools"]'); if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]'); await p.click('[data-testid="uv-proj-menu"]'); await p.click(`[data-testid="uvm-${id}"]`) }
+const tool = async id => { await p.$eval('[data-testid="side-uvtools"]', b => b.classList.contains('on') || b.click()); if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]'); await p.click('[data-testid="uv-proj-menu"]'); await p.click(`[data-testid="uvm-${id}"]`) }
 const shiftClick = async (x, y) => { await p.keyboard.down('Shift'); await p.mouse.click(x, y); await p.keyboard.up('Shift'); await frame() }
 
 // ---- Shift+click multi-select in the 3D view (Blender toggle) ----
@@ -64,7 +64,7 @@ await S(() => window.__polyform.getState().set({ tool: 'select' })); await frame
 check('back to the 3 faces', JSON.stringify(await sel()) === JSON.stringify(three), JSON.stringify(await sel()))
 
 // ---- Unwrap (Angle based) on the 3 Shift-selected faces: only their UVs change ----
-await p.click('[data-testid="side-uvtools"]'); await frame()
+await p.$eval('[data-testid="side-uvtools"]', b => b.classList.contains('on') || b.click()); await frame()
 if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]')
 await p.click('[data-testid="uv-unwrap-opts"]'); await frame()
 await p.selectOption('[data-testid="uv-unwrap-method"]', 'angle'); await frame()
@@ -147,7 +147,7 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
   await S(() => window.__polyform.getState().selectNone()); await frame()
   // after the lightmap pack: blow one face up, then average
   await S(() => window.__polyform.getState().edit(m => { const f = m.faces[0], cu = f.uv.reduce((a, q) => a + q[0], 0) / 4, cv = f.uv.reduce((a, q) => a + q[1], 0) / 4; f.uv = f.uv.map(([u, v]) => [cu + (u - cu) * 0.3, cv + (v - cv) * 0.3]) }, 'shrink one'))
-  await p.click('[data-testid="side-uvtools"]'); if ((await p.getAttribute('[data-testid="uv-tab-arrange"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-arrange"]')
+  await p.$eval('[data-testid="side-uvtools"]', b => b.classList.contains('on') || b.click()); if ((await p.getAttribute('[data-testid="uv-tab-arrange"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-arrange"]')
   await p.click('[data-testid="uv-avg-scale"]'); await frame(200)
   const r = await S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => { let a = 0; f.uv.forEach((p, i) => { const q = f.uv[(i + 1) % f.uv.length]; a += p[0] * q[1] - q[0] * p[1] }); return Math.abs(a) / 2 }) })
   check('Average Islands Scale: every face (island) ends at the same UV area (equal 3D areas)', Math.max(...r) / Math.min(...r) < 1.001, JSON.stringify([Math.min(...r), Math.max(...r)]))
@@ -156,7 +156,7 @@ check('UV editor: Shift+click again adds it', (await sel()).includes(three[1]) &
 // ---- Minimize Stretch (Relax) ----
 {
   await S(() => { const s = window.__polyform.getState(), m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; s.loadModel(m); window.__polyform.getState().runOp('add.plane', { w: 2, d: 2, seg: 4 }); window.__polyform.getState().selectNone() }); await frame(200)
-  await p.click('[data-testid="side-uvtools"]'); await p.click('[data-testid="uv-tab-unwrap"]').catch(() => {}); await frame()
+  await p.$eval('[data-testid="side-uvtools"]', b => b.classList.contains('on') || b.click()); await p.click('[data-testid="uv-tab-unwrap"]').catch(() => {}); await frame()
   if ((await p.getAttribute('[data-testid="uv-tab-unwrap"]', 'aria-expanded')) !== 'true') await p.click('[data-testid="uv-tab-unwrap"]')
   await p.click('[data-testid="uv-unwrap"]'); await frame(300)
   // shear and squash it, pin one point, relax

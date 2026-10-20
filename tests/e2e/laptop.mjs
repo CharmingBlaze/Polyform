@@ -44,20 +44,27 @@ const rail1 = (await p.locator('[data-testid="tool-rail"]').boundingBox()).width
 check('dragging the rail edge widens it', rail1 > rail0 + 40, `${rail0} → ${rail1}`)
 const r = await p.locator('[data-testid="side-handle"]').boundingBox()
 const side0 = (await p.locator('.right-col').boundingBox()).width
-await p.mouse.move(r.x + 3, r.y + 200); await p.mouse.down(); await p.mouse.move(r.x + 63, r.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
+await p.mouse.move(r.x + 3, r.y + 200); await p.mouse.down(); await p.mouse.move(r.x - 57, r.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
 const side1 = (await p.locator('.right-col').boundingBox()).width
-check('dragging the right column edge narrows it (clamped ≥ 220)', side1 < side0 - 30 && side1 >= 220, `${side0} → ${side1}`)
+check('the right column starts slimmer than the tool rail; dragging its edge widens it', side0 < rail0 && side1 > side0 + 30, `${side0} → ${side1} (rail ${rail0})`)
+let side2 = 0
+{
+  const r2 = await p.locator('[data-testid="side-handle"]').boundingBox()
+  await p.mouse.move(r2.x + 3, r2.y + 200); await p.mouse.down(); await p.mouse.move(r2.x + 300, r2.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
+  side2 = (await p.locator('.right-col').boundingBox()).width
+  check('…and narrowing is clamped (≥ 140)', side2 >= 140 && side2 < side1, `${side1} → ${side2}`)
+}
 await p.reload(); await boot()
-check('sidebar widths persist', Math.abs((await p.locator('[data-testid="tool-rail"]').boundingBox()).width - rail1) < 2 && Math.abs((await p.locator('.right-col').boundingBox()).width - side1) < 2)
+check('sidebar widths persist', Math.abs((await p.locator('[data-testid="tool-rail"]').boundingBox()).width - rail1) < 2 && Math.abs((await p.locator('.right-col').boundingBox()).width - side2) < 2)
 
 // collapse to icons by hand, expand from an icon
 await p.locator('[data-testid="tool-rail"]').hover(); await p.click('[data-testid="rail-collapse"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('rail collapses to an icon strip with the workspace tabs', (await p.locator('[data-testid="tool-rail"]').boundingBox()).width <= 48 && (await p.locator('[data-testid^="railicon-"]').count()) === 4)
 await p.click('[data-testid="railicon-modify"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('an icon opens its tab and expands the rail', (await S(() => window.__polyform.getState().railTab)) === 'Modify' && (await p.locator('[data-testid="tab-modify"]').isVisible()))
-await p.locator('.sidebar').hover(); await p.click('[data-testid="side-collapse"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
-check('right column collapses to icons', (await p.locator('.right-col').boundingBox()).width <= 48 && await p.locator('[data-testid="sideicon-scene"]').isVisible())
-await p.click('[data-testid="side-expand"]'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
+await p.locator('.sidebar').hover(); await p.click('[data-testid="side-rail"] .rail-btn.on'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
+check('right column collapses to icons', (await p.locator('.right-col').boundingBox()).width <= 40 && await p.locator('[data-testid="side-scene"]').isVisible())
+await p.click('[data-testid="side-rail"] .rail-btn.on'); await p.waitForTimeout(40); await p.waitForFunction(() => !document.querySelector('.main.anim'))
 check('…and expands again', await p.locator('[data-testid="outliner"]').isVisible())
 
 // narrow window: both start as icons automatically; still no overflow

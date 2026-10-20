@@ -1,39 +1,32 @@
 import { useState, type ReactNode } from 'react'
-import { Bone, Box, ChevronDown, ChevronRight, Clapperboard, Eye, EyeOff, HelpCircle, Image as ImageIcon, Palette, Pencil, Search } from 'lucide-react'
+import { Bone, ChevronDown, ChevronRight, Clapperboard, Eye, EyeOff, HelpCircle, Image as ImageIcon, Search } from 'lucide-react'
 import { useStore } from '../store'
 import { faceMat, triCount } from '../model'
-import { textures } from '../textures'
-import { olTabFor, type OlTab } from '../prefs'
-import { RefsPanel } from './RefsPanel'
 
-const HELP: Record<OlTab, string> = {
+export type ListTab = 'objects' | 'joints' | 'clips'
+const LABEL: Record<ListTab, string> = { objects: 'Scene', joints: 'Skeleton', clips: 'Clips' }
+const HELP: Record<ListTab, string> = {
   objects: 'Click selects an object · Ctrl+click toggles · Shift+click selects a range · double-click renames · the eye hides · ▸ lists its materials (click one to select those faces)',
   joints: 'Click selects a joint · Shift+click adds · double-click renames · the count is the points bound to it',
-  materials: 'Click makes a material active (the Materials editor follows) and selects its faces · Shift+click adds · double-click renames · ✎ opens the editor',
   clips: 'Click makes a clip active · double-click renames',
-  refs: 'Reference images: guides drawn behind the model in a chosen view',
 }
 
 /**
- * Outliner: the scene in tabs, one list at a time — Objects (with their materials), Skeleton (the joint tree),
- * Materials (and their images; picking one syncs the Materials editor), Clips, and Reference images (Model).
- * The filter narrows the active tab by name. The active tab is remembered per workspace.
+ * One list of the right panel's Scene / Skeleton / Clips tabs, with its filter box on top (help in the ? tooltip):
+ * objects (with their materials), the joint tree, or the clips.
  */
-export function Outliner() {
+export function Outliner({ tab }: { tab: ListTab }) {
   const m = useStore(s => s.model)
   useStore(s => s.version); useStore(s => s.texRev)
   const selFaces = useStore(s => s.selFaces)
   const selBones = useStore(s => s.selBones)
   const clip = useStore(s => s.clip)
   const mode = useStore(s => s.mode)
-  const activeMat = useStore(s => s.activeMat)
-  const tab = useStore(s => olTabFor(s.ui, s.workspace))
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [anchor, setAnchor] = useState<number | null>(null)
   const st = useStore.getState()
-  const setTab = (t: OlTab) => st.setUI({ olTab: { ...st.ui.olTab, [st.workspace]: t } })
   const match = (name: string) => !q || name.toLowerCase().includes(q.toLowerCase())
   const facesOf = (g: number) => m.faces.map((f, fi) => (f.g === g ? fi : -1)).filter(fi => fi >= 0)
   const matFaces = (mi: number, g?: number) => m.faces.map((f, fi) => (faceMat(m, f) === mi && (g === undefined || f.g === g) ? fi : -1)).filter(fi => fi >= 0)
@@ -62,14 +55,7 @@ export function Outliner() {
     ? <input autoFocus defaultValue={name} onClick={e => e.stopPropagation()} onBlur={e => { if (e.target.value && e.target.value !== name) apply(e.target.value); setEditing(null) }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(null) }} />
     : <span className="name" onDoubleClick={e => { e.stopPropagation(); setEditing(key) }}>{name}</span>
 
-  const tabs: { id: OlTab; label: string; icon: ReactNode; n: number }[] = [
-    { id: 'objects', label: 'Scene', icon: <Box size={13} />, n: m.groups.length },
-    { id: 'joints', label: 'Skeleton', icon: <Bone size={13} />, n: m.bones.length },
-    { id: 'materials', label: 'Materials', icon: <Palette size={13} />, n: m.materials.length },
-    { id: 'clips', label: 'Clips', icon: <Clapperboard size={13} />, n: m.clips.length },
-    { id: 'refs', label: 'Refs', icon: <ImageIcon size={13} />, n: m.refs?.length ?? 0 },
-  ]
-  const cur: OlTab = tab
+  const cur = tab
 
   // joints, as a tree; a filtered joint keeps its ancestors so the hierarchy still reads
   const keepJoint = new Set<number>()
@@ -81,7 +67,7 @@ export function Outliner() {
         onClick={e => { const s = new Set(e.shiftKey ? selBones : []); s.add(i); useStore.setState({ selBones: s, selectMode: mode === 'model' && st.selectMode !== 'joint' ? st.selectMode : 'joint' }) }}>
         <Bone size={13} className="dim" />
         {rename(`j${i}`, m.bones[i].name, v => st.edit(mm => (mm.bones[i].name = v), 'Rename joint'))}
-        <span className="meta">{counts[i] || 0} pts</span>
+        <span className="meta" data-testid={`joint-count-${i}`} title="Points bound to this joint">{counts[i] || 0} pts</span>
       </div>
       {m.bones.map((b, c) => (b.parent === i ? jointRow(c, depth + 1) : null))}
     </div>
@@ -125,20 +111,6 @@ export function Outliner() {
     body = !m.bones.length ? empty('No joints: Rig workspace → click to place a root joint.')
       : !keepJoint.size ? empty('Nothing matches the filter.')
       : m.bones.map((b, i) => (b.parent < 0 ? jointRow(i, 0) : null))
-  } else if (cur === 'materials') {
-    const mats = m.materials.map((mt, i) => ({ mt, i, n: matFaces(i).length })).filter(x => match(x.mt.name))
-    const openEditor = (i: number) => { useStore.setState({ activeMat: i }); if (['model', 'uv', 'paint'].includes(st.workspace)) st.set({ sideTab: 'materials' }) }
-    body = !mats.length ? empty('Nothing matches the filter.') : mats.map(({ mt, i, n }) => {
-      const sz = mt.texture ? textures.size(mt.texture) : null
-      return (
-        <div key={i} className={`row ${activeMat === i ? 'on' : ''}`} data-testid={`ol-mat-${i}`} onClick={e => { useStore.setState({ activeMat: i }); if (n) selectFaces(matFaces(i), e.shiftKey) }} title={n ? 'Make active (the Materials editor follows) and select the faces using it' : 'Unused · make active'}>
-          <span className="swatch-dot" style={{ background: mt.color }} />{mt.texture ? <ImageIcon size={12} className="dim" /> : null}
-          {rename(`m${i}`, mt.name, v => st.edit(mm => (mm.materials[i].name = v), 'Rename material'))}
-          <span className="meta" title={sz ? `image ${sz.w}×${sz.h}` : undefined}>{sz ? `${sz.w}×${sz.h} · ` : ''}{n ? `${n} f` : 'unused'}</span>
-          <button className="icon-btn sm" data-testid={`ol-mat-edit-${i}`} title="Edit in the Materials tab" onClick={e => { e.stopPropagation(); openEditor(i) }}><Pencil size={12} /></button>
-        </div>
-      )
-    })
   } else if (cur === 'clips') {
     const clips = m.clips.map((c, i) => ({ c, i })).filter(x => match(x.c.name))
     body = !clips.length ? empty('Nothing matches the filter.') : clips.map(({ c, i }) => (
@@ -148,22 +120,13 @@ export function Outliner() {
         <span className="meta">{c.frames} f · {keyCount(i)} k</span>
       </div>
     ))
-  } else body = <RefsPanel />
+  }
 
   return (
     <div className="list outliner" data-testid="outliner">
-      <div className="ol-tabs" role="tablist">
-        {tabs.map(t => (
-          <button key={t.id} role="tab" aria-selected={cur === t.id} className={cur === t.id ? 'on' : ''} data-testid={`ol-tab-${t.id}`} title={`${t.label} (${t.n})`} onClick={() => setTab(t.id)}>
-            {t.icon}<span className="tl">{t.label}</span>{t.n > 0 && <span className="badge">{t.n}</span>}
-          </button>
-        ))}
-      </div>
-      {cur !== 'refs' && (
-        <label className="ol-filter"><Search size={13} /><input placeholder={`Filter ${tabs.find(t => t.id === cur)!.label.toLowerCase()}`} value={q} data-testid="ol-filter" onChange={e => setQ(e.target.value)} />
-          <span className="ol-help" title={HELP[cur]} data-testid="ol-help"><HelpCircle size={13} /></span>
-        </label>
-      )}
+      <label className="ol-filter"><Search size={13} /><input placeholder={`Filter ${LABEL[cur].toLowerCase()}`} value={q} data-testid="ol-filter" onChange={e => setQ(e.target.value)} />
+        <span className="ol-help" title={HELP[cur]} data-testid="ol-help"><HelpCircle size={13} /></span>
+      </label>
       <div className="ol-body" data-testid={`ol-body-${cur}`}>{body}</div>
     </div>
   )

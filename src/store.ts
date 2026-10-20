@@ -17,6 +17,7 @@ import { placeUnwrapped } from './uvplace'
 import * as UV from './uvops'
 import * as UVS from './uvsel'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
+import { DEFAULT_TAB } from './panelTabs'
 import { textures as tex } from './textures'
 import { primitiveImageUVs, primitiveTarget } from './primuv'
 import * as IO from './imageops'
@@ -27,7 +28,8 @@ import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
 export const WORKSPACES: Workspace[] = ['model', 'uv', 'paint', 'rig', 'animate', 'export']
 export type RailTab = 'Create' | 'Modify' | 'Multiply' | 'Construct' | 'Map' | 'Paint' | 'Setup' | 'Animate' | 'Export'
-export type SideTab = 'scene' | 'materials' | 'joints' | 'uv' | 'uvtools'
+/** a right-panel tab id (see panelTabs.ts): scene, joints, materials, clips, refs, uvtools, uv (Images), … */
+export type SideTab = string
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'joint' | 'point' | 'paint'
 export type EditMode = 'vertex' | 'edge' | 'face'
 export type SelectMode = 'object' | EditMode | 'joint'
@@ -128,6 +130,8 @@ interface State {
   railTab: RailTab
   sideTab: SideTab
   setWorkspace: (w: Workspace) => void
+  /** pick a right-panel tab (remembered for this workspace) */
+  setSideTab: (t: SideTab) => void
   /** Model / Animate mode switch with its tool and selection-mode rules */
   setMode: (mode: Mode) => void
   showTexture: boolean
@@ -387,15 +391,19 @@ export const useStore = create<State>((set, get) => ({
     }
     else s.set({ mode: 'model', playing: false })
   },
+  setSideTab: t => {
+    const s = get()
+    set({ sideTab: t })
+    if (s.ui.sideTabs[s.workspace] !== t) s.setUI({ sideTabs: { ...s.ui.sideTabs, [s.workspace]: t } })
+  },
   setWorkspace: w => {
     const s = get()
     const RAIL: Record<Workspace, RailTab> = { model: 'Create', uv: 'Map', paint: 'Paint', rig: 'Setup', animate: 'Animate', export: 'Export' }
-    const SIDE: Record<Workspace, SideTab> = { model: 'scene', uv: 'uvtools', paint: 'uv', rig: 'joints', animate: 'joints', export: 'scene' }
     const was = s.workspace
     s.setMode(w === 'animate' ? 'animate' : 'model')
     s.setUVSpace(w === 'uv')
-    // object animation (no joints) is picked in the Outliner
-    const side = w === 'animate' && !s.model.bones.length ? 'scene' : SIDE[w]
+    // a manual pick wins; Animate with no joints opens the Scene tab (objects are what gets keyed)
+    const side = s.ui.sideTabs[w] ?? (w === 'animate' && !s.model.bones.length ? 'scene' : DEFAULT_TAB[w])
     const p: Partial<State> = { workspace: w, railTab: RAIL[w], sideTab: side }
     const tool = get().tool
     if (w === 'paint') {

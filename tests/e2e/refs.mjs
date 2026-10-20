@@ -13,7 +13,7 @@ const frame = () => p.waitForTimeout(80)
 // Model: References are a tab of the Outliner
 await p.click('[data-testid="ws-model"]'); await frame()
 check('the refs tab is not open by default (Objects is)', (await p.locator('[data-testid="refs-panel"]').count()) === 0)
-await p.click('[data-testid="ol-tab-refs"]'); await frame()
+await p.$eval('[data-testid="side-refs"]', b => b.classList.contains('on') || b.click()); await frame()
 check('refs panel visible', await p.locator('[data-testid="refs-panel"]').isVisible())
 check('empty state shown', await p.locator('[data-testid="ref-empty"]').isVisible())
 check('scene has refsGroup', await S(() => !!window.__polyformScene.refsGroup))

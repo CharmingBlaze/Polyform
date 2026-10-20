@@ -4,6 +4,11 @@ import { commands } from '../src/commands'
 const by = () => Object.fromEntries(commands.filter(c => c.keys).map(c => [c.keys!, c.id]))
 
 describe('keymap (team/user decision of 2026-10-19)', () => {
+  it('right-panel tab commands exist and are unbound by default (rebindable)', () => {
+    const tabs = commands.filter(c => c.id.startsWith('panel.tab.'))
+    expect(tabs.map(c => c.id)).toEqual(['scene', 'joints', 'materials', 'clips', 'refs', 'uvtools', 'uv'].map(t => `panel.tab.${t}`))
+    expect(tabs.every(c => !c.keys)).toBe(true)
+  })
   it('no two commands share a shortcut', () => {
     const seen = new Map<string, string>()
     const clashes: string[] = []

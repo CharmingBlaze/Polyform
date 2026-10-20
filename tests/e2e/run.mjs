@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import net from 'node:net'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '../..')
@@ -14,12 +15,18 @@ const up = async u => { try { return (await fetch(u)).ok } catch { return false 
 let url = process.env.E2E_URL || '', server = null
 if (url && !(await up(url))) { console.error(`E2E_URL ${url} is not reachable`); process.exit(1) }
 if (!url) {
-  const port = 5190 + Math.floor(Math.random() * 50)
+  // a port nobody listens on: with --strictPort a busy port makes our server exit, and the page would then be served
+  // by another worktree's dev server (silently testing the wrong code)
+  const free = q => new Promise(res => { const s = net.createServer().once('error', () => res(false)).once('listening', () => s.close(() => res(true))).listen(q, '127.0.0.1') })
+  let port = 0
+  for (let i = 0; i < 40 && !port; i++) { const q = 5190 + Math.floor(Math.random() * 50); if (await free(q) && !(await up(`http://127.0.0.1:${q}/`))) port = q }
+  if (!port) { console.error('no free port for the dev server'); process.exit(1) }
   url = `http://127.0.0.1:${port}/`
   server = spawn(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), '--port', String(port), '--strictPort', '--host', '127.0.0.1'], { cwd: root, stdio: 'ignore' })
   const t0 = Date.now()
-  while (!(await up(url))) {
-    if (Date.now() - t0 > 30000) { server.kill(); console.error('dev server did not start'); process.exit(1) }
+  while (!(await up(url)) || server.exitCode !== null) {
+    if (server.exitCode !== null) { console.error(`dev server exited (${server.exitCode}); port ${port} taken?`); process.exit(1) }
+    if (Date.now() - t0 > 90000) { server.kill(); console.error('dev server did not start'); process.exit(1) }
     await new Promise(r => setTimeout(r, 250))
   }
 }

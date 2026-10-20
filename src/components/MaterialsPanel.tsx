@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Copy, Plus, Trash2, MousePointerSquareDashed, PaintBucket } from 'lucide-react'
+import { ChevronDown, ChevronRight, HelpCircle, Search, Copy, Plus, Trash2, MousePointerSquareDashed, PaintBucket } from 'lucide-react'
 import { useStore } from '../store'
 import { faceMat, MAP_SLOTS, type AlphaMode, type Material } from '../model'
 import { textures } from '../textures'
@@ -44,6 +44,10 @@ export function MaterialsPanel() {
   const selFaces = useStore(s => s.selFaces)
   const selectMode = useStore(s => s.selectMode)
   const [editing, setEditing] = useState<number | null>(null)
+  const [q, setQ] = useState('')
+  const savedH = useStore(s => s.ui.matListH)
+  const [dragH, setListH] = useState<number | null>(null)
+  const listH = dragH ?? savedH
   const [opts, setOptsState] = useState(optionsOpen)
   const setOpts = (v: boolean) => { optionsOpen = v; setOptsState(v) }
   const live = useRef<string | null>(null)
@@ -83,8 +87,12 @@ export function MaterialsPanel() {
         <span className="grow" />
         <span className="dim small">{m.materials.length}</span>
       </div>
-      <div className="mat-list" data-testid="mat-list">
+      <label className="ol-filter mat-filter"><Search size={13} /><input placeholder="Filter materials" value={q} data-testid="mat-filter" onChange={e => setQ(e.target.value)} />
+        <span className="ol-help" title="Click makes a material active · double-click renames · the counts are faces using it · Paint paints into the active material's images"><HelpCircle size={13} /></span>
+      </label>
+      <div className="mat-list" data-testid="mat-list" style={{ flexBasis: listH }}>
         {m.materials.map((x, i) => {
+          if (q && !x.name.toLowerCase().includes(q.toLowerCase())) return null
           const url = matPreview(x)
           return (
             <div key={i} className={`row mat-row ${i === cur ? 'on' : ''}`} data-testid={`mat-row-${i}`} onClick={() => { live.current = null; useStore.setState({ activeMat: i }) }}>
@@ -99,6 +107,15 @@ export function MaterialsPanel() {
           )
         })}
       </div>
+      <div className="mat-split" data-testid="mat-split" title="Drag to resize the list · double-click resets" role="separator" aria-orientation="horizontal"
+        onDoubleClick={() => st.setUI({ matListH: 132 })}
+        onPointerDown={e => {
+          e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId)
+          const y0 = e.clientY, h0 = listH
+          const move = (ev: PointerEvent) => setListH(Math.max(60, Math.min(600, h0 + ev.clientY - y0)))
+          const up = (ev: PointerEvent) => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); st.setUI({ matListH: Math.max(60, Math.min(600, h0 + ev.clientY - y0)) }) }
+          window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+        }} />
       {mt && <div className="mat-editor" data-testid="mat-editor">
         <div className="mat-presets">
           {(Object.keys(MT.PRESETS) as MT.Preset[]).map(p => <button key={p} className="mini-toggle" data-testid={`mat-preset-${p}`} title={MT.PRESETS[p].tip} onClick={() => edit(`Preset: ${MT.PRESETS[p].label}`, mm => MT.applyPreset(mm.materials[cur], p))}>{MT.PRESETS[p].label}</button>)}

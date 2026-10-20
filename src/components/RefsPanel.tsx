@@ -42,7 +42,7 @@ export function RefsPanel() {
           if (!mm.refs) mm.refs = []
           mm.refs.push(makeRef(id, f.name, aspect))
         }, 'Add reference')
-        useStore.getState().set(useStore.getState().workspace === 'model' ? { showRefs: true } : { showRefs: true, sideTab: 'uv' })
+        useStore.getState().set({ showRefs: true })
         useStore.getState().notify(`Reference “${f.name}” added`)
       } catch (e) {
         useStore.getState().notify(String((e as Error).message || e))

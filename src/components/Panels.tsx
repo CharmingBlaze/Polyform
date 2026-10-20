@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Layers, Bone, Image, ChevronsLeft, ChevronsRight, Wrench, Palette } from 'lucide-react'
-import { useStore, type SideTab, type Workspace } from '../store'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Bone, Box, Clapperboard, Image as ImageIcon, Images as ImagesIcon, Wrench, Palette } from 'lucide-react'
+import { useStore } from '../store'
+import { DEFAULT_TAB, registerTab, subscribeTabs, tabsFor, tabsRevision, type PanelTab } from '../panelTabs'
 import { faceMat } from '../model'
 import { textures } from '../textures'
 import { importImage } from '../io'
@@ -12,95 +13,86 @@ import { setHost } from '../portalhost'
 import { MaterialsPanel } from './MaterialsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
-import { setPanel } from '../useLayout'
+import { openSideTab, setPanel } from '../useLayout'
 
-export function Sidebar() {
-  const tab = useStore(s => s.sideTab)
-  const setTab = (t: SideTab) => useStore.getState().set({ sideTab: t })
-  const mode = useStore(s => s.mode)
-  const uvSpace = useStore(s => s.uvSpace)
-  useEffect(() => { const s = useStore.getState(); if (mode === 'animate' && s.sideTab === 'scene' && s.model.bones.length) setTab('joints') }, [mode])
-  useEffect(() => { if (uvSpace) setTab('uvtools'); else if (useStore.getState().sideTab === 'uvtools') setTab(useStore.getState().workspace === 'paint' ? 'uv' : 'scene') }, [uvSpace])
-  const workspace = useStore(s => s.workspace)
-  const tool = useStore(s => s.tool)
-  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [], uvSpace ? ['uvtools'] : [])
-  const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
+/** The right panel: the selected tab's content, full height, beside the vertical icon rail on the outer edge. */
+export function Sidebar({ children }: { children?: ReactNode }) {
+  const tabs = useRailTabs()
+  const cur = useCurrentTab(tabs)
   return (
-    <aside className="sidebar">
-      <div className={`tabs n${tabs.length}`}>
-        <button className="icon-btn collapse-btn" data-testid="side-collapse" title="Collapse the side panel · Ctrl+]" onClick={() => setPanel('right', true)}><ChevronsRight size={14} /></button>
-        {tabs.includes('scene') && <button className={tab === 'scene' ? 'on' : ''} data-testid="side-scene" title="Outliner" onClick={() => setTab('scene')}><Layers size={14} /> <span className="tl">Outliner</span></button>}
-        {tabs.includes('materials') && <button className={tab === 'materials' ? 'on' : ''} data-testid="side-materials" title="Materials" onClick={() => setTab('materials')}><Palette size={14} /> <span className="tl">Materials</span></button>}
-        {tabs.includes('joints') && <button className={tab === 'joints' ? 'on' : ''} data-testid="side-joints" title="Joints" onClick={() => setTab('joints')}><Bone size={14} /> <span className="tl">Joints</span></button>}
-        {tabs.includes('uvtools') && <button className={tab === 'uvtools' ? 'on' : ''} data-testid="side-uvtools" title="UV Tools" onClick={() => setTab('uvtools')}><Wrench size={14} /> <span className="tl">UV Tools</span></button>}
-        {tabs.includes('uv') && <button className={tab === 'uv' ? 'on' : ''} data-testid="side-uv" title="Images" onClick={() => setTab('uv')}><Image size={14} /> <span className="tl">Images</span></button>}
+    <aside className="sidebar" data-tab={cur?.id}>
+      <div className="side-body" data-testid="side-body">
+        {children}
+        <div className="tab-body" data-testid={`side-body-${cur?.id ?? 'none'}`}>{cur?.render()}</div>
       </div>
-      <div className="tab-body">
-        {tab === 'scene' && <Outliner />}
-        {tab === 'materials' && <MaterialsPanel />}
-        {tab === 'joints' && <Joints />}
-        {tab === 'uv' && <UVSide />}
-        {tab === 'uvtools' && <div className="uv-tools" data-testid="uv-tools" ref={el => setHost('uv-tools', el)} />}
-      </div>
+      <SideRail tabs={tabs} cur={cur?.id} collapsed={false} />
     </aside>
   )
 }
 
-/** Right column as an icon strip (narrow windows or collapsed by hand): a click opens that section. */
+/** Collapsed right panel: just the rail; any icon opens the panel on that tab. */
 export function SideIcons() {
-  const tab = useStore(s => s.sideTab)
+  const tabs = useRailTabs()
+  const cur = useCurrentTab(tabs)
+  return <aside className="side-icons" data-testid="side-icons"><SideRail tabs={tabs} cur={cur?.id} collapsed /></aside>
+}
+
+function useRailTabs(): PanelTab[] {
+  useSyncExternalStore(subscribeTabs, tabsRevision)
   const workspace = useStore(s => s.workspace)
-  const tool = useStore(s => s.tool)
-  const uvSpace = useStore(s => s.uvSpace)
-  const want = SIDE_TABS[workspace].concat(tool === 'joint' ? ['joints'] : [], uvSpace ? ['uvtools'] : [])
-  const tabs = SIDE_ORDER.filter(t => (want.includes(t) || t === tab) && (t !== 'uvtools' || uvSpace))
-  const ICON = { scene: Layers, materials: Palette, joints: Bone, uv: Image, uvtools: Wrench } as const
-  const LABEL = { scene: 'Outliner', materials: 'Materials', joints: 'Joints', uv: 'Images', uvtools: 'UV Tools' } as const
-  const open = (t: SideTab) => { useStore.getState().set({ sideTab: t }); setPanel('right', false) }
+  // conditions (UV Tools only with the UV editor) and badges follow the model
+  useStore(s => s.uvSpace); useStore(s => s.version); useStore(s => s.tool)
+  return tabsFor(workspace)
+}
+/** the shown tab: the picked one if this workspace has it, else the workspace default, else the first */
+function useCurrentTab(tabs: PanelTab[]): PanelTab | undefined {
+  const sideTab = useStore(s => s.sideTab)
+  const workspace = useStore(s => s.workspace)
+  return tabs.find(t => t.id === sideTab) ?? tabs.find(t => t.id === DEFAULT_TAB[workspace]) ?? tabs[0]
+}
+
+/** 32 px square icon buttons down the outer edge; the active one has an accent bar. Clicking it collapses the panel. */
+function SideRail({ tabs, cur, collapsed }: { tabs: PanelTab[]; cur?: string; collapsed: boolean }) {
   return (
-    <aside className="side-icons" data-testid="side-icons">
-      <button className="icon-btn" data-testid="side-expand" title="Expand the side panel · Ctrl+]" onClick={() => setPanel('right', false)}><ChevronsLeft size={16} /></button>
-      {tabs.map(t => { const I = ICON[t]; return <button key={t} className={`icon-btn ${tab === t ? 'on' : ''}`} data-testid={`sideicon-${t}`} title={LABEL[t]} onClick={() => open(t)}><I size={16} /></button> })}
-    </aside>
+    <nav className="side-rail" data-testid="side-rail" role="tablist" aria-orientation="vertical">
+      {tabs.map(t => {
+        const n = t.badge?.() ?? 0, on = t.id === cur
+        const hint = on && !collapsed ? `${t.title} · click to collapse the panel (Ctrl+])` : t.title
+        return (
+          <button key={t.id} role="tab" aria-selected={on} className={`rail-btn ${on ? 'on' : ''}`} data-testid={`side-${t.id}`} title={hint}
+            onClick={() => { if (on && !collapsed) setPanel('right', true); else openSideTab(t.id) }}>
+            <t.icon size={16} />
+            {n > 0 && <span className="rail-badge">{n > 99 ? '99+' : n}</span>}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
-/** Sidebar sections relevant per workspace: the Outliner always, Images for UV/Paint, Joints for Rig/Animate (the active one always stays). */
-const SIDE_ORDER: SideTab[] = ['scene', 'materials', 'joints', 'uvtools', 'uv']
-const SIDE_TABS: Record<Workspace, SideTab[]> = { model: ['scene', 'materials'], uv: ['scene', 'materials', 'uv'], paint: ['scene', 'materials', 'uv'], rig: ['scene', 'joints'], animate: ['scene', 'joints'], export: ['scene'] }
+// ---- built-in tabs (Developer 3's Paint tabs register the same way: registerTab('paint', {...})) ----
+registerTab('*', { id: 'scene', icon: Box, title: 'Scene · objects', order: 10, badge: () => useStore.getState().model.groups.length, render: () => <Outliner tab="objects" /> })
+registerTab('*', { id: 'joints', icon: Bone, title: 'Skeleton · joints', order: 20, badge: () => useStore.getState().model.bones.length, render: () => <><Outliner tab="joints" /><JointExtras /></> })
+registerTab(['model', 'uv', 'paint', 'rig', 'animate'], { id: 'materials', icon: Palette, title: 'Materials', order: 30, badge: () => useStore.getState().model.materials.length, render: () => <MaterialsPanel /> })
+registerTab('*', { id: 'clips', icon: Clapperboard, title: 'Clips', order: 40, badge: () => useStore.getState().model.clips.length, render: () => <><Outliner tab="clips" /><ClipKeys /></> })
+registerTab('*', { id: 'refs', icon: ImageIcon, title: 'Reference images', order: 50, badge: () => useStore.getState().model.refs?.length ?? 0, render: () => <div className="list"><RefsPanel /></div> })
+registerTab('uv', { id: 'uvtools', icon: Wrench, title: 'UV Tools', order: 100, when: () => useStore.getState().uvSpace, render: () => <div className="uv-tools" data-testid="uv-tools" ref={el => setHost('uv-tools', el)} /> })
+registerTab(['uv', 'paint'], { id: 'uv', icon: ImagesIcon, title: 'Images', order: 110, badge: () => imageCount(), render: () => <UVSide /> })
+const imageCount = () => new Set(useStore.getState().model.materials.map(m => m.texture).filter(Boolean)).size
 
-function Joints() {
+/** Under the Skeleton list: skinning (Model / Rig) and the key inspector for the selected joint (Animate). */
+function JointExtras() {
   const m = useStore(s => s.model)
   useStore(s => s.version)
   const selBones = useStore(s => s.selBones)
   const mode = useStore(s => s.mode)
   const frame = useStore(s => s.frame)
-  const [editing, setEditing] = useState<number | null>(null)
   const st = useStore.getState()
-  const children = (p: number) => m.bones.map((b, i) => ({ b, i })).filter(x => x.b.parent === p)
-  const counts = m.vbone.reduce<Record<number, number>>((a, b) => { if (b >= 0) a[b] = (a[b] || 0) + 1; return a }, {})
   const one = [...selBones][0]
-  const row = (i: number, depth: number): React.ReactNode => {
-    const b = m.bones[i]
-    return (
-      <div key={i}>
-        <div className={`row ${selBones.has(i) ? 'on' : ''}`} style={{ paddingLeft: 10 + depth * 14 }}
-          onClick={e => { const s = new Set(e.shiftKey ? selBones : []); s.add(i); useStore.setState({ selBones: s, selectMode: mode === 'model' && st.selectMode !== 'joint' ? st.selectMode : 'joint' }) }}>
-          <Bone size={13} className="dim" />
-          {editing === i
-            ? <input autoFocus defaultValue={b.name} onClick={e => e.stopPropagation()} onBlur={e => { st.edit(mm => (mm.bones[i].name = e.target.value || b.name)); setEditing(null) }} onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()} />
-            : <span className="name" onDoubleClick={() => setEditing(i)}>{b.name}</span>}
-          <span className="meta" data-testid={`joint-count-${i}`} title="Points bound to this joint">{counts[i] || 0} pts</span>
-        </div>
-        {children(i).map(c => row(c.i, depth + 1))}
-      </div>
-    )
-  }
+  if (!m.bones.length) return null
   return (
-    <div className="list">
-      {!m.bones.length && <Empty title="No joints yet" body="Pick the Joint tool (J) and click in a view to place a joint. Select a joint first to chain the next one to it." />}
-      {children(-1).map(c => row(c.i, 0))}
-      {mode === 'model' && m.bones.length > 0 && (
+    <div className="joint-extras">
+      {mode === 'model' && (
         <div className="card">
           <div className="label">Skinning</div>
           <p className="tip">Select points or faces, pick a joint, then Ctrl+P. The selection is kept while the Joint tool is active. Alt+P unbinds.</p>
@@ -114,6 +106,16 @@ function Joints() {
       {mode === 'animate' && one !== undefined && <KeyInspector bone={one} frame={frame} />}
     </div>
   )
+}
+
+/** Under the Clips list (Animate): the key inspector for the selected joint, so easing is at hand where clips are. */
+function ClipKeys() {
+  const selBones = useStore(s => s.selBones)
+  const mode = useStore(s => s.mode)
+  const frame = useStore(s => s.frame)
+  const one = [...selBones][0]
+  if (mode !== 'animate' || one === undefined) return null
+  return <div className="joint-extras"><KeyInspector bone={one} frame={frame} /></div>
 }
 
 function KeyInspector({ bone, frame }: { bone: number; frame: number }) {
@@ -301,7 +303,6 @@ function UVSide() {
   return (
     <>
       <Images />
-      <RefsPanel />
       {!uvSpace && workspace !== 'paint' && <div className="card"><div className="label">UV editor</div><UVEditor /></div>}
     </>
   )
