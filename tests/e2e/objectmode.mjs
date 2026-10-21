@@ -124,10 +124,19 @@ check('1024×576: header fits (mode switch icons only), nothing scrolls', fit.ov
 const head = await p.locator('[data-testid="pane-1"] .vp-title').boundingBox()
 check('thin viewport headers (22 px)', Math.round(head.height) === 22, String(head.height))
 const corner = () => p.locator('[data-testid="pane-1"] .vp-corner').evaluate(e => +getComputedStyle(e).opacity)
-await p.mouse.move(300, 4); await frame(200) // over the header (the sample opens Animate, whose view starts at x = 0)
+// The corner buttons fade (CSS opacity transition), so wait (bounded) for the fade to finish, i.e. no running
+// transition and the target state reached, before reading the opacity; a fixed sleep could sample mid-fade on a busy box.
+const cornerSettles = shown => p.waitForFunction(sh => {
+  const e = document.querySelector('[data-testid="pane-1"] .vp-corner')
+  if (!e || e.getAnimations().length) return false
+  const o = +getComputedStyle(e).opacity
+  return sh ? o > 0.5 : o === 0
+}, shown, { timeout: 4000, polling: 50 }).then(() => true, () => false)
+await p.mouse.move(300, 4); await cornerSettles(false) // over the header (the sample opens Animate, whose view starts at x = 0)
 const c0 = await corner()
-const pr = await p.locator('[data-testid="pane-1"]').boundingBox(); await p.mouse.move(pr.x + pr.width / 2, pr.y + pr.height / 2); await frame(250)
-check('Frame / All / Reset / Grid only show while the pointer is over the view', c0 === 0 && (await corner()) > 0.5, `${c0} ${await corner()}`)
+const pr = await p.locator('[data-testid="pane-1"]').boundingBox(); await p.mouse.move(pr.x + pr.width / 2, pr.y + pr.height / 2); await cornerSettles(true)
+const c1 = await corner()
+check('Frame / All / Reset / Grid only show while the pointer is over the view', c0 === 0 && c1 > 0.5, `${c0} ${c1}`)
 check('1 px gaps between panes', (await S(() => getComputedStyle(document.querySelector('[data-testid="views"]')).rowGap)) === '1px')
 await p.screenshot({ path: '/workspace/shot-roomy-viewports.png' })
 check('no page errors', errs.length === 0, errs.join(' | '))
