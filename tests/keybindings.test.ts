@@ -190,8 +190,10 @@ describe('overrides', () => {
     expect(live('T', at('model'))).toBe('view.toolPanel')
     expect(live('ArrowRight', at('animate'))).toBe('anim.next')
     expect(findClashes(currentBindings()).filter(c => c.kind === 'conflict')).toEqual([])
+    expect(live('B', at('model'))).not.toBe('op.mul.bevelFaces') // B is box select in Blender, not the face bevel
     applyPreset('polyform')
     expect(live('1', at('model'))).toBe('sel.objectMode')
+    expect(live('B', at('model'))).toBe('op.mul.bevelFaces')
   })
 })
 

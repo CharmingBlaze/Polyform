@@ -83,7 +83,7 @@ describe('MOD-1 transform status', () => {
 describe('MOD-1 API: beginModal / updateModal / endModal', () => {
   it('runs a line and mirrors it into store.modalInfo', () => {
     expect(isModalRunning()).toBe(false)
-    beginModal({ id: 'mesh.bevel', label: 'Bevel', hints: [{ keys: ['LMB', '↵'], label: 'Confirm', p: 1 }] })
+    beginModal({ id: 'mul.bevel', label: 'Bevel', hints: [{ keys: ['LMB', '↵'], label: 'Confirm', p: 1 }] })
     expect(isModalRunning()).toBe(true)
     updateModal({ value: [{ label: 'Offset', value: 0.25, unit: 'm' }, { label: 'Segments', value: '3' }], axis: { axis: 'z', space: 'global' } })
     updateModal({ typed: '0.2' })

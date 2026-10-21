@@ -34,7 +34,7 @@ describe('keymap (team/user decision of 2026-10-19)', () => {
   })
   it('unchanged bindings', () => {
     const b = by()
-    expect(b['B']).toBe('op.mul.bevel'); expect(b['Ctrl+B']).toBe('edit.bevel'); expect(b['I']).toBe('edit.inset'); expect(b['K']).toBe('edit.knife')
+    expect(b['B']).toBe('op.mul.bevelFaces'); expect(b['Ctrl+B']).toBe('edit.bevel'); expect(b['I']).toBe('edit.inset'); expect(b['K']).toBe('edit.knife')
     expect(b['F']).toBe('edit.fill'); expect(b['M']).toBe('edit.merge')
     expect(b['Ctrl+R']).toBe('edit.loopcut'); expect(b['Ctrl+P']).toBe('joint.bind'); expect(b['Tab']).toBe('sel.object')
     expect(b['Ctrl+Tab']).toBe('anim.mode')

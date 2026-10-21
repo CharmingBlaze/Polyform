@@ -558,7 +558,7 @@ export function Viewport({ pane }: { pane: number }) {
     const at0 = interaction.mouse[pane] ?? { x: ctx.current!.w / 2, y: ctx.current!.h / 2 }
     let width = 0.08, segments = 1, individual = 0
     const height = 0
-    st0.runOp('mul.bevel', { inset: width, height, segments, individual })
+    st0.runOp('mul.bevelFaces', { inset: width, height, segments, individual })
     const center = () => {
       const m = useStore.getState().model, P = sceneManager.posed
       const c = new THREE.Vector3(); let n = 0
@@ -571,8 +571,8 @@ export function Viewport({ pane }: { pane: number }) {
     })
     const apply = () => {
       const st = useStore.getState()
-      if (st.lastOp?.id === 'mul.bevel') st.updateOp({ inset: width, height, segments, individual })
-      else st.runOp('mul.bevel', { inset: width, height, segments, individual })
+      if (st.lastOp?.id === 'mul.bevelFaces') st.updateOp({ inset: width, height, segments, individual })
+      else st.runOp('mul.bevelFaces', { inset: width, height, segments, individual })
       info()
     }
     const end = (ok: boolean) => {

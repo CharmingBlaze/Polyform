@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import * as M from './model'
 import * as G from './geom'
 import { primitiveImageUVs, primitiveUVNote } from './primuv'
+import { BEVEL_PARAMS, bevel, bevelEdgesOfSelection, bevelOptsFromParams } from './bevel'
 import type { Model, ParamDef, Params, PrimitiveKind, Vec3 } from './model'
 import * as MO from './mirrorOps'
 
@@ -41,6 +42,22 @@ function paramDefs<O>(list: readonly MO.OpParam<O>[]): ParamDef[] {
   })
 }
 const center = (m: Model, verts: number[]) => G.selectionBounds(m, verts).getCenter(new THREE.Vector3())
+
+
+/** Blender Bevel: OpDef params generated from bevel.ts's BEVEL_PARAMS (same names; enums are option indices, bools 0/1). */
+const BEVEL_OP_PARAMS = (affect: 0 | 1): ParamDef[] => BEVEL_PARAMS.map((d): ParamDef => {
+  const base = { key: d.name, label: d.label }
+  if (d.type === 'enum') return { ...base, def: d.name === 'affect' ? affect : d.options!.indexOf(d.default as string), min: 0, max: d.options!.length - 1, step: 1, int: true, kind: 'enum', options: d.options!.map(x => x[0].toUpperCase() + x.slice(1)) }
+  if (d.type === 'bool') return { ...base, def: d.default ? 1 : 0, min: 0, max: 1, step: 1, int: true, kind: 'bool' }
+  return { ...base, def: d.default as number, min: d.min ?? -1e6, max: d.max ?? d.softMax ?? 1e6, step: d.type === 'int' ? 1 : d.name === 'profile' ? 0.05 : d.name === 'widthPct' ? 1 : 0.01, int: d.type === 'int' }
+})
+function runBevel(m: Model, s: OpSel, p: Params): OpResult {
+  const opts = bevelOptsFromParams(p)
+  if ((opts.widthType === 'percent' ? opts.widthPct : opts.width) <= 0) return { faces: s.faces, note: 'Bevel: set a width above 0' }
+  if (opts.affect === 'edges' && !bevelEdgesOfSelection(m, s).length) throw new Error('Select edges to bevel')
+  const r = bevel(m, s, opts)
+  return { faces: r.faces, note: r.skipped ? `Bevel skips ${r.skipped} border or non-manifold edge${r.skipped === 1 ? '' : 's'}` : undefined }
+}
 
 export const OPS: OpDef[] = [
   ...(Object.keys(M.PRIMITIVES) as PrimitiveKind[]).map((k): OpDef => ({
@@ -88,7 +105,7 @@ export const OPS: OpDef[] = [
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {
-    id: 'mul.bevel', label: 'Bevel', tab: 'Multiply',
+    id: 'mul.bevelFaces', label: 'Bevel Faces (LightWave)', tab: 'Multiply',
     params: [N('inset', 'Width', 0.1, 0, 10, 0.02), N('height', 'Depth', 0.0, -100, 100, 0.05), N('segments', 'Segments', 1, 1, 16, 1, true), BOOL('individual', 'Individual', 0)],
     run: (m, s, p) => {
       const segs = Math.max(1, Math.round(p.segments || 1))
@@ -106,6 +123,13 @@ export const OPS: OpDef[] = [
       return facesSel(G.bevelFaces(m, faces, p.inset, p.height, !!p.individual, segs))
     },
   },
+  {
+    // Blender's Bevel (Ctrl+B edges / Shift+Ctrl+B vertices): geometry in bevel.ts. Params in redo-panel order (spec §4.3).
+    id: 'mul.bevel', label: 'Bevel', tab: 'Multiply',
+    params: BEVEL_OP_PARAMS(0),
+    run: (m, s, p) => runBevel(m, s, p),
+  },
+  { id: 'mul.bevelVerts', label: 'Bevel Vertices', tab: 'Multiply', params: BEVEL_OP_PARAMS(1), run: (m, s, p) => runBevel(m, s, p) },
   {
     id: 'mul.inset', label: 'Inset', tab: 'Multiply', needs: 'faces',
     params: [N('inset', 'Inset', 0.1, -10, 10, 0.02), BOOL('individual', 'Individual', 0)],

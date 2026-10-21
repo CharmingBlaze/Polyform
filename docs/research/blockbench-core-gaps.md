@@ -232,7 +232,7 @@
 - **Real mesh modelling.**
   - N-gon `Face` (`model.ts` L6) with ngon tests.
   - Extrude: `extrude.ts`, with region / individual / edges / verts via `edit.extrudeMenu` in `commands.ts`.
-  - Bevel: `mul.bevel` in `ops.ts` L74.
+  - Bevel: `mul.bevel` (Blender edge/vertex bevel, `src/bevel.ts`) and `mul.bevelFaces` (LightWave face bevel) in `ops.ts`.
   - Knife: `knife.ts`. Loop cut: `loopcut.ts`.
   - Also inset, bridge, merge and subdivide.
   - Blockbench's mesh tools are thinner, and its knife and loop cut are newer additions.

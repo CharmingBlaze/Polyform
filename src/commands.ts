@@ -33,7 +33,7 @@ const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}.add`, label: `Toggle ${m} in combined mode`, group: 'Selection', keys: `Shift+${n}`, run: () => S().setSelectMode(m, true) },
 ]
 // Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
-const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+const OP_KEYS: Record<string, string> = { 'mul.bevelFaces': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint' | 'dupmove'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
