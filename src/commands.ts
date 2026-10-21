@@ -332,7 +332,7 @@ export function comboOf(e: KeyboardEvent) {
 }
 
 /** keys the UV editor takes while the pointer is over it (modal G / R / S, island, frame, UV ops) */
-export const UV_KEYS = ['G', 'R', 'S', 'L', 'F', 'Home', 'Shift+R', 'Shift+Alt+R', 'Alt+M', 'Shift+Alt+M', 'Alt+U']
+export const UV_KEYS = ['G', 'R', 'S', 'L', '/', 'F', 'Home', 'Shift+R', 'Shift+Alt+R', 'Alt+M', 'Shift+Alt+M', 'Alt+U']
 /** UV copy / paste over the editor, except in Animate where Ctrl+C / V copy keys */
 export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
 /** Dope sheet keys while the pointer is over the timeline. Not Command.keys: those letters already belong to the views.

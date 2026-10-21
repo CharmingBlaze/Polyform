@@ -7,6 +7,14 @@ const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bi
 const p = await b.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true })
 const errs = []; p.on('pageerror', e => errs.push(e.message))
 await p.goto(url); await p.waitForFunction(() => window.__polyform && window.__polyformViews?.[0] && window.__polyformScene); await p.waitForTimeout(400)
+/** the image / overlay selects sit in the UV number bar, or behind its ⋯ button when the bar is narrow */
+const uvSelect = async (id, v) => {
+  const opened = (await p.locator(`[data-testid="${id}"]`).count()) === 0 && (await p.locator('[data-testid="uv-more"]').count()) > 0
+  if (opened) { await p.click('[data-testid="uv-more"]'); await p.waitForTimeout(60) }
+  const r = v === undefined ? await p.inputValue(`[data-testid="${id}"]`) : await p.selectOption(`[data-testid="${id}"]`, v)
+  if (opened) { await p.keyboard.press('Escape'); await p.waitForTimeout(60) }
+  return r
+}
 const results = []
 const check = (name, ok, info = '') => results.push([name, !!ok, info])
 const S = (fn, arg) => p.evaluate(fn, arg)
@@ -233,12 +241,12 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   await p.screenshot({ path: '/workspace/shot-uv-pack.png' })
   // stretch heatmap: shrink face 0 to a third of its width -> it turns warm, the rest stay blue
   await S(() => window.__polyform.getState().edit(m => { const f = m.faces[0], u0 = Math.min(...f.uv.map(q => q[0])); f.uv = f.uv.map(([u, v]) => [u0 + (u - u0) / 3, v]) }, "shrink"))
-  await p.selectOption('[data-testid="uv-stretch"]', 'area'); await frame()
+  await uvSelect('uv-stretch', 'area'); await frame()
   const px = fi => S(async fi => { const f = window.__polyform.getState().model.faces[fi]; const c = [f.uv.reduce((s, q) => s + q[0], 0) / 4, f.uv.reduce((s, q) => s + q[1], 0) / 4]; const at = window.__polyformUV.toClient(...c); const cv = document.querySelector('[data-testid="uv-canvas"]'); const r = cv.getBoundingClientRect(); const k = cv.width / r.width; return Array.from(cv.getContext('2d').getImageData((at.x - r.left) * k, (at.y - r.top) * k, 1, 1).data) }, fi)
   const hot = await px(0), cold = await px(5)
   check('stretch heatmap: the shrunk face is warm (red > blue), an undistorted one is blue', hot[0] > hot[2] && cold[2] > cold[0], JSON.stringify({ hot, cold }))
   await p.screenshot({ path: '/workspace/shot-uv-stretch.png' })
-  await p.selectOption('[data-testid="uv-stretch"]', 'off')
+  await uvSelect('uv-stretch', 'off')
 }
 
 // 5. Images library + per-face materials: two images on different faces of a box, export, validate
@@ -263,7 +271,7 @@ for (const [kind, btn] of [['cylinder', 'uv-proj-cyl'], ['sphere', 'uv-proj-sphe
   const mats = await S(() => { const m = window.__polyform.getState().model; return m.faces.map(f => (f.mat !== undefined ? f.mat : m.groups[f.g].mat)) })
   check('Assign to selection: faces 0,1,4,5 get red, 2,3 get blue', JSON.stringify(mats) === JSON.stringify([A, A, Bm, Bm, A, A]), JSON.stringify(mats))
   check('rows count the faces using each image', (await p.textContent(`[data-testid="img-uses-${A}"]`)).trim() === '4 f' && (await p.textContent(`[data-testid="img-uses-${Bm}"]`)).trim() === '2 f')
-  check('the UV editor shows the selected face\'s image', (await p.inputValue('[data-testid="uv-image"]')) === String(Bm))
+  check('the UV editor shows the selected face\'s image', (await uvSelect('uv-image')) === String(Bm))
   await p.keyboard.press('Control+z'); await frame()
   check('one Ctrl+Z undoes the assignment', JSON.stringify(await S(() => window.__polyform.getState().model.faces.map(f => f.mat ?? -1))) === JSON.stringify([A, A, -1, -1, A, A]))
   await p.keyboard.press('Control+Shift+z'); await frame()

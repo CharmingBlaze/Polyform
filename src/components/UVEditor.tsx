@@ -12,6 +12,8 @@ import { cornerFace, cornerIdx, edgeKey, faceMat, type Vec2 } from '../model'
 import * as U from '../uvops'
 import * as IO from '../imageops'
 import * as UVS from '../uvsel'
+import * as UVP from '../uvpick'
+import { useBinding } from '../keymap'
 import { fmtPx, gridSub, snapAngle, snapLen, snapMoveDelta, snapUV } from '../uvpx'
 import { paintUVAt, paintUVEnd, paintUVStart, uvBrushOutline } from '../paint'
 import { viewCtx } from './Viewport'
@@ -29,7 +31,7 @@ let uvClip: U.UVClip | null = null
 
 type ToolGroup = 'unwrap' | 'transform' | 'arrange' | 'pixels' | 'seams'
 const TOOL_GROUPS: [ToolGroup, string, LucideIcon][] = [['unwrap', 'Unwrap', WandSparkles], ['transform', 'Transform', Move3d], ['arrange', 'Arrange', LayoutGrid], ['pixels', 'Pixels', Grid2x2], ['seams', 'Seams & pins', Scissors]]
-type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean } | 'sep'
+type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean; tip?: string } | 'sep'
 /** right-click menu of the UV editor: same look as the menu bar; Esc / outside press closes; arrows + Enter work */
 function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuItem[]; close: () => void }) {
   const el = useRef<HTMLDivElement>(null)
@@ -54,7 +56,7 @@ function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuIte
   return (
     <div ref={el} className="mb-panel uv-menu" role="menu" tabIndex={-1} data-menu-open="true" data-testid="uv-menu" style={{ left: pos.x, top: pos.y, maxHeight: innerHeight - 4 }} onKeyDown={key} onContextMenu={e => e.preventDefault()}>
       {items.map((it, i) => it === 'sep' ? <div key={i} className="mi-sep" /> : (
-        <div key={it.id} role="menuitem" aria-disabled={it.enabled === false || undefined} data-testid={`uvm-${it.id}`} className={`mi ${act === i ? 'active' : ''} ${it.enabled === false ? 'disabled' : ''}`}
+        <div key={it.id} role="menuitem" title={it.tip} aria-disabled={it.enabled === false || undefined} data-testid={`uvm-${it.id}`} className={`mi ${act === i ? 'active' : ''} ${it.enabled === false ? 'disabled' : ''}`}
           onPointerEnter={() => setAct(i)} onPointerLeave={() => setAct(-1)} onClick={() => run(it)}>
           <span /><span>{it.label}</span><span className="mi-keys">{it.keys ?? ''}</span><span />
         </div>
@@ -63,11 +65,17 @@ function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuIte
   )
 }
 
-/** Faces the UV editor shows and picks: every visible face. */
+/** Faces the UV editor shows and picks: every visible face, or only the frozen selection with Selected only on. */
 export function uvFaces(): number[] {
-  const m = useStore.getState().model
-  return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0)
+  return useStore.getState().uvShownFaces()
 }
+/** selection writes made by the UV editor itself: they must not refreeze the Selected-only faces */
+let uvWriting = 0
+const fromUV = <T,>(fn: () => T): T => { uvWriting++; try { return fn() } finally { uvWriting-- } }
+/** a theme colour from the CSS custom properties (canvas drawing), with a fallback */
+const cssVar = (name: string, d: string) => (typeof document !== 'undefined' && getComputedStyle(document.documentElement).getPropertyValue(name).trim()) || d
+/** full gesture help of the UV editor (status-line tooltip and the ? popover) */
+const UV_HELP = 'click / drag select · click again on the same spot: next face underneath · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · / selected only · F frame · right-click menu · wheel zoom · right-drag pan · keys act on the UV editor while the pointer is over it'
 /** Selected UV corners: the UV-local selection (Sync: UV), else the corners the 3D selection covers. */
 export function uvSelection(): Set<number> {
   return new Set(useStore.getState().uvCorners())
@@ -75,10 +83,24 @@ export function uvSelection(): Set<number> {
 /** UV-local picking applies (Sync: UV, point or edge mode); face and object picks are already face-local. */
 const uvLocal = () => { const s = useStore.getState(); return s.ui.uvSync === 'uv' && s.selectMode !== 'object' && s.selectMode !== 'joint' && !s.subModes.includes('face') }
 
+/** the ⋯ popover of the UV number bar (image and overlay at narrow widths): Esc / outside press closes */
+function UVMorePop({ x, y, close, children }: { x: number; y: number; close: () => void; children: React.ReactNode }) {
+  const el = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const off = (e: PointerEvent) => { if (!el.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-testid="uv-more"]')) close() }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('pointerdown', off, true); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('pointerdown', off, true); window.removeEventListener('keydown', key) }
+  }, [close])
+  return <div ref={el} className="mb-panel uv-more-pop" data-testid="uv-more-pop" data-menu-open="true" style={{ right: Math.max(2, innerWidth - x), top: y }}>{children}</div>
+}
+
 /** A compact numeric field: Enter / blur applies, Esc reverts, wheel nudges (Shift = finer). "—" when not applicable. */
 function NumField({ label, value, onCommit, testid, step, digits, title }: { label: string; value: number | null; onCommit: (v: number) => void; testid: string; step: number; digits: number; title: string }) {
   const [txt, setTxt] = useState('')
   const focused = useRef(false)
+  /** Esc: the blur that follows must not apply the abandoned text */
+  const reverted = useRef(false)
   const el = useRef<HTMLInputElement>(null)
   const fmt = (v: number | null) => (v === null ? '—' : String(Math.round(v * 10 ** digits) / 10 ** digits))
   useEffect(() => { if (!focused.current) setTxt(fmt(value)) })
@@ -98,9 +120,9 @@ function NumField({ label, value, onCommit, testid, step, digits, title }: { lab
   return (
     <label className="uv-num" title={title}><span>{label}</span>
       <input ref={el} data-testid={testid} value={txt} disabled={value === null} inputMode="decimal"
-        onFocus={e => { focused.current = true; e.target.select() }} onBlur={() => { focused.current = false; commit() }}
+        onFocus={e => { focused.current = true; e.target.select() }} onBlur={() => { focused.current = false; if (reverted.current) reverted.current = false; else commit() }}
         onChange={e => setTxt(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') { commit(); requestAnimationFrame(() => { setTxt(fmt(cb.current.value)); requestAnimationFrame(() => el.current?.select()) }) } else if (e.key === 'Escape') { setTxt(fmt(value)); el.current?.blur() } }} />
+        onKeyDown={e => { if (e.key === 'Enter') { commit(); requestAnimationFrame(() => { setTxt(fmt(cb.current.value)); requestAnimationFrame(() => el.current?.select()) }) } else if (e.key === 'Escape') { reverted.current = true; setTxt(fmt(value)); el.current?.blur() } }} />
     </label>
   )
 }
@@ -205,14 +227,17 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const m = useStore.getState().model, hf = interaction.hoverFace, dpr = window.devicePixelRatio || 1
     hov3d.current = hf?.from === '3d' && m.faces[hf.face] ? hf.face : -1
     main.dataset.hover = String(hov3d.current)
+    // the face under the pointer here (UV) or in a 3D view: accent outline, never the selection colour
+    const hv = hov3d.current >= 0 ? hov3d.current : hf?.from === 'uv' && m.faces[hf.face] && !drag.current && globalTool !== 'paint' ? hf.face : -1
+    main.dataset.hoverUv = String(hf?.from === 'uv' ? hv : -1)
     if (c.width !== Math.round(size.w * dpr) || c.height !== Math.round(size.h * dpr)) { c.width = Math.round(size.w * dpr); c.height = Math.round(size.h * dpr) }
     const g = c.getContext('2d')!
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.setTransform(dpr, 0, 0, dpr, 0, 0)
-    if (hov3d.current < 0) return
-    const pts = m.faces[hov3d.current].uv.map(toPx)
+    if (hv < 0) return
+    const pts = m.faces[hv].uv.map(toPx), accent = cssVar('--accent', '#6d8bff')
     g.beginPath(); pts.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
-    g.fillStyle = 'rgba(255,209,102,0.18)'; g.fill()
-    g.strokeStyle = '#1b1f27'; g.lineWidth = 4; g.stroke(); g.strokeStyle = '#ffd166'; g.lineWidth = 2; g.stroke()
+    g.globalAlpha = 0.13; g.fillStyle = accent; g.fill(); g.globalAlpha = 1
+    g.strokeStyle = '#1b1f27'; g.lineWidth = 4; g.stroke(); g.strokeStyle = accent; g.lineWidth = 2; g.stroke()
   }
 
   useEffect(() => {
@@ -221,7 +246,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const h = () => force(x => x + 1)
     // hover sync: redraw when the face hovered in 3D changes
     // (drawn on its own overlay canvas: no full redraw of a big mesh per hovered face)
-    const hv = () => { if (interaction.hoverFace?.from === '3d' || hov3d.current >= 0) drawHover.current() }
+    const hv = () => drawHover.current()
     window.addEventListener('texture-changed', h)
     window.addEventListener('hover-face', hv)
     return () => { ro.disconnect(); window.removeEventListener('texture-changed', h); window.removeEventListener('hover-face', hv); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }
@@ -284,18 +309,32 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const heatVals = heat === 'area' || heat === 'angle' ? U.stretch(m, faces, heat) : null
     const target = m.props.texelDensity, densVals = heat === 'density' ? U.texelDensity(m, faces, tw || paintTexSize, th || paintTexSize) : null
     const overSet = cov ? new Set(cov.c.overlapping) : null
+    const selC = cssVar('--selection', '#ffa04a'), dimC = cssVar('--dim', '#8b93a5')
+    // with a selection the rest is dimmed so the selection always reads first; without one, the usual blue wireframe
+    const anySel = sel.size > 0
+    cv.current!.dataset.sel = selC
     faces.forEach((fi, k) => {
       const f = m.faces[fi]
       const p = f.uv.map(toPx)
       g.beginPath(); p.forEach((q, i) => (i ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y))); g.closePath()
-      const on = st.selFaces.has(fi) && (faceMode || f.uv.every((_, i) => sel.has(fi * 1024 + i)))
-      g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : densVals ? U.densityColor(densVals[k], target) : on ? 'rgba(255,150,60,0.28)' : 'rgba(110,160,255,0.07)'; g.fill()
-      g.strokeStyle = on ? '#ffa04a' : overSet?.has(fi) ? '#ff5050' : overSet && f.uvShare ? '#5fd3c4' : '#7fb0ff'; g.stroke()
+      const on = (faceMode ? st.selFaces.has(fi) : true) && f.uv.every((_, i) => sel.has(fi * 1024 + i))
+      const flag = overSet?.has(fi) ? '#ff5050' : overSet && f.uvShare ? '#5fd3c4' : null
+      if (heatVals || densVals) { g.fillStyle = heatVals ? U.heatColor(heatVals[k]) : U.densityColor(densVals![k], target); g.fill() }
+      if (on) {
+        if (!heatVals && !densVals) { g.globalAlpha = 0.28; g.fillStyle = selC; g.fill(); g.globalAlpha = 1 }
+        g.lineWidth = 1.5; g.strokeStyle = selC; g.stroke()
+      } else if (anySel && !flag) {
+        if (!heatVals && !densVals) { g.globalAlpha = 0.08; g.fillStyle = dimC; g.fill() }
+        g.globalAlpha = 0.45; g.lineWidth = 1; g.strokeStyle = dimC; g.stroke(); g.globalAlpha = 1
+      } else {
+        if (!heatVals && !densVals) { g.fillStyle = 'rgba(110,160,255,0.07)'; g.fill() }
+        g.lineWidth = 1.2; g.strokeStyle = flag ?? '#7fb0ff'; g.stroke()
+      }
     })
     if (unused) { const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false; g.drawImage(unused.cnv, originX, originY, side, side); g.imageSmoothingEnabled = sm }
     if (cov) { const sm = g.imageSmoothingEnabled; g.imageSmoothingEnabled = false; g.drawImage(cov.cnv, originX, originY, side, side); g.imageSmoothingEnabled = sm }
     // selected edges
-    g.strokeStyle = '#ffa04a'; g.lineWidth = 2.2; g.beginPath()
+    g.strokeStyle = selC; g.lineWidth = 2.2; g.beginPath()
     for (const fi of faces) {
       const f = m.faces[fi]
       f.uv.forEach((u, i) => {
@@ -326,7 +365,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (showPts) for (const fi of faces) {
       m.faces[fi].uv.forEach((u, i) => {
         const p = toPx(u), s = sel.has(fi * 1024 + i)
-        g.fillStyle = s ? '#ffa04a' : '#e8ecf6'
+        g.fillStyle = s ? selC : anySel ? dimC : '#e8ecf6'
         g.fillRect(p.x - (s ? 3 : 2), p.y - (s ? 3 : 2), s ? 6 : 4, s ? 6 : 4)
       })
     }
@@ -336,7 +375,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       g.strokeRect(Math.round(fr.x0) + 0.5, Math.round(fr.y0) + 0.5, Math.round(fr.x1 - fr.x0), Math.round(fr.y1 - fr.y0)); g.setLineDash([])
       g.beginPath(); g.moveTo((fr.x0 + fr.x1) / 2, fr.y0); g.lineTo(fr.rot.x, fr.rot.y + fr.hs); g.stroke()
       for (const [, hx, hy] of fr.handles) { g.fillStyle = '#fff'; g.fillRect(hx - fr.hs, hy - fr.hs, fr.hs * 2, fr.hs * 2); g.strokeStyle = '#1b1f27'; g.strokeRect(hx - fr.hs + 0.5, hy - fr.hs + 0.5, fr.hs * 2 - 1, fr.hs * 2 - 1) }
-      g.fillStyle = '#ffa04a'; g.beginPath(); g.arc(fr.rot.x, fr.rot.y, fr.hs + 1, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#1b1f27'; g.stroke()
+      g.fillStyle = selC; g.beginPath(); g.arc(fr.rot.x, fr.rot.y, fr.hs + 1, 0, Math.PI * 2); g.fill(); g.strokeStyle = '#1b1f27'; g.stroke()
       g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); g.arc(fr.pp.x, fr.pp.y, 5, 0, Math.PI * 2)
       g.moveTo(fr.pp.x - 8, fr.pp.y); g.lineTo(fr.pp.x + 8, fr.pp.y); g.moveTo(fr.pp.x, fr.pp.y - 8); g.lineTo(fr.pp.x, fr.pp.y + 8); g.stroke()
     }
@@ -380,8 +419,20 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   const loc = (e: { clientX: number; clientY: number }) => { const r = cv.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
 
   // ---------- picking (3D-synced) ----------
-  type Hit = { verts?: number[]; faces?: number[]; edges?: number[]; corners?: number[]; as?: 'verts' | 'edges' }
-  const pickAt = (x: number, y: number): Hit | null => {
+  type Hit = { verts?: number[]; faces?: number[]; edges?: number[]; corners?: number[]; as?: 'verts' | 'edges'; stack?: number[] }
+  /** click-again cycling through faces stacked under the cursor (see uvpick.ts) */
+  const cyc = useRef<UVP.Cycle>(null)
+  const cycNote = useRef('')
+  /** one face as a hit: in Object mode its whole object */
+  const faceHit = (fi: number, stack?: number[]): Hit => {
+    const st = useStore.getState(), m = st.model
+    if (st.selectMode === 'object') { const g = m.faces[fi].g; return { faces: m.faces.map((f, i) => (f.g === g ? i : -1)).filter(i => i >= 0), stack } }
+    return { faces: [fi], stack }
+  }
+  /** Island mode (Face mode + ui.uvIsland): face picks and box results grow to whole islands */
+  const islandOn = () => { const st = useStore.getState(); return st.ui.uvIsland && st.selectMode !== 'object' && st.selectMode !== 'joint' && st.subModes.includes('face') }
+  /** pick at canvas px; `press` = a real button press (a press again on the same spot keeps the face cycled to last) */
+  const pickAt = (x: number, y: number, press = false): Hit | null => {
     const st = useStore.getState(), m = st.model, faces = uvFaces()
     const faceMode = st.selectMode === 'object' || st.subModes.includes('face')
     if (uvLocal()) {
@@ -416,14 +467,19 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       if (best >= 0) return { edges: [best] }
     }
     if (faceMode) {
-      const p = toUV(x, y)
-      for (let k = faces.length - 1; k >= 0; k--) if (U.uvInFace(m, faces[k], p)) {
-        const fi = faces[k]
-        if (st.selectMode === 'object') { const g = m.faces[fi].g; return { faces: m.faces.map((f, i) => (f.g === g ? i : -1)).filter(i => i >= 0) } }
-        return { faces: [fi] }
-      }
+      const list = UVP.facesAt(m, faces, toUV(x, y))
+      if (list.length) return faceHit(press ? UVP.pressFace(cyc.current, x, y, list) : list[0], list)
     }
     return null
+  }
+  /** a click (no drag) on a face stack: the same spot again steps to the next face underneath */
+  const clickStack = (x: number, y: number, hit: Hit, was: boolean) => {
+    const list = hit.stack!, again = UVP.isAgain(cyc.current, x, y, list)
+    cyc.current = UVP.clickCycle(cyc.current, x, y, list)
+    const c = cyc.current!
+    cycNote.current = list.length > 1 ? `Face ${c.i + 1} of ${list.length} here · click again for next` : ''
+    if (again) applyHit(faceHit(list[c.i], list), false, false)
+    else if (was) applyHit(hit, false, false)
   }
   const pickRect = (x0: number, y0: number, x1: number, y1: number): Hit => {
     const st = useStore.getState(), m = st.model, faces = uvFaces()
@@ -451,7 +507,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     for (const fi of faces) m.faces[fi].uv.forEach((u, i) => inside(u) && vs.add(m.faces[fi].v[i]))
     return { verts: [...vs] }
   }
-  const applyHit = (hit: Hit | null, add: boolean, sub: boolean, toggle = false): void => {
+  const applyHit = (hit: Hit | null, add: boolean, sub: boolean, toggle = false): void => fromUV(() => applyHit0(hit, add, sub, toggle))
+  const applyHit0 = (hit: Hit | null, add: boolean, sub: boolean, toggle = false): void => {
     // Ctrl+click: add the element if it is not selected, else remove it; on empty space nothing changes
     if (toggle) { if (hit) { const was = hitSelected(hit); applyHit(hit, !was, was) } return }
     const st = useStore.getState()
@@ -464,7 +521,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     }
     if (!hit && uvLocal()) { if (!add && !sub) st.setUVSelection([], st.subModes.includes('edge') && !st.subModes.includes('vertex') ? 'edges' : 'verts'); return }
     if (!hit) { if (!add && !sub) st.setSelection(st.subModes.includes('vertex') && st.selectMode !== 'object' ? { verts: [] } : st.subModes.includes('edge') && st.selectMode !== 'object' ? { edges: [] } : { faces: [] }); return }
-    if (hit.faces) st.setSelection({ faces: merge(st.selFaces, hit.faces) })
+    if (hit.faces) st.setSelection({ faces: merge(st.selFaces, islandOn() ? UVP.expandIslands(st.model, hit.faces, uvFaces()) : hit.faces) })
     else if (hit.edges) st.setSelection({ edges: merge(st.selEdges, hit.edges) })
     else if (hit.verts) st.setSelection({ verts: merge(st.selVerts, hit.verts) })
   }
@@ -603,6 +660,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       else if (code === 'R') beginXf('rotate', x, y, true)
       else if (code === 'S') beginXf('scale', x, y, true)
       else if (code === 'L') selectIsland(pickAt(x, y))
+      else if (code === '/') toggleSelOnly()
       else runKey(code, x, y)
       force(n => n + 1)
     }
@@ -685,7 +743,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       else if (h && h !== 'pivot' && beginXf('scale', x, y, false, { handle: h })) return
     }
     // select tool: press on an element selects it (unless already selected) and a drag moves it; else marquee
-    const hit = add || sub ? null : pickAt(x, y)
+    const hit = add || sub ? null : pickAt(x, y, true)
     // inside the selection frame a drag moves the selection (a click still selects what is under it)
     if (!add && !sub && (!hit || hitSelected(hit)) && inFrame(x, y)) { drag.current = { kind: 'press', x0: x, y0: y, hit, was: true }; return }
     if (hit) {
@@ -710,7 +768,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     return U.faceAtUVIndexed(st.model, U.cachedUVIndex(st.model, `${st.version}:${texId ? shownMat : 'all'}`, () => imageFaces()), u, v)
   }
   /** Alt+click: every face whose UVs cover the texel under the pointer (finds hidden overlaps); with Ctrl their islands */
-  const selectAtTexel = (x: number, y: number, islands: boolean) => {
+  const selectAtTexel = (x: number, y: number, islands: boolean) => fromUV(() => {
     const st = useStore.getState(), w = imgW(), h = imgH(), [u, v] = toUV(x, y)
     const px = Math.floor(u * w), py = Math.floor((1 - v) * h)
     let faces = U.facesAtTexel(st.model, imageFaces(), w, h, px, py)
@@ -718,7 +776,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face')
     useStore.getState().setSelection({ faces })
     st.notify(faces.length ? `${faces.length} face${faces.length === 1 ? '' : 's'} at texel ${px}, ${py}${islands ? ' (their islands)' : ''}` : `No face covers texel ${px}, ${py}`)
-  }
+  })
   /** brush outline at the cursor (Paint tool): true size in texels, a circle or the texel square it stamps */
   const showBrush = (x: number, y: number) => {
     const el = brushEl.current
@@ -755,6 +813,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const d = drag.current
     if (!d) {
       if (e.pointerType !== 'touch') { coarse.current = e.pointerType === 'pen'; const h = hitHandle(x, y); cv.current!.style.cursor = h ? CURSOR[h] : '' }
+      if (cycNote.current && cyc.current && (Math.abs(x - cyc.current.x) > 4 || Math.abs(y - cyc.current.y) > 4)) { cycNote.current = ''; publish.current() }
       // hover sync (UV-14): outline the face under the pointer in the 3D views
       const fi = faceAtUV(...toUV(x, y))
       setHoverFace(fi, 'uv'); sceneManager.setHoverFace(fi)
@@ -792,7 +851,8 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     if (d.kind === 'pan' && d.menu && Math.hypot(d.x - d.x0, d.y - d.y0) < 5) { const { x, y } = loc(e); openMenu(x, y); return }
     // a plain click on an already selected element selects only it
     if (d.kind === 'texel') { selectAtTexel(d.x0, d.y0, d.islands); return }
-    if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
+    if (d.kind === 'press' && d.hit?.stack) clickStack(d.x0, d.y0, d.hit, d.was)
+    else if (d.kind === 'press' && d.was) applyHit(d.hit, false, false)
     if (d.kind !== 'rect') { force(n => n + 1); return }
     if (!d.moved) { applyHit(pickAt(d.x0, d.y0), d.add, d.sub, !!d.toggle); return }
     applyHit(pickRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.max(d.x0, d.x1), Math.max(d.y0, d.y1)), d.add, d.sub)
@@ -965,7 +1025,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     st.edit(m => U.keepPins(m, faces, () => { r = U.boxCross(m, faces, dens, w, h, b ? { x: b.minU * w, y: (1 - b.maxV) * h } : undefined) }), 'UV box cross')
     st.notify(`Box cross: ${r.w}×${r.h} px at ${dens} px per unit${r.w > w || r.h > h ? ` · larger than the ${w}×${h} image: lower the density in File → Properties` : ''}`)
   }
-  const selectIsland = (hit: Hit | null) => {
+  const selectIsland = (hit: Hit | null) => fromUV(() => {
     const st = useStore.getState(), faces = uvFaces()
     const seeds = hit?.faces ?? (hit ? [] : [...st.selFaces])
     hit?.corners?.forEach(c => seeds.push(Math.floor(c / 1024)))
@@ -977,7 +1037,58 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     const isl = U.islandFaces(st.model, seeds, faces)
     if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face')
     useStore.getState().setSelection({ faces: new Set([...(hit ? st.selFaces : []), ...isl]) })
+  })
+  // ---------- Selected only, select modes, status line ----------
+  const selOnly = useStore(s => s.ui.uvSelOnly)
+  const uvIsland = useStore(s => s.ui.uvIsland)
+  const curMode = UVP.uvMode({ selectMode, subModes }, uvIsland)
+  // live (rebindable) shortcut labels for the mode tooltips
+  const modeKeys = { vertex: useBinding('sel.vertex'), edge: useBinding('sel.edge'), face: useBinding('sel.face'), island: '' }
+  const selOnlyFramed = useRef(false)
+  const toggleSelOnly = () => {
+    const st = useStore.getState(), on = !st.ui.uvSelOnly
+    st.setUVSelOnly(on)
+    // the first time it is switched on, frame what is left
+    if (on && !selOnlyFramed.current) { selOnlyFramed.current = true; requestAnimationFrame(() => frameSel()) }
   }
+  const setMode = (k: Exclude<UVP.UVMode, null>) => fromUV(() => {
+    const st = useStore.getState(), base = k === 'island' ? 'face' : k
+    if (st.selectMode === 'object' || st.selectMode === 'joint' || !st.subModes.includes(base) || st.subModes.length > 1) st.setSelectMode(base)
+    if (st.ui.uvIsland !== (k === 'island')) st.setUI({ uvIsland: k === 'island' })
+    // switching to Island grows the current face selection to whole islands
+    if (k === 'island') { const s2 = useStore.getState(); if (s2.selFaces.size) s2.setSelection({ faces: UVP.expandIslands(s2.model, [...s2.selFaces], uvFaces()) }) }
+  })
+  // a selection made in a 3D view refreshes the Selected-only faces (picks made here keep the view as it is)
+  useEffect(() => useStore.subscribe((s, p) => {
+    if (uvWriting || (s.selFaces === p.selFaces && s.selVerts === p.selVerts && s.selEdges === p.selEdges)) return
+    cyc.current = null; cycNote.current = '' // the click-again stack is stale
+    if (s.ui.uvSelOnly) s.refreshUVOnly()
+  }), [])
+  /** the app's bottom status line while this editor is up: summary, keycap hints, modal echo (no hint bar here) */
+  const publish = useRef(() => {})
+  publish.current = () => {
+    const st = useStore.getState()
+    const d = drag.current
+    if (!big && !d?.modal) return
+    let next: UVP.UVStatus | null
+    if (globalTool === 'paint' && !d?.modal) next = null
+    else {
+      const m = st.model, ids = uvSelection(), W = tw || paintTexSize, Hh = th || paintTexSize
+      const fs = [...new Set([...ids].map(cornerFace))].filter(fi => m.faces[fi])
+      const summary = UVP.selectionSummary(m, ids, fs.length ? U.islands(m, fs) : new Map(), W, Hh)
+      const img = `${model.materials[shownMat]?.name ?? ''}${tw ? ` · ${tw}×${th}${U.isPow2(tw) && U.isPow2(th) ? '' : ' (not a power of two)'}` : ''}`
+      const echo = d?.modal ? `${d.xf === 'move' ? 'Move' : d.xf === 'rotate' ? 'Rotate' : 'Scale'}${d.axis ? ` ${d.axis.toUpperCase()}` : ''}: ${d.echo ?? ''} · type a value${d.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels` : undefined
+      const hints: [string, string][] = ids.size
+        ? [['G', 'move'], ['R', 'rotate'], ['S', 'scale'], ['L', 'island'], ['Shift', 'click add'], ['/', 'selected only']]
+        : [['Click', 'select'], ['L', 'island'], ['Ctrl+Drag', 'box'], ['/', 'selected only'], ['F', 'frame']]
+      next = { summary: st.ui.uvSelOnly ? `Selected only · ${summary}` : summary, hints, echo, note: cycNote.current || img, help: UV_HELP }
+    }
+    const cur = st.uvStatus
+    if (JSON.stringify(cur) !== JSON.stringify(next)) st.set({ uvStatus: next })
+  }
+  useEffect(() => { publish.current() })
+  useEffect(() => () => { useStore.getState().set({ uvStatus: null }) }, [])
+
   const loadTexture = (file: File) => {
     importImage(file).then(id => useStore.getState().setMaterialTexture(shownMat, id)).catch(err => useStore.getState().notify(String(err.message || err)))
   }
@@ -1117,6 +1228,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     'sep',
     ...([[0, 'Snap off'], [1, 'Snap to pixels'], [2, 'Snap to ½ px'], [4, 'Snap to ¼ px']] as const).map(([n, l]) => ({ id: `snap-${n}`, label: ck(snapSetting === n, l), run: () => useStore.getState().setUI({ uvSnap: n }) })),
     'sep',
+    { id: 'sync', label: ck(uvSync === 'uv', 'Keep seams apart when picking'), tip: 'On: a vertex or edge pick takes only this island\'s copy, so seams stay apart. Off: it takes the mesh point in every island (like the 3D views)', run: () => useStore.getState().setUI({ uvSync: uvSync === 'uv' ? '3d' : 'uv' }) },
     { id: 'units', label: units === 'px' ? 'Numbers in 0–1 UV units' : 'Numbers in pixels', run: () => setUnits(units === 'px' ? '01' : 'px') },
     { id: 'show-all', label: 'Show all', keys: 'Home', run: () => frameSel(true) },
     { id: 'frame', label: 'Frame selection', keys: 'F', run: () => frameSel() },
@@ -1124,31 +1236,70 @@ export function UVEditor({ big = false }: { big?: boolean }) {
   ]
   const menuAt = (e: React.MouseEvent, open: unknown, set: (v: { x: number; y: number } | null) => void) => { const r = e.currentTarget.getBoundingClientRect(); setImgMenu(null); setUVMenu(null); setViewMenu(null); set(open ? null : { x: r.left, y: r.bottom + 2 }) }
 
+  // Bar 2: image and overlay selects inline when they fit after the numbers, else behind a ⋯ button (never truncated)
+  const imageSel = (
+<select data-testid="uv-image" className="uv-pick" title={`Image shown behind the UVs (defaults to the selected face's)${model.materials[shownMat]?.texture ? '' : ' · this material has no image yet'}`} value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
+  {model.materials.map((mt, i) => <option key={i} value={i} title={mt.texture ? undefined : 'No image yet: the checker is shown'}>{mt.name}</option>)}
+</select>
+  )
+  const overlaySel = (
+<select data-testid="uv-stretch" className="uv-pick" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share (faces marked Shared UVs are left out). Unused: pixels no face uses. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
+  <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option><option value="unused">Unused pixels</option>
+</select>
+  )
+  const bar2 = useRef<HTMLDivElement>(null)
+  const picks = useRef<HTMLSpanElement>(null)
+  /** natural width of the two selects, measured while they are inline */
+  const picksW = useRef(280)
+  const [narrow, setNarrow] = useState(false)
+  const [more, setMore] = useState<{ x: number; y: number } | null>(null)
+  const fit = useRef(() => {})
+  fit.current = () => {
+    const bar = bar2.current, nb = bar?.firstElementChild as HTMLElement | null
+    if (!bar || !nb) return
+    if (picks.current) picksW.current = picks.current.offsetWidth
+    const cs = getComputedStyle(bar), gap = parseFloat(cs.columnGap) || 4
+    const avail = bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - nb.offsetWidth - gap * 2
+    const n = picksW.current > avail
+    if (n !== narrow) { setNarrow(n); if (!n) setMore(null) }
+  }
+  useEffect(() => { fit.current() })
+  useEffect(() => { const ro = new ResizeObserver(() => fit.current()); if (bar2.current) ro.observe(bar2.current); return () => ro.disconnect() }, [])
+
   return (
     <div className={`uv-editor ${big ? 'big' : ''}`} data-testid="uv-editor">
-      <div className="uv-toolbar">
-        <div className="seg" data-testid="uv-sync" title="Selection sync. UV: pick this island's copy of a point or edge (seams stay apart). 3D: picking takes the mesh point in every island">
-          {(['uv', '3d'] as const).map(k => <button key={k} className={uvSync === k ? 'on' : ''} data-testid={`uv-sync-${k}`} onClick={() => useStore.getState().setUI({ uvSync: k })}>{k === 'uv' ? 'UV' : '3D'}</button>)}
+      <div className="uv-toolbar" data-testid="uv-bar1">
+        <div className="seg uv-modes" data-testid="uv-modes" role="radiogroup" aria-label="UV select mode">
+          {([['vertex', 'Vertex'], ['edge', 'Edge'], ['face', 'Face'], ['island', 'Island']] as const).map(([k, label]) =>
+            <button key={k} role="radio" aria-checked={curMode === k} className={curMode === k ? 'on' : ''} data-testid={`uv-mode-${k}`} onClick={() => setMode(k)}
+              title={k === 'island' ? 'Island: a click or box picks whole UV islands (Face mode)' : `${label} select mode, shared with the 3D views${modeKeys[k] ? ` · ${modeKeys[k]}` : ''}`}>{label}</button>)}
         </div>
-        <select data-testid="uv-image" className="uv-pick" title="Image shown behind the UVs (defaults to the selected face's)" value={shownMat} onChange={e => setPick({ mat: +e.target.value, sel: selFaces })}>
-          {model.materials.map((mt, i) => <option key={i} value={i}>{mt.name}{mt.texture ? '' : ' (no image)'}</option>)}
-        </select>
+        <button data-testid="uv-selonly" className={`uv-selonly ${selOnly ? 'on' : ''}`} aria-pressed={selOnly} onClick={toggleSelOnly}
+          title="Selected only: draw and pick just the faces selected in 3D (the rest is hidden). Select in 3D or toggle again to refresh · /">Selected only</button>
+        <span className="uv-spacer" />
         <button data-testid="uv-image-menu" className={imgMenu ? 'on' : ''} title="Image: New (blank or UV template), Resize, Flip, Rotate" onClick={e => menuAt(e, imgMenu, setImgMenu)}>Image ▾</button>
         <button data-testid="uv-uv-menu" className={uvMenu ? 'on' : ''} title="UV: rotate, flip, merge, straighten, copy / paste… (also on right-click)" onClick={e => menuAt(e, uvMenu, setUVMenu)}>UV ▾</button>
-        <button data-testid="uv-view-menu" className={viewMenu ? 'on' : ''} title={`View: checker, snapping (now ${snapSetting ? `1/${snapSetting} px` : 'off'}), units`} onClick={e => menuAt(e, viewMenu, setViewMenu)}>View ▾</button>
-        <select data-testid="uv-stretch" className="uv-pick" title="Overlay. Stretch: blue = true to the 3D shape, red = distorted. Overlap: texels two faces share (faces marked Shared UVs are left out). Unused: pixels no face uses. Density: px per unit against the project's (green on target)" value={heat} onChange={e => setHeat(e.target.value as typeof heat)}>
-          <option value="off">No overlay</option><option value="area">Stretch: area</option><option value="angle">Stretch: angle</option><option value="overlap">Overlap</option><option value="density">Texel density</option><option value="unused">Unused pixels</option>
-        </select>
+        <button data-testid="uv-view-menu" className={viewMenu ? 'on' : ''} title={`View: checker, snapping (now ${snapSetting ? `1/${snapSetting} px` : 'off'}), units, seam picking`} onClick={e => menuAt(e, viewMenu, setViewMenu)}>View ▾</button>
         {globalTool === 'paint' && <B id="paint-uvs" label="UVs" on={paintUVs} tip="Show the UV wireframe over the image while painting" onClick={() => useStore.getState().setUI({ paintUVs: !paintUVs })} />}
         {checker && <B id="checker" label="Checker" on tip="Checker shown instead of the image: click to show the image" onClick={() => setChecker(false)} />}
       </div>
+      <div className="uv-toolbar uv-xfbar" data-testid="uv-bar2" ref={bar2}>
+        <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
+        <span className="uv-spacer" />
+        {narrow
+          ? <button data-testid="uv-more" className={more ? 'on' : ''} aria-expanded={!!more} title="Image shown and overlay (the bar is too narrow to show them here)" onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setMore(more ? null : { x: r.right, y: r.bottom + 2 }) }}>⋯</button>
+          : <span className="uv-picks" ref={picks}>{imageSel}{overlaySel}</span>}
+      </div>
+      {narrow && more && <UVMorePop x={more.x} y={more.y} close={() => setMore(null)}>
+        <label>Image {imageSel}</label>
+        <label>Overlay {overlaySel}</label>
+      </UVMorePop>}
       <div className="uv-canvas" ref={wrap}>
         <canvas ref={cv} data-testid="uv-canvas" style={{ width: size.w, height: size.h }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel} onContextMenu={e => e.preventDefault()} onPointerLeave={() => { showBrush(-1, -1); setHoverFace(-1, 'uv'); sceneManager.setHoverFace(-1) }} />
         <canvas ref={hovCv} className="uv-hover-cv" data-testid="uv-hover-canvas" style={{ width: size.w, height: size.h }} />
         <div ref={brushEl} className="uv-brush" data-testid="uv-brush" style={{ display: 'none' }} />
         <div className="uv-topleft">
-        <UVNumeric tw={tw || paintTexSize} th={th || paintTexSize} units={units} setUnits={setUnits} />
         {cov && <div className="uv-overlay-info" data-testid="uv-overlap-info">
           {cov.c.overlapping.length ? <><span className="bad">{cov.c.overlapping.length} faces overlap ({cov.c.overlapPx} px)</span><button className="small" data-testid="uv-overlap-select" onClick={() => { const st = useStore.getState(); if (st.selectMode !== 'object' && !st.subModes.includes('face')) st.setSelectMode('face'); st.setSelection({ faces: cov.c.overlapping }) }}>Select</button></> : <span>No overlaps</span>}
         </div>}
@@ -1175,8 +1326,6 @@ export function UVEditor({ big = false }: { big?: boolean }) {
         {ctx && <UVMenu x={ctx.x + (cv.current?.getBoundingClientRect().left ?? 0)} y={ctx.y + (cv.current?.getBoundingClientRect().top ?? 0)} close={() => setCtx(null)} items={opsItems(ctx.x, ctx.y)} />}
         {uvMenu && <UVMenu x={uvMenu.x} y={uvMenu.y} close={() => setUVMenu(null)} items={opsItems(size.w / 2, size.h / 2)} />}
         {viewMenu && <UVMenu x={viewMenu.x} y={viewMenu.y} close={() => setViewMenu(null)} items={viewItems()} />}
-        {drag.current?.modal && <div className="uv-hint uv-modal-echo" data-testid="uv-modal-echo">{drag.current.xf === 'move' ? 'Move' : drag.current.xf === 'rotate' ? 'Rotate' : 'Scale'}{drag.current.axis ? ` ${drag.current.axis.toUpperCase()}` : ''}: {drag.current.echo ?? ''} · type a value{drag.current.xf !== 'rotate' ? ' · X / Y lock' : ''} · Enter / click applies · Esc cancels</div>}
-        <div className="uv-hint" style={drag.current?.modal ? { display: 'none' } : undefined}>{model.materials[shownMat]?.name ?? ''}{tw ? ` · ${tw}×${th}${U.isPow2(tw) && U.isPow2(th) ? '' : ' (not a power of two)'}` : ''} · {globalTool === 'paint' ? 'Paint tool: drag to paint this image · Shift+click line from the last stamp (15°, Ctrl+Shift free) · Ctrl+click picks · Fill: face / island / colour (Paint tab)' : 'click / drag select · Ctrl-drag box (+Shift add, +Alt remove) · Ctrl-click toggles · Alt-click all faces at a texel (Ctrl+Alt their islands) · handles scale (Shift keeps aspect, Alt from centre) and rotate · Alt-drag ✛ moves the pivot · G R S · L island · F frame · right-click menu · wheel zoom · right-drag pan'}</div>
       </div>
       {!big && <div className="uv-actions">
         <div className="seg uv-tabs" role="tablist">
@@ -1227,7 +1376,7 @@ function UVNumeric({ tw, th, units, setUnits }: { tw: number; th: number; units:
   }
   const rot = (deg: number) => { if (b) useStore.getState().edit(m => U.rotateDeg(m, ids, deg), 'UV rotate') }
   const d = px ? 2 : 4, step = px ? 1 : 1 / tw
-  if (!b || !val) return null
+  if (!b || !val) return <span className="uv-num-empty" data-testid="uv-num-empty">Select faces in 3D or here to edit X Y W H</span>
   const tip = (what: string) => `${what} of the selection's box ${px ? `in pixels of the ${tw}×${th} image` : 'in UV units'} · Enter applies · wheel nudges (Shift finer)`
   return (
     <div className="uv-numbar" data-testid="uv-numeric">
@@ -1235,7 +1384,7 @@ function UVNumeric({ tw, th, units, setUnits }: { tw: number; th: number; units:
       <NumField label={px ? 'Y' : 'V'} testid="uv-num-y" value={val && val.y} step={step} digits={d} title={tip(px ? 'Top edge' : 'Bottom edge (V)')} onCommit={v => apply('y', v)} />
       <NumField label="W" testid="uv-num-w" value={val && w > 1e-12 ? val.w : null} step={step} digits={d} title={tip('Width')} onCommit={v => apply('w', v)} />
       <NumField label="H" testid="uv-num-h" value={val && h > 1e-12 ? val.h : null} step={step} digits={d} title={tip('Height')} onCommit={v => apply('h', v)} />
-      <NumField label="∠" testid="uv-num-rot" value={val ? 0 : null} step={15} digits={1} title="Rotate the selection by this many degrees (counter-clockwise) about its centre" onCommit={v => rot(v)} />
+      <NumField label="Angle" testid="uv-num-rot" value={val ? 0 : null} step={15} digits={1} title="Rotate the selection by this many degrees (counter-clockwise) about its centre" onCommit={v => rot(v)} />
       <button data-testid="uv-rot-ccw" title="Rotate 90° counter-clockwise · Shift+Alt+R" disabled={!b} onClick={() => rot(90)}>⟲</button>
       <button data-testid="uv-rot-cw" title="Rotate 90° clockwise · Shift+R" disabled={!b} onClick={() => rot(-90)}>⟳</button>
       <button className="ghost small" data-testid="uv-units" title="Show pixels of the image or 0..1 UV units" onClick={() => setUnits(px ? '01' : 'px')}>{px ? 'px' : '0–1'}</button>

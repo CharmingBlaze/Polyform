@@ -16,6 +16,8 @@ import { applyAtlas, atlasInput } from './unwrap'
 import { placeUnwrapped } from './uvplace'
 import * as UV from './uvops'
 import * as UVS from './uvsel'
+import * as UVP from './uvpick'
+import type { UVStatus } from './uvpick'
 import { loadPrefs, savePrefs, type UIPrefs } from './prefs'
 import { DEFAULT_TAB } from './panelTabs'
 import { textures as tex } from './textures'
@@ -197,6 +199,10 @@ interface State {
   uvSel: { corners: Set<number>; verts: Set<number>; edges: Set<number>; faces: Set<number> } | null
   /** select exact UV corners; the 3D selection follows (their points, or edges) */
   setUVSelection: (corners: Iterable<number>, as: 'verts' | 'edges') => void
+  /** UV editor "Selected only": the faces frozen when it was switched on (or the 3D selection last changed); null = not frozen yet */
+  uvOnly: number[] | null
+  /** UV editor status-line content while it is mounted (summary, keycap hints, modal echo); null = the normal tool hint */
+  uvStatus: UVStatus | null
   selectAll: () => void
   selectNone: () => void
   invertSelection: () => void
@@ -265,6 +271,12 @@ interface State {
   imageSizeOf: (faces: number[]) => { w: number; h: number } | null
   /** visible faces (what the UV editor shows) */
   uvFaces: () => number[]
+  /** the faces the UV editor draws and picks: visible ones, or only the frozen selection with Selected only on */
+  uvShownFaces: () => number[]
+  /** Selected only on / off; switching on (or refreshing) freezes the faces of the current 3D selection */
+  setUVSelOnly: (on: boolean) => void
+  /** refreeze the Selected-only faces from the current 3D selection (an empty selection keeps the old set) */
+  refreshUVOnly: () => void
   /** UV corners covered by the selection */
   uvCorners: () => number[]
   /** mark / clear UV seams: selected edges, or the boundary of the selected faces in Face mode */
@@ -381,6 +393,8 @@ export const useStore = create<State>((set, get) => ({
   maximized: null,
   uvSpace: false,
   uvSel: null,
+  uvOnly: null,
+  uvStatus: null,
   uvMax: null,
   setUVSpace: on => {
     const s = get()
@@ -1016,6 +1030,16 @@ export const useStore = create<State>((set, get) => ({
 
   // ------------------------------------------------------------------ materials
   uvFaces: () => { const m = get().model; return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0) },
+  uvShownFaces: () => { const s = get(); return s.ui.uvSelOnly ? UVP.shownFaces(s.uvFaces(), s.uvOnly) : s.uvFaces() },
+  setUVSelOnly: on => {
+    const s = get()
+    if (on) set({ uvOnly: UVP.selectionFaces(s.model, s, s.uvFaces()) })
+    s.setUI({ uvSelOnly: on })
+  },
+  refreshUVOnly: () => {
+    const s = get(), f = UVP.selectionFaces(s.model, s, s.uvFaces())
+    if (f.length) set({ uvOnly: f })
+  },
   uvCorners: () => {
     const s = get(), u = s.uvSel
     if (s.ui.uvSync === 'uv' && u && u.verts === s.selVerts && u.edges === s.selEdges && u.faces === s.selFaces) {

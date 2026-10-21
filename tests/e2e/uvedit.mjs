@@ -9,6 +9,14 @@ const errs = []; p.on('pageerror', e => errs.push(e.message))
 await p.goto(url); await p.waitForFunction(() => window.__polyform && window.__polyformViews?.[0] && window.__polyformScene); await p.waitForTimeout(400)
 await p.evaluate(() => localStorage.removeItem('polyform.ui.v1')); await p.reload()
 await p.waitForFunction(() => window.__polyform && window.__polyformViews?.[0] && window.__polyformScene); await p.waitForTimeout(300)
+/** the image / overlay selects sit in the UV number bar, or behind its ⋯ button when the bar is narrow */
+const uvSelect = async (id, v) => {
+  const opened = (await p.locator(`[data-testid="${id}"]`).count()) === 0 && (await p.locator('[data-testid="uv-more"]').count()) > 0
+  if (opened) { await p.click('[data-testid="uv-more"]'); await p.waitForTimeout(60) }
+  const r = v === undefined ? await p.inputValue(`[data-testid="${id}"]`) : await p.selectOption(`[data-testid="${id}"]`, v)
+  if (opened) { await p.keyboard.press('Escape'); await p.waitForTimeout(60) }
+  return r
+}
 const results = []
 const check = (name, ok, info = '') => results.push([name, !!ok, info])
 const S = (fn, arg) => p.evaluate(fn, arg)
@@ -26,6 +34,13 @@ const uvs = () => S(() => window.__polyform.getState().model.faces.map(f => f.uv
 const uvC = (u, v) => S(([u, v]) => window.__polyformUV.toClient(u, v), [u, v])
 const side = () => S(() => window.__polyformUV.side)
 const close = (a, b, e = 1e-6) => Math.abs(a - b) < e
+/** View ▾ → "Keep seams apart when picking" (the uvSync pref: on = 'uv', off = '3d') */
+const setSeamsApart = async on => {
+  if ((await S(() => window.__polyform.getState().ui.uvSync === 'uv')) === on) return
+  await p.click('[data-testid="uv-view-menu"]'); await frame(); await p.click('[data-testid="uvm-sync"]'); await frame()
+}
+/** the UV editor's line in the app status bar (summary, note, hints; the gesture help is its tooltip) */
+const uvStatus = async () => `${await p.textContent('[data-testid="uv-status"]')} ${await p.getAttribute('[data-testid="uv-status"]', 'title')}`
 /** each face in its own cell; faces f0 / f1 share their common vertex in UV (one island there), f2's copy is apart */
 const seamLayout = () => S(() => {
   const s = window.__polyform.getState()
@@ -47,7 +62,9 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
 {
   const L = await seamLayout()
   await p.keyboard.press('2'); await frame()
-  check('Sync defaults to UV', await p.locator('[data-testid="uv-sync-uv"].on').count() === 1)
+  await p.click('[data-testid="uv-view-menu"]'); await frame()
+  check('Keep seams apart (UV sync) is on by default, as a View ▾ checkbox', (await p.textContent('[data-testid="uvm-sync"]')).includes('✓ Keep seams apart'))
+  await p.keyboard.press('Escape'); await frame()
   const u0 = await uvs()
   const at = await uvC(...u0[L.fs[0]][L.c[0]])
   await p.mouse.click(at.x, at.y); await frame()
@@ -61,10 +78,10 @@ await p.click('[data-testid="ws-uv"]'); await frame(200)
   check('G moves this island\'s corners only; the other island\'s copy keeps its UV', close(mv(0), 30 / sd, 0.01) && close(mv(1), 30 / sd, 0.01) && close(mv(2), 0), `${mv(0)} ${mv(1)} ${mv(2)}`)
   await p.keyboard.press('Control+z'); await frame()
   // Sync: 3D = the old behaviour (every corner of the mesh point)
-  await p.click('[data-testid="uv-sync-3d"]'); await frame()
+  await setSeamsApart(false)
   await p.mouse.click(at.x, at.y); await frame()
   check('Sync 3D: the same pick covers all 3 corners of the point', (await S(() => window.__polyformUV.sel())).length === 3)
-  await p.click('[data-testid="uv-sync-uv"]'); await frame()
+  await setSeamsApart(true)
   // edge: one face side
   await p.keyboard.press('3'); await frame()
   const e0 = u0[L.fs[2]][L.c[2]], e1 = u0[L.fs[2]][(L.c[2] + 1) % 4]
@@ -438,7 +455,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   await addImage(64, 64, 'ov64')
   await S(() => window.__polyform.getState().edit(m => { m.props.texelDensity = 16 }, 'density 16'))
   await tool('proj-box'); await frame()
-  await p.selectOption('[data-testid="uv-stretch"]', 'overlap'); await frame()
+  await uvSelect('uv-stretch', 'overlap'); await frame()
   const info = () => p.textContent('[data-testid="uv-overlap-info"]')
   check('Overlap: stacked box projection reports all 6 faces overlapping', /6 faces overlap \(\d+ px\)/.test(await info()), await info())
   // the overlay paints red over the shared texels
@@ -457,7 +474,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   await tool('auto-px'); await frame()
   check('after Auto px: no overlaps', (await info()).includes('No overlaps'), await info())
   // density overlay
-  await p.selectOption('[data-testid="uv-stretch"]', 'density'); await frame()
+  await uvSelect('uv-stretch', 'density'); await frame()
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectAll() }); await frame()
   const leg = await p.textContent('[data-testid="uv-density-legend"]')
   check('Density legend reads target 16 px/u and the cube at 16 px/u', leg.includes('target 16 px/u') && leg.includes('selection 16 px/u'), leg)
@@ -468,7 +485,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   check('Equalize brings the selection back to 16 px/u', (await p.textContent('[data-testid="uv-density-legend"]')).includes('selection 16 px/u'), await p.textContent('[data-testid="uv-density-legend"]'))
   await p.mouse.move(640, 700); await frame()
   await p.screenshot({ path: '/workspace/shot-uv-density.png' })
-  await p.selectOption('[data-testid="uv-stretch"]', 'off')
+  await uvSelect('uv-stretch', 'off')
 }
 
 // UV-15: typed values and axis lock in modal G / R / S
@@ -568,7 +585,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   check('UV: Ctrl+click toggles a face off and back on', t1 === '5' && (await fsel()) === '2,5', `${t1} / ${await fsel()}`)
   await ctrlDrag(...await around(5), ['Alt'])
   check('UV: Ctrl+Alt+drag removes', (await fsel()) === '2', await fsel())
-  check('UV hint documents Ctrl-drag', /Ctrl-drag box/.test(await p.textContent('.uv-hint')))
+  check('UV hint documents Ctrl-drag', /Ctrl-drag box/.test(await uvStatus()))
 }
 
 // UV-12: Image menu — New (blank / UV template), Resize (extend keeps the render), Flip / Rotate with the UVs
@@ -789,7 +806,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   await reset(); await p.click('[data-testid="ws-uv"]'); await frame()
   const mat = await addImage(16, 16, 'un16')
   await gridLayout(); await S(() => window.__polyform.getState().selectNone()); await frame()
-  await p.selectOption('[data-testid="uv-stretch"]', 'unused'); await frame(200)
+  await uvSelect('uv-stretch', 'unused'); await frame(200)
   const info = () => p.textContent('[data-testid="uv-unused-info"]')
   check('Unused overlay: counts the painted pixels no face uses (256 − 6 × 16)', (await info()).includes('160 unused painted px'), await info())
   await p.screenshot({ path: '/workspace/shot-uv-unused.png' })
@@ -800,7 +817,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   check('Ctrl+Z brings the cleared pixels back', (await alpha(0, 0)) === 255 && (await info()).includes('160'))
   // overlap: face 1 on top of face 0, then mark face 1 Shared UVs from the right-click menu
   await S(() => window.__polyform.getState().edit(m => { m.faces[1].uv = m.faces[0].uv.map(q => [...q]) }, 'overlap'))
-  await p.selectOption('[data-testid="uv-stretch"]', 'overlap'); await frame(200)
+  await uvSelect('uv-stretch', 'overlap'); await frame(200)
   const oinfo = () => p.textContent('[data-testid="uv-overlap-info"]')
   check('Overlap overlay finds the two faces', (await oinfo()).includes('2 faces overlap'), await oinfo())
   await selFace(1); await frame()
@@ -813,7 +830,7 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   check('the menu item shows the flag (✓) and toggles it off again', lbl.includes('✓'), lbl)
   await p.click('[data-testid="uvm-share"]'); await frame(200)
   check('unshared: the overlap is reported again', (await oinfo()).includes('2 faces overlap'))
-  await p.selectOption('[data-testid="uv-stretch"]', 'off')
+  await uvSelect('uv-stretch', 'off')
 }
 
 // Pack: Keep density that cannot fit suggests a power-of-two size; the UV hint flags non-power-of-two images
@@ -826,9 +843,9 @@ const uvBtnTab = async (_tab, id) => { await tool(id); await frame() }
   const toast = await S(() => window.__polyform.getState().toast ?? '')
   check('Pack (Keep density) refuses and names a power-of-two size that holds it', /does not fit/.test(String(toast)) && /\d+×\d+ should hold it/.test(String(toast)) && before === await S(() => JSON.stringify(window.__polyform.getState().model.faces.map(f => f.uv))), String(toast))
   await S(() => { const s = window.__polyform.getState(); s.setUI({ uvPack: { ...s.ui.uvPack, keep: false } }) })
-  check('a 16×16 image: no power-of-two warning in the UV hint', !(await p.textContent('.uv-hint')).includes('not a power of two'))
+  check('a 16×16 image: no power-of-two warning in the UV hint', !(await uvStatus()).includes('not a power of two'))
   await S(() => { const s = window.__polyform.getState(); s.imageResize(s.activeMat, 24, 16, 'scale') }); await frame(200)
-  check('a 24×16 image: the UV hint says it is not a power of two', (await p.textContent('.uv-hint')).includes('24×16 (not a power of two)'), await p.textContent('.uv-hint'))
+  check('a 24×16 image: the UV hint says it is not a power of two', (await uvStatus()).includes('24×16 (not a power of two)'), await uvStatus())
 }
 
 const failed = results.filter(r => !r[1])

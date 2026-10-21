@@ -28,7 +28,7 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
   check(`${tag}: no numbers row without a selection`, (await p.locator('[data-testid="uv-numeric"]').count()) === 0)
   await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0] }) }); await p.waitForTimeout(150)
   const nb = await S(() => { const n = document.querySelector('[data-testid="uv-numeric"]'), w = document.querySelector('.uv-pane .uv-canvas'); return n && w ? [n.getBoundingClientRect().toJSON(), w.getBoundingClientRect().toJSON()] : null })
-  check(`${tag}: with a selection the compact numbers row shows over the canvas top`, nb && nb[0].height < 34 && nb[0].top >= nb[1].top && nb[0].right <= nb[1].right, JSON.stringify(nb))
+  check(`${tag}: with a selection the compact numbers row sits in its bar above the canvas (nothing over the UVs)`, nb && nb[0].height < 34 && nb[0].bottom <= nb[1].top + 0.5 && nb[0].right <= nb[1].right, JSON.stringify(nb))
   // the UV Tools panel: uniform 3-column grids of icon + label buttons, ≤8 per group, rare ops only in the menus,
   // everything fits without scrolling at the default sidebar width (even Arrange with its pack options open)
   for (const g of ['unwrap', 'transform', 'arrange', 'pixels', 'seams']) {

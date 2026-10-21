@@ -15,6 +15,10 @@ export interface UIPrefs {
   pressureStrength: boolean
   /** UV editor selection: 'uv' picks UV vertices / face sides (seams respected); '3d' = the mesh selection */
   uvSync: 'uv' | '3d'
+  /** UV editor "Selected only": draw and pick just the faces of the 3D selection (frozen when switched on) */
+  uvSelOnly: boolean
+  /** UV editor Island mode (on top of Face mode): picks and box select take whole UV islands */
+  uvIsland: boolean
   /** UV drag snapping: grid cells per texel of the shown image (0 off, 1 pixel, 2 half, 4 quarter) */
   uvSnap: 0 | 1 | 2 | 4
   /** UV Pack: padding px, whole-texel origins, allow 90° turns, keep the texel density (no shrinking), target area */
@@ -60,7 +64,7 @@ export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 140, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 140, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars */
 const PREFS_V = 2
@@ -94,6 +98,8 @@ export function loadPrefs(): UIPrefs {
       pressureSize: bool(p.pressureSize, DEFAULT_PREFS.pressureSize),
       pressureStrength: bool(p.pressureStrength, DEFAULT_PREFS.pressureStrength),
       uvSync: p.uvSync === '3d' ? '3d' : 'uv',
+      uvSelOnly: p.uvSelOnly === true,
+      uvIsland: p.uvIsland === true,
       uvSnap: ([0, 1, 2, 4] as const).includes(p.uvSnap as 0) ? p.uvSnap as 0 | 1 | 2 | 4 : 1,
     uvPack: (() => {
       const q = (p.uvPack && typeof p.uvPack === 'object' ? p.uvPack : {}) as Record<string, unknown>, d = DEFAULT_PREFS.uvPack

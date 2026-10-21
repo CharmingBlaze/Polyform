@@ -349,14 +349,22 @@ export function StatusBar() {
   const full = useStore(toolHint)
   const short = modalInfo ?? full.split(' · ')[0]
   const nsel = sv + se + sf + sb
+  // UV editor up: its summary, keycap hints and modal echo replace the tool hint (it has no hint bar of its own)
+  const uv = useStore(s => s.uvStatus)
+  const uvLine = uv && !modalInfo
   return (
     <footer className="status">
       <span className="counts muted" title={`${m.groups.length} groups · ${m.bones.length} joints · A selects all`}>
         <span data-testid="count-verts">{m.verts.length} verts</span> · <span data-testid="count-faces">{m.faces.length} faces · {tris} tris</span>
       </span>
       {nsel > 0 && <span className="sel" data-testid="sel-count" title="Selected vertices · edges · faces · joints">{[sv && `${sv} v`, se && `${se} e`, sf && `${sf} f`, sb && `${sb} j`].filter(Boolean).join(' · ')} selected</span>}
+      {uvLine && <span className="uv-status" data-testid="uv-status" title={uv.help ?? ''}>
+        <b data-testid="uv-status-summary">{uv.summary}</b>
+        {uv.echo ? <span className="uv-st-echo" data-testid="uv-modal-echo">{uv.echo}</span>
+          : <>{uv.note && <span className="uv-st-note" data-testid="uv-status-note">{uv.note}</span>}{uv.hints.map(([k, l]) => <span key={k} className="uv-st-hint"><kbd>{k}</kbd>{l}</span>)}</>}
+      </span>}
       <span className="grow" />
-      <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint" data-full={full} title={full}>{short}</span>
+      {!uvLine && <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint" data-full={full} title={full}>{short}</span>}
       <button className={`icon-btn help-btn ${helpOpen ? 'on' : ''}`} data-testid="help-btn" onClick={byId['help.shortcuts'].run} title="Hints and shortcuts · F1"><HelpCircle size={15} /></button>
     </footer>
   )
