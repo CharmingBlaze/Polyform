@@ -4,7 +4,6 @@ import { startShrinkFatten } from './modal/transform'
 import { openSwatchFile, saveSwatchFile } from './palfile'
 import { useStore, WORKSPACES, type EditMode, type PaintMode, type Tool, type Workspace } from './store'
 import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
-import { pairs as xPairs } from './xmirror'
 import { PRIMITIVES, type PrimitiveKind } from './model'
 import { HIDDEN_KINDS } from './prims/extra'
 import { OPS } from './ops'
@@ -21,6 +20,7 @@ import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
 import { copyModel, cutModel, duplicateMove, pasteModel } from './modelClip'
 // MOD-3: start recording which last operation is newest from app start (the panel may mount later)
 import { currentOp } from './oppanel/lastop'
+import { toggleSymAxis } from './symui'
 
 /** Where a command shows up in the right-click menus (src/ctxmenu/menus.ts appends it to that section). */
 export interface MenuPlacement { ctx: string | string[]; section?: string; label?: string; opt?: string }
@@ -356,7 +356,10 @@ export const commands: Command[] = [
   { id: 'shade.sharp', label: 'Mark hard edge', group: 'View', canRun: R.edgesOrFaces('Mark hard edge'), run: () => S().markSharp(true) },
   { id: 'shade.sharpClear', label: 'Clear hard edge', group: 'View', canRun: R.edgesOrFaces('Clear hard edge'), run: () => S().markSharp(false) },
   { id: 'view.refs', label: 'Toggle reference images', group: 'View', run: () => S().set({ showRefs: !S().showRefs }) },
-  { id: 'edit.xmirror', label: 'Toggle X-mirror editing', group: 'Edit', keys: 'Alt+X', run: () => { const s = S(); const on = !s.xMirror; s.set({ xMirror: on, xMirrorMap: on ? xPairs(s.model) : null }); s.notify(on ? 'X-mirror on: edits on one side update the other' : 'X-mirror off') } },
+  { id: 'edit.xmirror', label: 'Toggle symmetry X', group: 'Edit', keys: 'Alt+X', run: () => toggleSymAxis(0) },
+  // SYM-2: Y / Z symmetry (spec §3.5). Alt+Y is scoped in keymap.ts: symmetry Y in Model and Rig, Paint's mirror Y in Paint
+  { id: 'edit.symY', label: 'Toggle symmetry Y', group: 'Edit', run: () => toggleSymAxis(1) },
+  { id: 'edit.symZ', label: 'Toggle symmetry Z', group: 'Edit', keys: 'Alt+Shift+Z', run: () => toggleSymAxis(2) },
   { id: 'edit.snapCycle', label: 'Cycle snap target (Grid / Vertex / Increment)', group: 'Edit', keys: 'Shift+`', run: () => {
     const s = S()
     const order = ['grid', 'vertex', 'increment'] as const
@@ -415,7 +418,7 @@ export const commands: Command[] = [
   { id: 'paint.rect', label: 'Draw a rectangle (R while painting)', group: 'Paint', run: () => paintImageMode('rect') },
   { id: 'paint.ellipse', label: 'Draw an ellipse (O while painting)', group: 'Paint', run: () => paintImageMode('ellipse') },
   { id: 'paint.shapeFill', label: 'Fill the rectangle or ellipse instead of outlining it', group: 'Paint', keys: 'Alt+Shift+O', run: () => S().setPaint({ shapeFill: !S().paint.shapeFill }) },
-  { id: 'paint.mirrorY', label: 'Paint: toggle mirror Y', group: 'Paint', keys: 'Alt+Y', run: () => S().setPaint({ mirrorY: !S().paint.mirrorY }) },
+  { id: 'paint.mirrorY', label: 'Paint: toggle mirror Y', group: 'Paint', /* Alt+Y in the Paint workspace: keymap.ts */ run: () => S().setPaint({ mirrorY: !S().paint.mirrorY }) },
   { id: 'paint.swap', label: 'Swap the primary and secondary colour', group: 'Paint', keys: 'Alt+Shift+Q', run: () => { const p = S().paint; S().setPaint({ color: p.secondary, secondary: p.color }) } },
   { id: 'paint.layerDup', label: 'Duplicate the active paint layer', group: 'Paint', keys: 'Alt+Shift+J', run: () => duplicateActivePaintLayer() },
   { id: 'paint.paletteSave', label: 'Save the swatches as a GIMP palette', group: 'Paint', keys: 'Alt+Shift+P', run: () => saveSwatchFile() },

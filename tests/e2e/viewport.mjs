@@ -1,5 +1,5 @@
 // E2E: LightWave-style viewport title bars (spec I + QA rules).
-// - order on each title bar: pan, rotate, zoom, maximize
+// - order on each title bar: [symmetry control], pan, rotate, zoom, maximize
 // - dragging pan/rotate/zoom moves only that view's camera and never selects anything
 // - rotate is disabled in the flat views
 // - maximize toggles back and keeps the same camera
@@ -17,8 +17,10 @@ const sel = () => p.evaluate(() => { const s = window.__polyform.getState(); ret
 const panes = await p.evaluate(() => window.__polyform.getState().panes.map(x => x.type))
 
 for (let i = 0; i < 4; i++) {
-  const ids = await p.locator(`[data-testid="pane-${i}"] .vp-title button`).evaluateAll(els => els.map(e => e.dataset.testid))
+  // SYM-2: the symmetry control sits just before the view buttons; its own buttons are not view buttons
+  const ids = await p.locator(`[data-testid="pane-${i}"] .vp-title button`).evaluateAll(els => els.filter(e => !e.closest('.sym-ctl')).map(e => e.dataset.testid))
   check(`pane ${i} order`, JSON.stringify(ids) === JSON.stringify([`pane-${i}-pan`, `pane-${i}-rotate`, `pane-${i}-zoom`, `pane-${i}-max`]), ids.join(','))
+  check(`pane ${i} symmetry control right before pan`, await p.locator(`[data-testid="pane-${i}"] .vp-title`).evaluate((t, i) => t.querySelector('[data-testid="sym-ctl"]')?.nextElementSibling?.dataset.testid === `pane-${i}-pan`, i))
   const disabled = await p.locator(`[data-testid="pane-${i}-rotate"]`).isDisabled()
   check(`pane ${i} (${panes[i]}) rotate ${panes[i] === 'persp' ? 'enabled' : 'disabled'}`, disabled === (panes[i] !== 'persp'))
 }

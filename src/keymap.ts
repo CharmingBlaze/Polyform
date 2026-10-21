@@ -74,7 +74,8 @@ export const APPLY_TRANSFORM_ID = 'xf.apply'
  * Shift+D and Ctrl+D duplicate, except Ctrl+D clears the pixel selection in Paint; Ctrl+A is Apply transform
  * (Select all while that command does not exist yet), except Select all pixels in Paint; S over the Timeline scales keys;
  * Ctrl+D duplicates keys in Animate and over the Timeline; Ctrl+C / V / Shift+V are the pose clipboard in Animate and
- * over the Timeline, the Model clipboard elsewhere (the UV editor keeps its own, see routeKey).
+ * over the Timeline, the Model clipboard elsewhere (the UV editor keeps its own, see routeKey); Alt+Y is symmetry Y in
+ * Model and Rig, Paint's mirror Y in Paint.
  */
 export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   const ids = new Set(list.map(c => c.id))
@@ -91,6 +92,9 @@ export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   if (ids.has(APPLY_TRANSFORM_ID)) add(APPLY_TRANSFORM_ID, 'global', 'Ctrl+A')
   else add('sel.all2', 'global', 'Ctrl+A')
   add('paint.selectAll', 'ws:paint', 'Ctrl+A')
+  // Alt+Y: symmetry Y in Model and Rig (SYM-2), Paint's mirror Y in Paint (until SYM-9 unifies paint symmetry)
+  add('edit.symY', 'ws:model', 'Alt+Y'); add('edit.symY', 'ws:rig', 'Alt+Y')
+  add('paint.mirrorY', 'ws:paint', 'Alt+Y')
   add('anim.scaleKeys', 'panel:timeline', 'S')
   // Ctrl+D duplicates keys in Animate (viewport) and over the Timeline in any mode; mesh Duplicate everywhere else
   add('anim.duplicateKeys', 'ws:animate', 'Ctrl+D')

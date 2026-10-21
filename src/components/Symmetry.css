@@ -1,0 +1,45 @@
+/* SYM-2 symmetry tokens (spec §3.5) and the pane-header control + popover. None of the tokens is text. */
+:root {
+  --sym-plane-x: #ff6b6b66; --sym-plane-y: #5fd38d66; --sym-plane-z: #5b9dff66; --sym-plane-fill: #6d8bff10;
+  --sym-ghost: #ffffff59; --sym-ghost-sel: #ffa04a8c; --sym-center: #ffd166; --sym-broken: #ff6b6b;
+}
+/* header control: 18px high, about 66px wide, right-aligned before the nav buttons */
+.sym-ctl { flex: none; display: inline-flex; align-items: stretch; height: 18px; border: 1px solid var(--line2); border-radius: 3px; overflow: hidden; background: #ffffff06; font-size: 11px; line-height: 16px; user-select: none; }
+.sym-ctl > * { display: inline-flex; align-items: center; justify-content: center; min-width: 13px; padding: 0 1px; border-right: 1px solid var(--line); cursor: pointer; }
+.sym-ctl > :last-child { border-right: 0; }
+.sym-ctl .sym-ico { width: 15px; color: var(--dim); }
+.sym-ctl b { font-weight: 700; color: var(--dim); }
+.sym-ctl b:hover, .sym-ctl .sym-more:hover { background: #ffffff12; }
+.sym-ctl b.x.on { color: var(--x); background: color-mix(in srgb, var(--x) 12%, transparent); }
+.sym-ctl b.y.on { color: var(--y); background: color-mix(in srgb, var(--y) 12%, transparent); }
+.sym-ctl b.z.on { color: var(--z); background: color-mix(in srgb, var(--z) 12%, transparent); }
+.sym-ctl .sym-bad { color: #fff; background: var(--sym-broken); font-weight: 700; }
+.sym-ctl .sym-more { height: auto; padding: 0 2px; border: 0; border-radius: 0; background: transparent; color: var(--dim); font-size: 11px; }
+.sym-ctl .sym-more.on { color: var(--text); background: rgba(109,139,255,.18); }
+/* popover: 228px, Leva-like rows (label | control), never below 11px */
+.sym-pop { position: fixed; z-index: 60; width: 228px; box-sizing: border-box; padding: 4px 8px 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.45); color: var(--text); font-size: 11px; max-height: calc(100vh - 12px); overflow-y: auto; }
+.sym-head { display: flex; align-items: baseline; justify-content: space-between; padding: 3px 0 5px; border-bottom: 1px solid var(--line2); margin-bottom: 3px; font-weight: 600; }
+.sym-head .sym-sub { color: var(--dim); font-weight: 400; }
+.sym-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: center; min-height: 22px; column-gap: 4px; }
+.sym-lbl { color: var(--dim); white-space: nowrap; overflow: hidden; }
+.sym-val { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sym-seg { display: flex; flex: 1; min-width: 0; height: 20px; border: 1px solid var(--line2); border-radius: 4px; overflow: hidden; background: var(--panel); }
+.sym-seg button { flex: 1; min-width: 0; height: 100%; padding: 0 2px; border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font-size: 11px; justify-content: center; }
+.sym-seg button:last-child { border-right: 0; }
+.sym-seg button.on { background: rgba(109,139,255,.22); }
+.sym-seg.axes button { font-weight: 700; color: var(--dim); }
+.sym-seg.axes button.x.on { color: var(--x); background: color-mix(in srgb, var(--x) 14%, transparent); }
+.sym-seg.axes button.y.on { color: var(--y); background: color-mix(in srgb, var(--y) 14%, transparent); }
+.sym-seg.axes button.z.on { color: var(--z); background: color-mix(in srgb, var(--z) 14%, transparent); }
+.sym-seg.dim, .sym-chk.dim, .sym-ro.dim { opacity: .55; }
+.sym-chk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sym-chk input { margin: 0; }
+.sym-ro { font-variant-numeric: tabular-nums; color: var(--text); }
+.sym-note { margin: 4px 0 2px; color: var(--dim); line-height: 1.35; }
+.sym-note.bad { color: var(--sym-broken); }
+.sym-sec { margin: 6px 0 3px; padding-top: 5px; border-top: 1px solid var(--line2); color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
+.sym-mr { display: flex; flex-direction: column; gap: 2px; }
+.sym-mr .mcell:disabled { opacity: .35; cursor: not-allowed; background: transparent; }
+.sym-actions { margin-top: 5px; display: flex; }
+.sym-actions .sym-wide { flex: 1; height: 22px; justify-content: center; font-size: 11px; }
+.sym-actions .sym-wide:disabled { opacity: .45; }

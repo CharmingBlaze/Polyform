@@ -29,6 +29,8 @@ import { modalRequestOf, type ModalRequest } from '../modal/transform'
 import { bevelEdgesOfSelection } from '../bevel'
 import { bevelMouse, bevelModalOpts, bevelReadout, bevelSet, bevelSnap, bevelStart, bevelTags, type BevelMode, type BevelParams } from '../modal/bevelModal'
 import { formatNumber } from '../modal/status'
+import { SymmetryControl } from './Symmetry'
+import { symOverlayWanted } from '../symOverlay'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -1834,7 +1836,8 @@ export function Viewport({ pane }: { pane: number }) {
       gizmo.current.setHover(h)
       if (before !== gizmo.current.hovered) sceneManager.invalidate()
       // hover sync (UV-14): with the UV editor open, the face under the pointer is outlined there
-      if (interaction.uvCanvas?.isConnected) setHoverFace(pickFace(x, y), '3d')
+      // SYM-2: with symmetry on, the hovered face's mirror counterpart is drawn as a ghost
+      if (interaction.uvCanvas?.isConnected || symOverlayWanted()) setHoverFace(pickFace(x, y), '3d')
       return
     }
     if (d.kind === 'draw' || d.kind === 'drawHandle') { drawMove(d, x, y, e.shiftKey, e.ctrlKey || e.metaKey); return }
@@ -2072,6 +2075,7 @@ export function Viewport({ pane }: { pane: number }) {
           {(Object.keys(SHADE_LABEL) as Shading[]).map(v => <option key={v} value={v}>{SHADE_LABEL[v]}</option>)}
         </select>
         <span className="grow" />
+        <SymmetryControl pane={pane} />
         <button className="vp-btn" data-testid={`pane-${pane}-pan`} title="Pan: drag this button" {...dragButton('pan')}><Move size={13} /></button>
         <button className="vp-btn" data-testid={`pane-${pane}-rotate`} title={isPersp ? 'Rotate: drag this button' : 'Rotate (perspective only)'} disabled={!isPersp} {...dragButton('orbit')}><Rotate3d size={13} /></button>
         <button className="vp-btn" data-testid={`pane-${pane}-zoom`} title="Zoom: drag this button up/down" {...dragButton('zoom')}><Search size={13} /></button>

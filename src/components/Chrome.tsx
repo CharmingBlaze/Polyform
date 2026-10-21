@@ -150,7 +150,7 @@ export function ToolRail() {
               }}>{snapTarget === 'grid' ? 'Grid' : snapTarget === 'vertex' ? 'Vert' : 'Incr'}</button>
             <button className="axis-btn" data-testid="pivot" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={`Pivot: ${PIVOT_LABEL[pivot]}  ·  ${getBindingLabel('edit.pivotCycle')}`}
               onClick={e => { const r = e.currentTarget.getBoundingClientRect(); openPivotMenu({ x: r.left, y: r.bottom + 2, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }) }}>{PIVOT_SHORT[pivot]}</button>
-            <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="X-mirror editing (Alt+X): transforms on one side update the paired verts across X = 0">X-Mirror</button>
+            <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="Symmetry X (Alt+X): moves on one side update the paired points across each object's X axis (same switch as the X in the view headers)">Symmetry X</button>
           </div>
           <MirrorRotateSection />
         </>}
@@ -271,7 +271,7 @@ export const NumericPanel = NumericHost
 /** The full hint for the active tool (status bar shows its first clause, the ? popover all of it). */
 function toolHint(s: ReturnType<typeof useStore.getState>): string {
   const { xMirror, paint, ik, ikDepth, mode, tool, modalInfo } = s
-  const mir = xMirror ? ' · X-mirror on' : ''
+  const mir = xMirror ? ' · Symmetry X on' : ''
   const paintHint = paintStatusHint(paint)
   const hint: Record<string, string> = {
     select: 'Drag to box-select · Ctrl-drag box (+Shift add, +Alt remove) · Shift-click add · Ctrl-click toggle · Alt+click edge/face loop · L / Ctrl+L linked · Ctrl+/- grow/shrink',

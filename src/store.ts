@@ -4,6 +4,7 @@ import { interaction, isModalActive } from './interaction'
 import * as M from './model'
 import { SAMPLES, type SampleId } from './samples'
 import { pairs as xPairs, type XMirror } from './xmirror'
+import { defaultSymmetry, type Symmetry } from './symmetry'
 import * as G from './geom'
 import * as B from './bones'
 import { invalidateKeys, sampleBone, sampleObject, skinnedGroups } from './anim'
@@ -129,6 +130,8 @@ export interface State {
   /** X-mirror editing: transforms on one side update the paired verts across X = 0. */
   xMirror: boolean
   xMirrorMap: XMirror | null
+  /** SYM-2: the one symmetry setting (src/symmetry.ts); axes.x is unused, X is `xMirror` (read via symui.effectiveSymmetry) */
+  symmetry: Symmetry
   /** Mirror & Rotate › Copy X/Y/Z: weld the copy's points on the mirror plane (default on) */
   mirrorWeld: boolean
   showSkeleton: boolean
@@ -424,6 +427,7 @@ export const useStore = create<State>((set, get) => ({
   ikDepth: 2,
   xMirror: false,
   xMirrorMap: null,
+  symmetry: defaultSymmetry(),
   mirrorWeld: true,
   showSkeleton: true,
   showRefs: true,
