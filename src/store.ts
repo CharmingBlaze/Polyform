@@ -6,7 +6,7 @@ import { SAMPLES, type SampleId } from './samples'
 import { pairs as xPairs, type XMirror } from './xmirror'
 import * as G from './geom'
 import * as B from './bones'
-import { sampleBone, sampleObject, skinnedGroups } from './anim'
+import { invalidateKeys, sampleBone, sampleObject, skinnedGroups } from './anim'
 import { setVertBone } from './skin'
 import { History } from './history'
 import { defaults, opById, type OpSel } from './ops'
@@ -1294,3 +1294,6 @@ function applyResult(r: { verts?: number[]; faces?: number[]; edges?: [number, n
   else if (r.faces) s.setSelection({ faces: [] })
   if (r.bones) useStore.setState({ selBones: new Set(r.bones) })
 }
+
+// Edits mutate key tracks in place and undo/redo/load swap the model: either way the sampler's sorted-key cache must not be trusted.
+useStore.subscribe((s, p) => { if (s.model !== p.model || s.version !== p.version) invalidateKeys() })
