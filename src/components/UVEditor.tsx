@@ -949,6 +949,14 @@ export function UVEditor({ big = false }: { big?: boolean }) {
     st.notify(`Minimize Stretch: ${n} UV point${n === 1 ? '' : 's'} relaxed${faces.some(fi => st.model.faces[fi].pin?.length) ? ' (pins kept)' : ''}`)
   }
   const rotOp = (k: 'cw' | 'ccw' | '180') => op('UV rotate', k === 'cw' ? U.rotCW : k === 'ccw' ? U.rot90 : U.rot180)
+  // view.flipH / flipV / rotateCW / rotateCCW and Ctrl+M (mirrorCmds.ts) while the pointer is over the UV editor
+  const viewXf = useRef<(k: string) => void>(() => {})
+  viewXf.current = k => { if (k === 'flipH') op('UV flip', U.flipU); else if (k === 'flipV') op('UV flip', U.flipV); else if (k === 'rotCW') rotOp('cw'); else if (k === 'rotCCW') rotOp('ccw'); else if (k === 'rot180') rotOp('180') }
+  useEffect(() => {
+    const on = (e: Event) => viewXf.current((e as CustomEvent<string>).detail)
+    window.addEventListener('uv-transform', on)
+    return () => window.removeEventListener('uv-transform', on)
+  }, [])
   const moveToCursor = (x: number, y: number) => op('UV move to cursor', (m, ids) => U.moveTo(m, ids, toUV(x, y)))
   const runKey = (k: string, x: number, y: number) => {
     if (k === 'F') frameSel()
@@ -1129,6 +1137,7 @@ export function UVEditor({ big = false }: { big?: boolean }) {
       <T id="xf-rot-cw" icon={RotateCw} label="Rotate ⟳" tip="Rotate 90° clockwise · Shift+R" onClick={() => rotOp('cw')} />
       <T id="flip-u" icon={FlipHorizontal2} label="Flip H" tip="Flip horizontally" onClick={() => op('UV flip', U.flipU)} />
       <T id="flip-v" icon={FlipVertical2} label="Flip V" tip="Flip vertically" onClick={() => op('UV flip', U.flipV)} />
+      <T id="xf-rot-180" icon={RotateCw} label="Rotate 180" tip="Rotate 180° about the selection's centre" onClick={() => rotOp('180')} />
       <T id="fit" icon={Shrink} label="Fit 0–1" tip="Scale uniformly into the image" onClick={() => op('UV fit', U.fit01)} />
       <T id="maximize" icon={Maximize2} label="Maximize" tip="Stretch the selection to fill the whole image" onClick={() => op('UV maximize', U.maximize)} />
     </div>,

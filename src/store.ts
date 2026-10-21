@@ -128,6 +128,8 @@ interface State {
   /** X-mirror editing: transforms on one side update the paired verts across X = 0. */
   xMirror: boolean
   xMirrorMap: XMirror | null
+  /** Mirror & Rotate › Copy X/Y/Z: weld the copy's points on the mirror plane (default on) */
+  mirrorWeld: boolean
   showSkeleton: boolean
   showRefs: boolean
   /** Blender-style 3D cursor: Shift+right-click places it; Shift+A adds a joint there */
@@ -411,6 +413,7 @@ export const useStore = create<State>((set, get) => ({
   ikDepth: 2,
   xMirror: false,
   xMirrorMap: null,
+  mirrorWeld: true,
   showSkeleton: true,
   showRefs: true,
   cursor3d: [0, 0, 0],
@@ -613,7 +616,7 @@ export const useStore = create<State>((set, get) => ({
   },
   opSel: () => {
     const s = get()
-    return { verts: s.activeVerts(), faces: s.activeFaces(), edges: s.activeEdges(), bones: [...s.selBones], axis: [s.axis.x, s.axis.y, s.axis.z] }
+    return { verts: s.activeVerts(), faces: s.activeFaces(), edges: s.activeEdges(), bones: [...s.selBones], axis: [s.axis.x, s.axis.y, s.axis.z], mode: s.selectMode === 'object' ? 'object' : s.selectMode === 'joint' ? 'joint' : 'edit' }
   },
   setSelection: r => {
     const s = get(), m = s.model

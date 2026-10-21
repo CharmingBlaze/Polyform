@@ -11,6 +11,7 @@ import { ask } from './dialog'
 import { scaleFrames } from './anim'
 import { copyTimelineKeys, duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
+import { mirrorCommands } from './mirrorCmds'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -158,7 +159,9 @@ export const commands: Command[] = [
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
-  ...OPS.filter(o => !o.id.startsWith('prim.')).map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
+  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
+  // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
+  ...mirrorCommands,
   { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
   { id: 'help.shortcuts', label: 'Help: hints and keyboard shortcuts', group: 'Help', keys: 'F1', run: () => S().set({ helpOpen: !S().helpOpen }) },

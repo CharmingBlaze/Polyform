@@ -7,14 +7,16 @@ import * as M from './model'
 import * as G from './geom'
 import { primitiveImageUVs, primitiveUVNote } from './primuv'
 import type { Model, ParamDef, Params, PrimitiveKind, Vec3 } from './model'
+import * as MO from './mirrorOps'
 
-export interface OpSel { verts: number[]; faces: number[]; edges: [number, number][]; bones: number[]; axis: boolean[] }
+export interface OpSel { verts: number[]; faces: number[]; edges: [number, number][]; bones: number[]; axis: boolean[]; /** what the selection is: points (edit), whole objects or joints */ mode?: MO.MirrorMode }
 export interface OpResult { verts?: number[]; faces?: number[]; edges?: [number, number][]; bones?: number[]; note?: string }
 export interface OpDef {
   id: string
   label: string
   /** LightWave-style tool tab */
-  tab: 'Create' | 'Modify' | 'Multiply' | 'Construct'
+  /** 'Mirror': the one-shot Mirror & Rotate ops (commands mesh.flipX…), not listed by the generic tab buttons */
+  tab: 'Create' | 'Modify' | 'Multiply' | 'Construct' | 'Mirror'
   params: ParamDef[]
   needs?: 'faces' | 'verts' | 'edges' | 'verts2' | 'faces2'
   run: (m: Model, s: OpSel, p: Params) => OpResult | void
@@ -27,6 +29,17 @@ const BOOL = (key: string, label: string, def: 0 | 1): ParamDef => ({ key, label
 const AXIS = (key: string, label: string, def: 0 | 1 | 2): ParamDef => ({ key, label, def, min: 0, max: 2, step: 1, int: true, kind: 'axis' })
 
 const facesSel = (r: number[]): OpResult => ({ faces: r })
+/** Numeric-panel ParamDefs from a redo-panel schema (mirrorOps OpParam, shaped like BEVEL_PARAMS). */
+function paramDefs<O>(list: readonly MO.OpParam<O>[]): ParamDef[] {
+  return list.map(d => {
+    const def = typeof d.default === 'boolean' ? (d.default ? 1 : 0) : typeof d.default === 'string' ? Math.max(0, d.options?.indexOf(d.default) ?? 0) : d.default
+    if (d.type === 'bool') return BOOL(d.name, d.label, def ? 1 : 0)
+    if (d.type === 'axis') return AXIS(d.name, d.label, def as 0 | 1 | 2)
+    if (d.type === 'enum') return { key: d.name, label: d.label, def, min: 0, max: (d.options?.length ?? 1) - 1, step: 1, int: true, kind: 'enum', options: [...(d.options ?? [])] }
+    const step = d.name === 'angle' ? 15 : d.name === 'weldDistance' ? 0.001 : 0.1
+    return N(d.name, d.unit === '°' ? `${d.label}°` : d.label, def, d.min ?? -1e6, d.max ?? 1e6, step, d.type === 'int')
+  })
+}
 const center = (m: Model, verts: number[]) => G.selectionBounds(m, verts).getCenter(new THREE.Vector3())
 
 export const OPS: OpDef[] = [
@@ -68,6 +81,10 @@ export const OPS: OpDef[] = [
     params: [BOOL('x', 'X', 0), BOOL('y', 'Y', 1), BOOL('z', 'Z', 0), { key: 'to', label: 'To', def: 0, min: 0, max: 2, step: 1, int: true, kind: 'enum', options: ['Center', 'Min', 'Max'] }],
     run: (m, s, p) => G.alignVerts(m, s.verts, [!!p.x, !!p.y, !!p.z], (['center', 'min', 'max'] as const)[p.to]),
   },
+  // ---------- Mirror & Rotate (Ctrl+M): one-shot, around the pivot the commands pass in; params from mirrorOps *_PARAMS
+  { id: 'mesh.flip', label: 'Flip', tab: 'Mirror', params: paramDefs(MO.FLIP_PARAMS), run: (m, s, p) => MO.flipWith(m, s, MO.optsFromParams(MO.FLIP_PARAMS, p)) },
+  { id: 'mesh.copy', label: 'Mirror copy', tab: 'Mirror', params: paramDefs(MO.COPY_PARAMS), run: (m, s, p) => MO.copyWith(m, s, MO.optsFromParams(MO.COPY_PARAMS, p)) },
+  { id: 'mesh.rotate', label: 'Rotate', tab: 'Mirror', params: paramDefs(MO.ROTATE_PARAMS), run: (m, s, p) => MO.rotateWith(m, s, MO.optsFromParams(MO.ROTATE_PARAMS, p)) },
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {

@@ -6,6 +6,7 @@ import { history, useStore, type EditMode } from '../store'
 import { byId, commands } from '../commands'
 import { bindingLabels, useKeymapVersion } from '../keymap'
 import { OPS, opById } from '../ops'
+import { MirrorRotateSection } from './MirrorRotate'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
@@ -164,6 +165,7 @@ export function ToolRail() {
               }}>{pivot === 'median' ? 'Median' : pivot === 'cursor' ? 'Cursor' : 'Active'}</button>
             <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="X-mirror editing (Alt+X): transforms on one side update the paired verts across X = 0">X-Mirror</button>
           </div>
+          <MirrorRotateSection />
         </>}
         {tab === 'Multiply' && ops('Multiply')}
         {tab === 'Construct' && <>{ops('Construct')}<CmdBtn cmd="edit.delete" label="Delete" /></>}

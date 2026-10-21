@@ -85,6 +85,18 @@ export function buildMenus(openPalette: () => void): Menu[] {
     'sep',
     cmd('op.mul.duplicate', 'Duplicate', { enabled: s.selFaces.size > 0 }),
     cmd('edit.delete', 'Delete', { enabled: hasSel() }),
+    { id: 'edit.mirrorRotate', label: 'Mirror & Rotate', sub: [
+      cmd('mesh.flipX', 'Flip X'), cmd('mesh.flipY', 'Flip Y'), cmd('mesh.flipZ', 'Flip Z'),
+      'sep',
+      cmd('mesh.copyX', 'Copy X', { enabled: !animate }), cmd('mesh.copyY', 'Copy Y', { enabled: !animate }), cmd('mesh.copyZ', 'Copy Z', { enabled: !animate }),
+      'sep',
+      cmd('mesh.rotateX', 'Rotate X +90°', { enabled: !animate }), cmd('mesh.rotateY', 'Rotate Y +90°', { enabled: !animate }), cmd('mesh.rotateZ', 'Rotate Z +90°', { enabled: !animate }),
+      'sep',
+      cmd('view.flipH', 'Flip Horizontally (view)'), cmd('view.flipV', 'Flip Vertically (view)'),
+      cmd('view.rotateCCW', 'Rotate 90° CCW (view)'), cmd('view.rotateCW', 'Rotate 90° CW (view)'),
+      'sep',
+      cmd('mesh.mirrorMenu', 'Mirror Menu…'),
+    ] },
     'sep',
     // the animation clipboard, only in Animate mode (Ctrl+C / Ctrl+V do nothing in Model mode)
     ...(animate ? [
