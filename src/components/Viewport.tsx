@@ -18,6 +18,9 @@ import { extrudeSession, updateWallUVs } from '../extrude'
 import { chainClicks, facePoint, knifeCutChains, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { snapPoint, type SnapHit, type SnapOpts } from '../snap'
 import { refreshKnifeTheme, setKnifeOverlay, type HoverKind } from '../knifeOverlay'
+import { getKnifeOptions, KNIFE_MEASURES, nextAngle, setKnifeOptions, subscribeKnifeOptions, clampInc, type KnifeAngle } from '../knifeOptions'
+import { setDockTool } from '../oppanel/dockslot'
+import { KnifeToolOptions } from './KnifeToolOptions'
 import { canEven, clampFactor, loopCut, orientedRing, previewLines, ringNormals, setSmoothness, slideCut, type CutRec, type Ring, type SlideOpts } from '../loopcut'
 import { beginModal, endModal, isModalRunning, MOUSE, setModal, transformStatus, updateModal, type ModalHint, type ModalValue } from '../modal'
 import { noteTransformCommitted } from '../oppanel/lastop'
@@ -25,6 +28,7 @@ import { emptyNum, flipsWinding, lockedScale, nextAxisLock, numApply, numKey, nu
 import { modalRequestOf, type ModalRequest } from '../modal/transform'
 import { bevelEdgesOfSelection } from '../bevel'
 import { bevelMouse, bevelModalOpts, bevelReadout, bevelSet, bevelSnap, bevelStart, bevelTags, type BevelMode, type BevelParams } from '../modal/bevelModal'
+import { formatNumber } from '../modal/status'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -983,7 +987,7 @@ export function Viewport({ pane }: { pane: number }) {
     const info = () => {
       if (phase === 'hover') {
         const vals: ModalValue[] = [{ label: 'Cuts', value: String(cuts), ...(typed ? { typed } : {}) }, { label: 'Smoothness', value: smooth, digits: 3 }]
-        updateModal({ id: ID, label: 'Loop Cut', value: vals, tags: [], hints: cutHints })
+        updateModal({ id: ID, label: 'Loop Cut and Slide', value: vals, tags: [], hints: cutHints })
       } else {
         const v: ModalValue = { label: 'Factor', value: factor(), digits: 4, ...(typed ? { typed } : {}) }
         updateModal({ id: ID, label: 'Edge Slide', value: [v], tags: slideTags(), hints: slideHints() })
@@ -1090,7 +1094,7 @@ export function Viewport({ pane }: { pane: number }) {
     }
     interaction.modal = true
     refreshKnifeTheme()
-    beginModal({ id: ID, label: 'Loop Cut', hints: cutHints, values: [{ label: 'Cuts', value: '1' }, { label: 'Smoothness', value: 0, digits: 3 }] })
+    beginModal({ id: ID, label: 'Loop Cut and Slide', hints: cutHints, values: [{ label: 'Cuts', value: '1' }, { label: 'Smoothness', value: 0, digits: 3 }] })
     const at = interaction.mouse[pane]
     if (at) hoverAt(at.x, at.y)
     info()
@@ -1132,13 +1136,20 @@ export function Viewport({ pane }: { pane: number }) {
    * in every tool); Shift midpoints,
    * Ctrl ignores snapping, C cut-through, X / Y / Z axis lock, A angle snap (type digits for the increment), S measure,
    * Ctrl+Z / Backspace removes the last point (a whole drag at once). One undo step for all cuts.
+   * MOD-6: V X-ray (hidden crossings shown dim), A cycles off / screen / relative angle (R picks the reference edge),
+   * Shift+K (`onlySelected`) cuts only the selected faces. The toggles start from and write back to the knife's
+   * Tool Options (knifeOptions.ts); Only Selected from Shift+K is for that run only.
    */
-  function startKnife() {
+  function startKnife(onlySelected = false) {
     type Click = { k: KPoint; eye: Eye; g: number }
     const chains: { clicks: Click[]; closed?: boolean }[] = [{ clicks: [] }]
     const cur = () => chains[chains.length - 1]
     let hover: KHit | null = null
-    let through = false, axis: 0 | 1 | 2 | null = null, angleOn = false, angleInc = 30, typed = '', measure = 0
+    const ko = getKnifeOptions()
+    let through = !ko.occlude, xray = ko.xray, axis: 0 | 1 | 2 | null = null, angleMode: KnifeAngle = ko.angle, angleInc = ko.angleInc, typed = ''
+    // measure bits: 1 distance, 2 angle (KNIFE_MEASURES order none, distance, angle, both)
+    let measure = Math.max(0, KNIFE_MEASURES.indexOf(ko.measure))
+    let refIdx = 0
     let shift = false, ctrl = false, gid = 0
     let drag: { x0: number; y0: number; lx: number; ly: number; moved: boolean; g: number; samples: { k: KPoint; eye: Eye }[] } | null = null
     let lastDown: { t: number; x: number; y: number } | null = null
@@ -1146,15 +1157,38 @@ export function Viewport({ pane }: { pane: number }) {
     const st0 = useStore.getState()
     const vis = new Set(sceneManager.visibleFaces)
     const topo = topology(st0.model)
+    // Only Selected: the faces the cut may split (Blender: faces with every point selected)
+    let selF = onlySelected || ko.onlySelected ? new Set(st0.activeFaces()) : null
+    if (selF && !selF.size) { st0.notify('Knife (only selected): select faces first'); return }
     const eyeNow = (): Eye => {
       const cam = ctx.current!.camera
       return cam instanceof THREE.PerspectiveCamera ? { pos: cam.position.clone() } : { dir: camBasis().fwd }
     }
-    const opts = () => ({
-      edgeOk: (a: number, b: number) => topo.edgeFaces(a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a).some(f => vis.has(f)),
-      visible: through ? undefined : (X: THREE.Vector3) => !occluded(X),
-      topo,
-    })
+    const opts = () => {
+      const sel = selF
+      return {
+        edgeOk: (a: number, b: number) => topo.edgeFaces(a < b ? a * 2 ** 26 + b : b * 2 ** 26 + a).some(f => vis.has(f) && (!sel || sel.has(f))),
+        visible: through ? undefined : (X: THREE.Vector3) => !occluded(X),
+        faceOk: sel ? (f: number) => sel.has(f) : undefined,
+        topo,
+      }
+    }
+    /** the knife's toggles are its tool settings: keep the Tool Options section in step */
+    const saveOpts = () => setKnifeOptions({ occlude: !through, xray, angle: angleMode, angleInc, measure: KNIFE_MEASURES[measure] })
+    /**
+     * Relative angle snapping: the screen directions of the edges at the last point (the edge it lies on, the edges of
+     * the vertex it sits on, else the last segment). R cycles through them.
+     */
+    const refDirs = (o: { x: number; y: number }): number[] => {
+      const clicks = cur().clicks, last = clicks[clicks.length - 1]
+      if (!last) return []
+      const P = sceneManager.posed, out: number[] = []
+      const dirTo = (q: Vec3 | THREE.Vector3) => { const s2 = project(q); return Math.atan2(s2.y - o.y, s2.x - o.x) }
+      if (last.k.kind === 'edge') out.push(dirTo(P[last.k.b]))
+      else if (last.k.kind === 'vert') { const v = last.k.v; for (const [a, b] of sceneManager.edges) if (a === v || b === v) out.push(dirTo(P[a === v ? b : a])) }
+      if (clicks.length >= 2) { const prev = wpos(clicks[clicks.length - 2].k); out.push(dirTo(prev) + Math.PI) }
+      return out.filter(d => Number.isFinite(d))
+    }
     const wpos = (k: KPoint) => kpos(useStore.getState().model, sceneManager.posed, k)
     const placed = () => chains.flatMap(c => c.clicks)
     const points = () => placed().length
@@ -1162,7 +1196,7 @@ export function Viewport({ pane }: { pane: number }) {
     /** the screen line the next point is locked to (X / Y / Z axis through the last point, or the A angle) */
     const constraint = (x: number, y: number): { ox: number; oy: number; dx: number; dy: number } | null => {
       const last = cur().clicks[cur().clicks.length - 1]
-      if (!last || (axis === null && !angleOn)) return null
+      if (!last || (axis === null && angleMode === 'none')) return null
       const L = wpos(last.k), o = project(L)
       let dx: number, dy: number
       if (axis !== null) {
@@ -1170,7 +1204,9 @@ export function Viewport({ pane }: { pane: number }) {
         dx = q.x - o.x; dy = q.y - o.y
       } else {
         const inc = THREE.MathUtils.degToRad(Math.max(1, angleInc))
-        const a = Math.round(Math.atan2(y - o.y, x - o.x) / inc) * inc
+        const refs = angleMode === 'relative' ? refDirs(o) : []
+        const base = refs.length ? refs[((refIdx % refs.length) + refs.length) % refs.length] : 0
+        const a = base + Math.round((Math.atan2(y - o.y, x - o.x) - base) / inc) * inc
         dx = Math.cos(a); dy = Math.sin(a)
       }
       const n = Math.hypot(dx, dy)
@@ -1223,40 +1259,77 @@ export function Viewport({ pane }: { pane: number }) {
     }
 
     const cursorCss = () => (ctrl ? 'crosshair' : `url(${import.meta.env.BASE_URL}knife.svg) 2 22, crosshair`)
-    // each key once; C (Cut Through) and A (Angle) are tags, which show their key and state, so not repeated here
+    // each key once; C (Cut Through) and A (Angle) are tags, which show their key and state, so not repeated here.
+    // MOD-1 drop priority (UX): Close loop, Midpoint and Ignore snap (p 3) go first when the line is narrow, then the
+    // p 2 hints right to left; Confirm / Cancel / Cut (p 1) never.
     const hints: ModalHint[] = [
       { keys: ['Enter/Space'], label: 'Confirm', p: 1 },
       { keys: ['Esc/RMB'], label: 'Cancel', p: 1 },
       { keys: [MOUSE.LMB], label: 'Cut', p: 1 },
       { keys: ['X/Y/Z'], label: 'Axis', p: 2 },
       { keys: ['Backspace'], label: 'Undo point', p: 2 },
-      { keys: ['E'], label: 'New cut', p: 3 },
+      { keys: ['E'], label: 'New cut', p: 2 },
       { keys: ['LMB×2'], label: 'Close loop', p: 3 },
       { keys: ['Shift'], label: 'Midpoint', p: 3 },
       { keys: ['Ctrl'], label: 'Ignore snap', p: 3 },
-      { keys: ['S'], label: 'Measure', p: 3 },
-      { keys: [MOUSE.MMB], label: 'Pan', p: 3 },
+      { keys: ['S'], label: 'Measure', p: 2 },
+      { keys: ['R'], label: 'Reference edge', p: 2 },
+      { keys: [MOUSE.MMB], label: 'Pan', p: 2 },
     ]
+    /** MOD-6: the on-segment measurement label (UX): midpoint of the live segment, off the cursor, inside the pane */
+    let label: HTMLDivElement | null = null
+    const placeLabel = (text: string | null, a?: { x: number; y: number }, b?: { x: number; y: number }) => {
+      const host = hit.current?.parentElement
+      if (!text || !a || !b || !host) { if (label) label.style.display = 'none'; return }
+      if (!label) {
+        label = document.createElement('div')
+        label.className = 'knife-measure'
+        label.dataset.testid = 'knife-measure'
+        host.appendChild(label)
+      }
+      label.textContent = text
+      label.style.display = ''
+      const W = host.clientWidth, H = host.clientHeight, bw = label.offsetWidth, bh = label.offsetHeight
+      const TOPBAR = 30, PAD = 4, GAP = 14, CLEAR = 10
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1
+      const nx = -dy / len, ny = dx / len
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+      const clamp = (x: number, y: number) => ({ x: Math.min(Math.max(x, PAD), W - PAD - bw), y: Math.min(Math.max(y, TOPBAR), H - PAD - bh) })
+      // the box (top-left x, y) is clear of the cursor b by CLEAR px on every side
+      const clear = (q: { x: number; y: number }) => b.x < q.x - CLEAR || b.x > q.x + bw + CLEAR || b.y < q.y - CLEAR || b.y > q.y + bh + CLEAR
+      const at = (cx: number, cy: number) => clamp(cx - bw / 2, cy - bh / 2)
+      const off = GAP + Math.max(bw * Math.abs(nx), bh * Math.abs(ny)) / 2
+      const tries = [at(mx + nx * off, my + ny * off), at(mx - nx * off, my - ny * off),
+        clamp(b.x - bw - 2 * CLEAR, b.y - bh - 2 * CLEAR), clamp(b.x + 2 * CLEAR, b.y + 2 * CLEAR),
+        clamp(b.x - bw - 2 * CLEAR, b.y + 2 * CLEAR), clamp(b.x + 2 * CLEAR, b.y - bh - 2 * CLEAR)]
+      const q = tries.find(clear) ?? tries[0]
+      label.style.transform = `translate(${Math.round(q.x)}px, ${Math.round(q.y)}px)`
+    }
     const info = () => {
       const n = points()
       const values: ModalValue[] = [{ label: '', value: `${n} point${n === 1 ? '' : 's'}` }]
       const last = cur().clicks[cur().clicks.length - 1]
       if (measure && last && hover) {
         const a = wpos(last.k), b = hover.pos
-        if (measure & 1) values.push({ label: '', value: a.distanceTo(b), unit: 'm' })
+        const sa = project(a)
+        const parts: string[] = []
+        if (measure & 1) { const d = a.distanceTo(b); values.push({ label: '', value: d, unit: 'm' }); parts.push(`${formatNumber(d, 3)} m`) }
         if (measure & 2) {
-          const sa = project(a)
           let deg = THREE.MathUtils.radToDeg(Math.atan2(-(hover.sy - sa.y), hover.sx - sa.x))
           if (deg < 0) deg += 180
           values.push({ label: '', value: deg % 180, digits: 0, unit: '°' })
+          parts.push(`${formatNumber(deg % 180, 0)}°`)
         }
-      }
+        placeLabel(parts.join(' · '), sa, { x: hover.sx, y: hover.sy })
+      } else placeLabel(null)
       updateModal({
         id: ID, value: values,
         axis: axis === null ? null : { axis: (['x', 'y', 'z'] as const)[axis], space: 'global' },
         tags: [
           { key: 'C', label: 'Cut Through', on: through },
-          { key: 'A', label: `Angle ${typed ? `${typed}…` : angleInc}°`, on: angleOn },
+          { key: 'V', label: 'X-Ray', on: xray },
+          { key: 'A', label: `Angle ${typed ? `${typed}…` : angleInc}°${angleMode === 'relative' ? ' rel' : ''}`, on: angleMode !== 'none' },
+          ...(selF ? [{ key: '', label: 'Only Selected', on: true }] : []),
         ],
         hints: hints.map(h => (h.keys?.[0] === 'Shift' ? { ...h, on: shift } : h)),
       })
@@ -1277,7 +1350,7 @@ export function Viewport({ pane }: { pane: number }) {
     }
     const draw = () => {
       const m = useStore.getState().model, P = sceneManager.posed
-      const lines: number[] = [], dim: number[] = [], pts: number[] = [], cross: number[] = []
+      const lines: number[] = [], dim: number[] = [], pts: number[] = [], cross: number[] = [], crossHidden: number[] = []
       chains.forEach((ch, ci) => {
         const live = ci === chains.length - 1
         const clicks: { k: KPoint; eye: Eye }[] = [...ch.clicks]
@@ -1287,11 +1360,19 @@ export function Viewport({ pane }: { pane: number }) {
         segs(all.map(c => kpos(m, P, c.k)), false, lines, dim)
         ch.clicks.forEach(c => { const q = kpos(m, P, c.k); pts.push(q.x, q.y, q.z) })
         if (all.length > 1) for (const pp of knifePath(m, P, all, opts())) if (pp.tau % 1 !== 0) { const q = kpos(m, P, pp.k); cross.push(q.x, q.y, q.z) }
+        // X-ray: also show where the cut meets hidden geometry (dim; only Cut Through really cuts there)
+        if (xray && !through && all.length > 1) for (const pp of knifePath(m, P, all, { ...opts(), visible: undefined })) if (pp.tau % 1 !== 0) { const q = kpos(m, P, pp.k); if (occluded(q)) crossHidden.push(q.x, q.y, q.z) }
       })
-      setKnifeOverlay({ lines, dim, points: pts, cross, hover: hover ? { p: [hover.pos.x, hover.pos.y, hover.pos.z], kind: hover.kind } : null })
+      setKnifeOverlay({ lines, dim, points: pts, cross, crossHidden, hover: hover ? { p: [hover.pos.x, hover.pos.y, hover.pos.z], kind: hover.kind } : null })
     }
+    // the dock shows the knife's Tool Options instead of Last Op while it runs; edits there drive the live knife
+    let clearDock: (() => void) | null = null
+    let unsubOpts: (() => void) | null = null
     const end = () => {
+      unsubOpts?.(); unsubOpts = null
+      clearDock?.(); clearDock = null
       setKnifeOverlay(null)
+      label?.remove(); label = null
       if (hit.current) hit.current.style.cursor = ''
       interaction.modal = false
       activeXf = null
@@ -1391,23 +1472,34 @@ export function Viewport({ pane }: { pane: number }) {
         if (k === 'Shift' || k === 'Control' || k === 'Meta') { if (k === 'Shift') shift = true; else ctrl = true; return rehover() }
         if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) return undoPoint()
         if (k === 'Backspace') {
-          if (angleOn && typed) { typed = typed.slice(0, -1); return info() }
+          if (angleMode !== 'none' && typed) { typed = typed.slice(0, -1); return info() }
           return undoPoint()
         }
         if (e.ctrlKey || e.metaKey || e.altKey) return
         const lk = k.toLowerCase()
-        if (lk === 'c') { through = !through; return rehover() }
+        if (lk === 'c') { through = !through; saveOpts(); return rehover() }
+        if (lk === 'v') { xray = !xray; saveOpts(); return rehover() }
+        if (lk === 'r' && angleMode === 'relative') { refIdx++; return rehover() }
         if (lk === 'x' || lk === 'y' || lk === 'z') { const a = ({ x: 0, y: 1, z: 2 } as const)[lk]; axis = axis === a ? null : a; return rehover() }
-        if (lk === 'a') { angleOn = !angleOn; typed = ''; return rehover() }
-        if (lk === 's') { measure = (measure + 1) % 4; return info() }
+        if (lk === 'a') { angleMode = nextAngle(angleMode); typed = ''; refIdx = 0; saveOpts(); return rehover() }
+        if (lk === 's') { measure = (measure + 1) % 4; saveOpts(); return info() }
         if (lk === 'e') return newCut()
-        if (angleOn && /^[0-9.]$/.test(k)) { typed = (typed + k).slice(0, 5); const v = parseFloat(typed); if (v > 0 && v <= 180) angleInc = v; return rehover() }
+        if (angleMode !== 'none' && /^[0-9.]$/.test(k)) { typed = (typed + k).slice(0, 5); const v = parseFloat(typed); if (v > 0 && v <= 180) { angleInc = clampInc(v); saveOpts() } return rehover() }
       },
       keyUp: e => { if (e.key === 'Shift') { shift = false; rehover() } else if (e.key === 'Control' || e.key === 'Meta') { ctrl = false; rehover() } },
     }
     interaction.modal = true
     refreshKnifeTheme()
-    beginModal({ id: ID, label: 'Knife', hints, cursor: cursorCss() })
+    beginModal({ id: ID, label: onlySelected ? 'Knife (selected only)' : 'Knife', hints, cursor: cursorCss() })
+    clearDock = setDockTool('mesh.knife', 'Knife (tool options)', () => <KnifeToolOptions />)
+    unsubOpts = subscribeKnifeOptions(() => {
+      const o = getKnifeOptions()
+      through = !o.occlude; xray = o.xray; angleMode = o.angle; angleInc = o.angleInc
+      measure = Math.max(0, KNIFE_MEASURES.indexOf(o.measure))
+      // Only Selected from the dock (Shift+K's is fixed for the run); with no faces selected it stays off
+      if (!onlySelected) { const f = o.onlySelected ? new Set(useStore.getState().activeFaces()) : null; selF = f?.size ? f : null }
+      rehover()
+    })
     const at = interaction.mouse[pane]
     if (at) hover = snapAt(at.x, at.y)
     draw(); info()
@@ -1564,6 +1656,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (target !== pane || !ctx.current || hidden || activeXf) return
       if (kind === 'loopcut') startLoopCut()
       else if (kind === 'knife') startKnife()
+      else if (kind === 'knifeSelected') startKnife(true)
       else if (kind === 'inset') startInset()
       else if (kind === 'bevel') startBevel()
       else if (kind === 'bevel-edges') startBlenderBevel(0)

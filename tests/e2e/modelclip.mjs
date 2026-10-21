@@ -34,7 +34,9 @@ await boot(p)
 await S(() => localStorage.removeItem('polyform.modelclip.v1'))
 // a clean scene with two boxes
 await S(() => { const s = window.__polyform.getState(); const m = structuredClone(s.model); m.faces = []; m.verts = []; m.vbone = []; m.skin = []; m.groups = []; m.wires = []; s.loadModel(m); s.addPrimitive('box'); s.addPrimitive('box') })
-await S(() => { const s = window.__polyform.getState(); s.edit(m => { m.groups[1].xf.pos = [3, 0, 0] }, 'x'); s.commit(); s.setSelectMode('object'); s.selectGroup(1, false) })
+// a per-run marker in the copied object's name: the other tab must paste THIS run's clip, nothing older or foreign
+const RUN = `Clip${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.replace(/[0-9]/g, d => 'abcdefghij'[d])
+await S(run => { const s = window.__polyform.getState(); s.edit(m => { m.groups[1].xf.pos = [3, 0, 0]; m.groups[1].name = run }, 'x'); s.commit(); s.setSelectMode('object'); s.selectGroup(1, false) }, RUN)
 await frame()
 const names0 = await groups()
 check('two boxes', names0.length === 2, JSON.stringify(names0))
@@ -69,22 +71,42 @@ const cc = await centre(2)
 check('Ctrl+Shift+V puts the copy centred on the 3D cursor', near(cc[0], 0) && near(cc[1], 2) && near(cc[2], -4), JSON.stringify(cc))
 await p.keyboard.press('Control+z'); await frame()
 
-// another tab (same browser profile): pastes from localStorage / the system clipboard
+// another tab (same browser profile): pastes from localStorage / the system clipboard.
+// A new tab's start-up is async: tab 1's rolling backup makes it ask "Restore your last session?" (a modal that takes
+// the keyboard, so Ctrl+V would go nowhere), and without a restore it then loads the default box. Under load either
+// can land after a fixed sleep, so wait for start-up to finish: answer Start fresh if asked, then the default scene
+// is in and no dialog is open. Then wait for the actual paste (this run's marker), not a delay.
 const p2 = await ctx.newPage(); p2.on('pageerror', e => errs.push(`tab2: ${e.message}`))
 await boot(p2)
+const settle = async pg => {
+  const t0 = Date.now()
+  while (Date.now() - t0 < 30000) {
+    const st = await pg.evaluate(() => ({ ask: !!document.querySelector('[data-testid="dialog-fresh"]'), modal: !!document.querySelector('.modal, [role="dialog"]'), g: window.__polyform.getState().model.groups.length }))
+    if (st.ask) { await pg.click('[data-testid="dialog-fresh"]'); continue }
+    if (!st.modal && st.g > 0) return true
+    await pg.waitForTimeout(100)
+  }
+  return false
+}
+check('tab 2 start-up settles (restore prompt answered, default scene in, no dialog)', await settle(p2))
 const g2 = await p2.evaluate(() => window.__polyform.getState().model.groups.length)
+const clipT = await S(() => JSON.parse(localStorage.getItem('polyform.modelclip.v1') || '{}').t)
 await p2.evaluate(() => window.__polyform.getState().setSelectMode('object'))
 await overViewport(p2)
+const pastedFrom = (n, run) => p2.waitForFunction(([n, run]) => { const gs = window.__polyform.getState().model.groups; return gs.length > n && gs.at(-1).name.startsWith(run) }, [n, run], { timeout: 20000 }).then(() => true, () => false)
 await p2.keyboard.press('Control+v')
-// the paste is async (clipboard read + textures): wait for it instead of a fixed delay, so it holds under load
-await p2.waitForFunction(n => window.__polyform.getState().model.groups.length > n, g2, { timeout: 5000 }).catch(() => {})
+const ok1 = await pastedFrom(g2, RUN)
 const tab2 = await p2.evaluate(() => window.__polyform.getState().model.groups.map(g => g.name))
-check('pastes in another tab', tab2.length === g2 + 1 && tab2.at(-1).startsWith(names0[1]), JSON.stringify(tab2))
-// foreign text on the system clipboard is ignored (the Polyform clip in localStorage still pastes)
-await p2.evaluate(() => navigator.clipboard.writeText('just some text'))
+check('pastes in another tab (this run\'s clip, one object)', ok1 && tab2.length === g2 + 1 && tab2.at(-1).startsWith(names0[1]), JSON.stringify({ tab2, RUN, clipT, toast: await p2.evaluate(() => window.__polyform.getState().toast) }))
+// foreign text on the system clipboard is ignored (the Polyform clip in localStorage still pastes). Write it, and
+// read it back first, so the paste really meets foreign text on the system clipboard.
+const back = await p2.evaluate(async () => { await navigator.clipboard.writeText('just some text'); return navigator.clipboard.readText() })
+check('foreign text is on the system clipboard before the paste', back === 'just some text', JSON.stringify(back))
+await overViewport(p2)
 await p2.keyboard.press('Control+v')
-await p2.waitForFunction(n => window.__polyform.getState().model.groups.length > n, g2 + 1, { timeout: 5000 }).catch(() => {})
-check('foreign clipboard text is ignored gracefully', (await p2.evaluate(() => window.__polyform.getState().model.groups.length)) === g2 + 2)
+const ok2 = await pastedFrom(g2 + 1, RUN)
+const tab2b = await p2.evaluate(() => ({ names: window.__polyform.getState().model.groups.map(g => g.name), toast: window.__polyform.getState().toast }))
+check('foreign clipboard text is ignored gracefully (the Polyform clip still pastes)', ok2 && tab2b.names.length === g2 + 2 && /^Pasted 1 object/.test(tab2b.toast ?? ''), JSON.stringify(tab2b))
 await p2.close()
 
 // ---------------------------------------------------------------- copy / paste faces (Edit mode)

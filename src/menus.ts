@@ -118,6 +118,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
     ] },
     { id: 'edit.meshTools', label: 'Mesh Tools', sub: [
       cmd('mesh.knife', 'Knife', { enabled: !animate && s.selectMode !== 'joint' }),
+      cmd('mesh.knifeSelected', 'Knife (selected only)', { enabled: !animate && s.selectMode !== 'joint' && s.activeFaces().length > 0 }),
       cmd('mesh.loopcut', 'Loop Cut and Slide', { enabled: !animate && s.selectMode !== 'joint' }),
     ] },
     'sep',

@@ -261,6 +261,8 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 .vp-btn:disabled { opacity: .3; cursor: not-allowed; }
 .vp-corner { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 3px; z-index: 2; opacity: .55; transition: opacity .12s; }
 .vp-corner:hover { opacity: 1; }
+/* MOD-6: knife measurement label on the segment being cut (Measurement on); placed by Viewport's knife modal */
+.knife-measure { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; white-space: nowrap; padding: 1px 5px; font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; color: var(--tool-preview); background: color-mix(in srgb, var(--bg) 88%, transparent); border: 1px solid var(--line); border-radius: 2px; }
 .vp-corner button { font-size: 10.5px; padding: 1px 6px; background: rgba(14,16,21,.75); }
 
 /* numeric panel */

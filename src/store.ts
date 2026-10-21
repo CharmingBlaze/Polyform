@@ -249,7 +249,8 @@ export interface State {
   extrude: (kind?: X.ExtrudeKind) => boolean
   /** Joint tool E: add a child of the selected joint and let it follow the mouse */
   growJoint: () => void
-  knife: () => void
+  /** K (Shift+K: `onlySelected`, the MOD-6 Only Selected run) */
+  knife: (onlySelected?: boolean) => void
   loopCut: () => void
   cancelExtrude: () => void
   finishExtrude: () => void
@@ -932,10 +933,11 @@ export const useStore = create<State>((set, get) => ({
     window.dispatchEvent(new CustomEvent('modal-transform', { detail: 'joint' }))
     if (!isModalActive()) s.commit()
   },
-  knife: () => {
+  knife: (onlySelected = false) => {
     const s = get()
     if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to use the knife' : 'Switch to Object, Point, Edge or Face mode to use the knife')
-    window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'knife' }))
+    if (onlySelected && !s.activeFaces().length) return s.notify('Knife (only selected): select faces first')
+    window.dispatchEvent(new CustomEvent('modal-tool', { detail: onlySelected ? 'knifeSelected' : 'knife' }))
   },
   loopCut: () => {
     const s = get()

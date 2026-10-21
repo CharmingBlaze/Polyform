@@ -33,6 +33,8 @@ export interface KnifeOpts {
   edgeOk?: (a: number, b: number) => boolean
   /** reject crossings / chords that are hidden from view (cut only visible faces) */
   visible?: (X: THREE.Vector3) => boolean
+  /** MOD-6 Only Selected (Shift+K): faces the cut may split; chords and face-in-face holes elsewhere are dropped */
+  faceOk?: (f: number) => boolean
   topo?: Topology
 }
 
@@ -394,10 +396,11 @@ export function knifeCutChains(m: Model, P: Vec3[], chains: KnifeChain[], opts: 
     const path = knifePath(m, P, clicks, { ...opts, topo })
     const f0 = ch.clicks[0].k.kind === 'face' ? ch.clicks[0].k.f : -1
     if (ch.closed && ch.clicks.length >= 3 && f0 >= 0 && path.length === clicks.length && ch.clicks.every(c => c.k.kind === 'face' && c.k.f === f0)) {
-      if (!opts.visible || opts.visible(kpos(m, P, ch.clicks[0].k))) holes.push({ f: f0, inner: ch.clicks.map(c => c.k) })
+      if ((!opts.visible || opts.visible(kpos(m, P, ch.clicks[0].k))) && (!opts.faceOk || opts.faceOk(f0))) holes.push({ f: f0, inner: ch.clicks.map(c => c.k) })
       continue
     }
-    chords.push(...chordsOf(m, P, path, clicks, opts.visible ? (_f, mid) => opts.visible!(mid) : undefined, topo))
+    const cs = chordsOf(m, P, path, clicks, opts.visible ? (_f, mid) => opts.visible!(mid) : undefined, topo)
+    chords.push(...(opts.faceOk ? cs.filter(c => opts.faceOk!(c.f)) : cs))
   }
   const res: KnifeResult = { verts: [], edges: [] }
   applyKnife(m, chords, holes, res)

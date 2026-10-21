@@ -160,6 +160,8 @@ export const commands: Command[] = [
   } },
   // MOD-5: Blender's id; was `edit.knife` (saved rebinds are carried over by keymap.ts)
   { id: 'mesh.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
+  // MOD-6: Blender's Shift+K, the knife on the selected faces only (Tool Options › Only Selected does it for every K)
+  { id: 'mesh.knifeSelected', label: 'Knife (only selected faces)', group: 'Multiply', keys: 'Shift+K', canRun: meshTool(R.faces('Knife (only selected)')), run: () => S().knife(true) },
   { id: 'mesh.loopcut', label: 'Loop Cut and Slide', group: 'Multiply', keys: 'Ctrl+R', canRun: meshTool(), run: () => S().loopCut() },
   { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', canRun: meshTool(R.points('Merge', 2)), run: () => {
     const s = S()

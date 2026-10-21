@@ -24,6 +24,8 @@ export interface KnifeOverlay {
   points: number[]
   /** where the cut crosses edges */
   cross: number[]
+  /** MOD-6 X-ray (V): crossings on hidden geometry, drawn dim (shown, not cut unless Cut Through) */
+  crossHidden?: number[]
   hover: { p: [number, number, number]; kind: HoverKind } | null
 }
 
@@ -71,8 +73,8 @@ function dot() {
 }
 
 let objs: null | {
-  line: LineSegments2; halo: LineSegments2; dim: THREE.LineSegments; pts: THREE.Points; hov: THREE.Points; cross: THREE.Points
-  lineM: LineMaterial; haloM: LineMaterial; dimM: THREE.LineBasicMaterial; ptsM: THREE.PointsMaterial; hovM: THREE.PointsMaterial; crossM: THREE.PointsMaterial
+  line: LineSegments2; halo: LineSegments2; dim: THREE.LineSegments; pts: THREE.Points; hov: THREE.Points; cross: THREE.Points; crossHid: THREE.Points
+  lineM: LineMaterial; haloM: LineMaterial; dimM: THREE.LineBasicMaterial; ptsM: THREE.PointsMaterial; hovM: THREE.PointsMaterial; crossM: THREE.PointsMaterial; crossHidM: THREE.PointsMaterial
   marks: Record<MarkerShape, THREE.Texture>; shape: MarkerShape | null; nLines: number
 } = null
 
@@ -87,15 +89,17 @@ function ensure() {
   const marks = shapes()
   const hovM = new THREE.PointsMaterial({ size: 13, sizeAttenuation: false, depthTest: false, transparent: true, map: marks.dot, alphaTest: 0.05 })
   const crossM = new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, depthTest: false, transparent: true, map: dot(), alphaTest: 0.3 })
+  const crossHidM = new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, depthTest: false, transparent: true, map: crossM.map, alphaTest: 0.05 })
   const mk = <T extends THREE.Object3D>(o: T, order: number) => { o.layers.enableAll(); o.renderOrder = order; o.frustumCulled = false; o.name = 'knife-overlay'; sceneManager.scene.add(o); return o }
   objs = {
     dim: mk(new THREE.LineSegments(new THREE.BufferGeometry(), dimM), 9),
     halo: mk(new LineSegments2(new LineSegmentsGeometry(), haloM), 9),
     line: mk(new LineSegments2(new LineSegmentsGeometry(), lineM), 9),
     cross: mk(new THREE.Points(new THREE.BufferGeometry(), crossM), 10),
+    crossHid: mk(new THREE.Points(new THREE.BufferGeometry(), crossHidM), 9),
     pts: mk(new THREE.Points(new THREE.BufferGeometry(), ptsM), 10),
     hov: mk(new THREE.Points(new THREE.BufferGeometry(), hovM), 10),
-    lineM, haloM, dimM, ptsM, hovM, crossM, marks, shape: null, nLines: 0,
+    lineM, haloM, dimM, ptsM, hovM, crossM, crossHidM, marks, shape: null, nLines: 0,
   }
   objs.line.renderOrder = 9.5
   // MOD-1 refreshPreviewTheme() fires 'polyform-theme'
@@ -107,7 +111,7 @@ function ensure() {
 export function refreshKnifeTheme() {
   const o = ensure()
   const set = (m: THREE.LineBasicMaterial | THREE.PointsMaterial | LineMaterial, name: string) => { const t = token(name); m.color.copy(t.c); m.opacity = t.a }
-  set(o.lineM, '--tool-preview'); set(o.dimM, '--tool-preview-dim'); set(o.ptsM, '--knife-point'); set(o.crossM, '--knife-cross')
+  set(o.lineM, '--tool-preview'); set(o.dimM, '--tool-preview-dim'); set(o.ptsM, '--knife-point'); set(o.crossM, '--knife-cross'); set(o.crossHidM, '--tool-preview-dim')
 }
 
 const geo = (o: THREE.Object3D & { geometry: THREE.BufferGeometry }, data: number[]) => o.geometry.setAttribute('position', new THREE.Float32BufferAttribute(data, 3))
@@ -125,7 +129,7 @@ export function setKnifeOverlay(v: KnifeOverlay | null) {
   const o = ensure()
   const lines = v?.lines ?? []
   wide(o.line, lines); wide(o.halo, lines); o.nLines = lines.length / 6
-  geo(o.dim, v?.dim ?? []); geo(o.pts, v?.points ?? []); geo(o.cross, v?.cross ?? [])
+  geo(o.dim, v?.dim ?? []); geo(o.pts, v?.points ?? []); geo(o.cross, v?.cross ?? []); geo(o.crossHid, v?.crossHidden ?? [])
   geo(o.hov, v?.hover ? v.hover.p : [])
   o.shape = v?.hover ? markerShape(v.hover.kind) : null
   if (v?.hover) {
@@ -141,6 +145,6 @@ export function setKnifeOverlay(v: KnifeOverlay | null) {
 export function knifeOverlayState() {
   const o = ensure()
   const n = (x: THREE.Object3D & { geometry: THREE.BufferGeometry }) => (x.geometry.getAttribute('position')?.count ?? 0)
-  return { lines: o.nLines, dim: n(o.dim) / 2, points: n(o.pts), cross: n(o.cross), hover: n(o.hov), hoverColor: `#${o.hovM.color.getHexString()}`, lineColor: `#${o.lineM.color.getHexString()}`, pointColor: `#${o.ptsM.color.getHexString()}`, hoverShape: o.shape, lineWidth: o.lineM.linewidth, haloWidth: o.haloM.linewidth, lineKind: o.line.type }
+  return { lines: o.nLines, dim: n(o.dim) / 2, points: n(o.pts), cross: n(o.cross), crossHidden: n(o.crossHid), hover: n(o.hov), hoverColor: `#${o.hovM.color.getHexString()}`, lineColor: `#${o.lineM.color.getHexString()}`, pointColor: `#${o.ptsM.color.getHexString()}`, hoverShape: o.shape, lineWidth: o.lineM.linewidth, haloWidth: o.haloM.linewidth, lineKind: o.line.type }
 }
 if (typeof window !== 'undefined') (window as unknown as { __polyformKnife?: unknown }).__polyformKnife = { overlay: knifeOverlayState }

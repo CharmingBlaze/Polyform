@@ -43,7 +43,7 @@ await reset(); await frame()
   check('hover point is inside the perspective pane', await inPane(1, at))
   await p.mouse.move(at.x, at.y); await frame()
   await p.keyboard.press('Control+r'); await frame()
-  check('Ctrl+R starts the loop cut (page not reloaded)', (await info()).startsWith('Loop Cut · Cuts 1 · Smoothness 0.000'), await info())
+  check('Ctrl+R starts the loop cut (page not reloaded)', (await info()).startsWith('Loop Cut and Slide · Cuts 1 · Smoothness 0.000'), await info())
   await p.mouse.move(at.x + 2, at.y + 1); await frame()
   check('hover previews one loop around the 4 side quads', (await previewPts()) === 8, String(await previewPts()))
   const col = await S(() => {
