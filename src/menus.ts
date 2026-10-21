@@ -116,6 +116,10 @@ export function buildMenus(openPalette: () => void): Menu[] {
       'sep',
       cmd('mesh.mirrorMenu', 'Mirror Menu…'),
     ] },
+    { id: 'edit.meshTools', label: 'Mesh Tools', sub: [
+      cmd('mesh.knife', 'Knife', { enabled: !animate && s.selectMode !== 'joint' }),
+      cmd('edit.loopcut', 'Loop Cut', { enabled: !animate && s.selectMode !== 'joint' }),
+    ] },
     'sep',
     // Set Origin (Blender: Object → Set Origin); lives in Edit so the header keeps its six menus
     { id: 'edit.setOrigin', label: 'Set Origin', keys: getBindingLabel('object.setOrigin') || undefined, sub: [

@@ -139,8 +139,8 @@ check('counts back after the modal', await S(() => getComputedStyle(document.que
 
 // 6. preview colour token
 const tok = await S(() => getComputedStyle(document.documentElement).getPropertyValue('--tool-preview').trim())
-check('--tool-preview is #ffe04a', tok === '#ffe04a', tok)
-check('tool line uses it', (await S(() => window.__polyformScene.toolLineMat.color.getHexString())) === 'ffe04a')
+check('--tool-preview is #3fd8e0 (cyan)', tok === '#3fd8e0', tok)
+check('tool line uses it', (await S(() => window.__polyformScene.toolLineMat.color.getHexString())) === '3fd8e0')
 await S(() => { document.documentElement.style.setProperty('--tool-preview', '#33ccff'); window.dispatchEvent(new Event('polyform-theme')) })
 check('theme change recolours the tool line', (await S(() => window.__polyformScene.toolLineMat.color.getHexString())) === '33ccff')
 await S(() => { document.documentElement.style.removeProperty('--tool-preview'); window.dispatchEvent(new Event('polyform-theme')) })

@@ -178,7 +178,7 @@ class SceneManager {
     // colour: the --tool-preview theme token (src/modal/modal.css), re-read by applyThemeTokens()
     const toolL = new THREE.LineSegments(this.toolLineGeo, this.toolLineMat)
     toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
-    const toolP = new THREE.Points(this.toolPointGeo, this.toolPointMat = new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
+    const toolP = new THREE.Points(this.toolPointGeo, this.toolPointMat = new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#3fd8e0', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
     toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
     // MOD-2 modal guides: constraint axis lines (every pane) and the dashed pivot→cursor guide (the modal's pane)
     const axL = new THREE.LineSegments(this.axisLineGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.85 }))
@@ -225,14 +225,14 @@ class SceneManager {
   }
   readonly cursorGeo = new THREE.BufferGeometry()
   /** tool overlay materials (loop cut / knife previews), coloured by the --tool-preview token */
-  readonly toolLineMat = new THREE.LineBasicMaterial({ color: '#ffe04a', depthTest: false, transparent: true })
+  readonly toolLineMat = new THREE.LineBasicMaterial({ color: '#3fd8e0', depthTest: false, transparent: true })
   toolPointMat!: THREE.PointsMaterial
   /** Read the preview colour tokens (MOD-1, spec §0.7) from :root; runs on attach and on the 'polyform-theme' event. */
   applyThemeTokens() {
     if (typeof document === 'undefined') return
     const css = getComputedStyle(document.documentElement)
     const tok = (name: string, fb: string) => (css.getPropertyValue(name).trim() || fb)
-    const raw = tok('--tool-preview', '#ffe04a')
+    const raw = tok('--tool-preview', '#3fd8e0')
     const c = /^#[0-9a-f]{8}$/i.test(raw) ? raw.slice(0, 7) : raw // THREE.Color takes no alpha
     this.toolLineMat.color.set(c)
     this.toolPointMat?.color.set(c)

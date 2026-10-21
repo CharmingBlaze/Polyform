@@ -1,12 +1,12 @@
 /* MOD-1: modal tool status line (spec §0.2) and preview colour tokens (§0.7). Owned by src/modal (Frontend). */
 :root {
-  --tool-preview: #ffe04a;       /* loop-cut ring preview, knife cut line (scene.ts reads it) */
-  --tool-preview-dim: #ffe04a66; /* preview segments behind geometry (cut-through / X-ray) */
+  --tool-preview: #3fd8e0;       /* loop-cut ring preview, knife cut line (scene.ts reads it) */
+  --tool-preview-dim: #3fd8e066; /* preview segments behind geometry (cut-through / X-ray) */
   --knife-point: #5fd38d;        /* placed knife points */
   --knife-snap: #ff6b6b;         /* hover point snapped to a vertex / existing cut */
-  --knife-mid: #ffa04a;          /* hover point snapped to an edge midpoint */
-  --knife-cross: #ffe04a;        /* where the cut will cross edges */
-  --slide-guide: #ffe04a;        /* Edge Slide (Even): the edge being measured */
+  --knife-mid: #3fd8e0;          /* hover point snapped to an edge midpoint */
+  --knife-cross: #3fd8e0;        /* where the cut will cross edges */
+  --slide-guide: #3fd8e0;        /* Edge Slide (Even): the edge being measured */
   --slide-anchor: #ff6b6b;       /* Edge Slide (Even): the start vertex */
   --modal-guide: #ffffffb3;      /* dashed pivot→cursor guide */
   --modal-readout: var(--gold);  /* status-line op name and values */

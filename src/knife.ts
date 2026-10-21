@@ -6,9 +6,13 @@
  *
  * Geometry is computed on world-space points P (posed); new points are placed in object space by interpolating the
  * stored points with the same weights (object transforms are affine, so the weights carry over).
+ *
+ * MOD-5 (Blender 4.2 parity): several polylines per session (`knifeCutChains`, RMB starts a new one), closed loops
+ * (double-click), points off the mesh (`free`), face-in-face cuts, and every per-corner attribute carried over
+ * (UVs and vertex colours interpolate; seams / sharp edges / pins stay put; object and material kept).
  */
 import * as THREE from 'three'
-import { edgeKey, edgeEnds, triangulate, type Face, type Model, type Vec2, type Vec3 } from './model'
+import { cornerColor, edgeKey, edgeEnds, triangulate, type Face, type Model, type Vec2, type Vec3 } from './model'
 import { appendVertCopy, appendVertLerp } from './skin'
 import { topology, type Topology } from './topology'
 
@@ -18,6 +22,8 @@ export type KPoint =
   | { kind: 'edge'; a: number; b: number; t: number }
   /** inside face f: barycentric weights over three of its corners (corner indices) */
   | { kind: 'face'; f: number; c: [number, number, number]; w: [number, number, number] }
+  /** off the mesh (empty space): a world point; it never becomes a vertex, but the line from / to it still cuts */
+  | { kind: 'free'; p: Vec3 }
 
 /** How the view looks at the scene when a segment was drawn: a perspective eye point or an orthographic direction. */
 export type Eye = { pos: THREE.Vector3 } | { dir: THREE.Vector3 }
@@ -36,6 +42,7 @@ const V = (p: ArrayLike<number>) => new THREE.Vector3(p[0], p[1], p[2])
 export function kpos(m: Model, P: Vec3[], k: KPoint): THREE.Vector3 {
   if (k.kind === 'vert') return V(P[k.v])
   if (k.kind === 'edge') return V(P[k.a]).lerp(V(P[k.b]), k.t)
+  if (k.kind === 'free') return V(k.p)
   const f = m.faces[k.f]
   return V(P[f.v[k.c[0]]]).multiplyScalar(k.w[0]).addScaledVector(V(P[f.v[k.c[1]]]), k.w[1]).addScaledVector(V(P[f.v[k.c[2]]]), k.w[2])
 }
@@ -44,6 +51,7 @@ export function kpos(m: Model, P: Vec3[], k: KPoint): THREE.Vector3 {
 export function kfaces(m: Model, k: KPoint, t: Topology = topology(m)): number[] {
   if (k.kind === 'vert') return t.vertFaces(k.v)
   if (k.kind === 'edge') return t.edgeFaces(edgeKey(k.a, k.b))
+  if (k.kind === 'free') return []
   return [k.f]
 }
 
@@ -114,10 +122,15 @@ export function segmentCrossings(m: Model, P: Vec3[], ka: KPoint, kb: KPoint, ey
   return out.sort((p, q) => p.s - q.s)
 }
 
-interface Chord { f: number; u: KPoint; w: KPoint; inner: KPoint[] }
+export interface Chord { f: number; u: KPoint; w: KPoint; inner: KPoint[] }
 /** A point of the cut path: tau = segment index + parameter along it (clicks sit at integers). */
 export interface PathPoint { k: KPoint; tau: number }
 
+/** an end vertex of an edge and a point on that same edge: the cut runs along the edge (it only gains the point) */
+const alongEdge = (p: KPoint, q: KPoint) => {
+  const ve = (v: KPoint, e: KPoint) => v.kind === 'vert' && e.kind === 'edge' && (e.a === v.v || e.b === v.v)
+  return ve(p, q) || ve(q, p)
+}
 const sameEdge = (p: KPoint, q: KPoint) => p.kind === 'edge' && q.kind === 'edge' && p.a === q.a && p.b === q.b
 
 /** Is world point X inside polygon f (in f's plane)? */
@@ -176,6 +189,7 @@ export function chordsOf(m: Model, P: Vec3[], path: PathPoint[], clicks: { k: KP
       if (j >= L.length) break
       const q = L[j]
       if (inner.length) out.push({ f, u: p.k, w: q.k, inner })
+      else if (alongEdge(p.k, q.k) && q.tau > p.tau) out.push({ f, u: p.k, w: q.k, inner }) // splits that edge only
       else if (!sameEdge(p.k, q.k) && q.tau > p.tau) {
         const X = pathOnFace(m, P, clicks, f, (p.tau + q.tau) / 2)
         if (X && insidePolygon(m, P, f, X) && (!chordOk || chordOk(f, X))) out.push({ f, u: p.k, w: q.k, inner })
@@ -187,14 +201,52 @@ export function chordsOf(m: Model, P: Vec3[], path: PathPoint[], clicks: { k: KP
 }
 
 const lerp2 = (p: Vec2, q: Vec2, t: number): Vec2 => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]
+const hexRgb = (h: string): [number, number, number] => { const n = parseInt(h.slice(1, 7), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255] }
+const rgbHex = (c: number[]) => '#' + c.map(x => Math.round(Math.min(255, Math.max(0, x))).toString(16).padStart(2, '0')).join('')
+/** Weighted mix of '#rrggbb' colours. */
+export function mixHex(cols: string[], w: number[]): string {
+  const out = [0, 0, 0]
+  cols.forEach((c, i) => { const r = hexRgb(c); for (let k = 0; k < 3; k++) out[k] += r[k] * w[i] })
+  return rgbHex(out)
+}
+
+/** One face corner with everything stored per corner (the edge flags are for the edge from this corner to the next). */
+interface Corner { v: number; uv: Vec2; vc?: string; seam: boolean; sharp: boolean; pin: boolean }
+const cornersOf = (m: Model, f: Face): Corner[] => {
+  const seam = new Set(f.seam ?? []), sharp = new Set(f.sharp ?? []), pin = new Set(f.pin ?? [])
+  return f.v.map((v, i) => ({ v, uv: [f.uv[i][0], f.uv[i][1]] as Vec2, vc: f.vc ? cornerColor(m, f, i) : undefined, seam: seam.has(i), sharp: sharp.has(i), pin: pin.has(i) }))
+}
+/** A face with `cs` as its corners; keeps g / mat / hidden / uvShare, rebuilds the per-corner arrays. */
+const faceFrom = (f: Face, cs: Corner[]): Face => {
+  const o: Face = { ...f, v: cs.map(c => c.v), uv: cs.map(c => [c.uv[0], c.uv[1]] as Vec2) }
+  delete o.seam; delete o.sharp; delete o.pin; delete o.vc
+  const idx = (k: 'seam' | 'sharp' | 'pin') => cs.map((c, i) => (c[k] ? i : -1)).filter(i => i >= 0)
+  if (f.seam) o.seam = idx('seam')
+  if (f.sharp) o.sharp = idx('sharp')
+  if (f.pin) o.pin = idx('pin')
+  if (f.vc) o.vc = cs.map(c => c.vc ?? '#ffffff')
+  return o
+}
+
+/** A closed loop of interior points of one face (double-click closed, never touching an edge): a face-in-face cut. */
+export interface Hole { f: number; inner: KPoint[] }
+export interface KnifeResult {
+  /** new points plus the existing points the cut runs through */
+  verts: number[]
+  /** the cut edges (edge keys), for selecting them after the cut */
+  edges: number[]
+}
 
 /**
- * Apply chords to the model: new points on cut edges (inserted into every face using the edge), interior points,
- * and face splits. Returns the indices of all new points (and the existing points the cut passes through).
+ * Apply chords (and face-in-face holes) to the model: new points on cut edges (inserted into every face using the
+ * edge: no T-junctions), interior points, and face splits. UVs and vertex colours interpolate; seams, sharp edges and
+ * pins stay on the edges / corners they were on (the new chord edges get none); every piece keeps its object and
+ * material. Returns the indices of all new points (and the existing points the cut passes through).
  */
-export function applyKnife(m: Model, chords: Chord[]): number[] {
-  if (!chords.length) return []
+export function applyKnife(m: Model, chords: Chord[], holes: Hole[] = [], out?: KnifeResult): number[] {
+  if (!chords.length && !holes.length) return []
   const touched = new Set<number>()
+  const cutEdges = new Set<number>()
   // 1. points on edges: one new point per (edge, t)
   const edgeNew = new Map<number, { t: number; v: number }[]>()
   const edgeVert = (k: Extract<KPoint, { kind: 'edge' }>) => {
@@ -207,8 +259,8 @@ export function applyKnife(m: Model, chords: Chord[]): number[] {
     }
     return hit.v
   }
-  // 2. interior points (with UVs taken from the original face before anything changes)
-  const innerV = new Map<KPoint, { v: number; uv: Vec2 }>()
+  // 2. interior points: position, UV and colour from the original face before anything changes
+  const innerV = new Map<KPoint, { v: number; uv: Vec2; vc?: string }>()
   const innerVert = (k: Extract<KPoint, { kind: 'face' }>) => {
     let r = innerV.get(k)
     if (!r) {
@@ -219,61 +271,137 @@ export function applyKnife(m: Model, chords: Chord[]): number[] {
         p[0] += q[0] * k.w[i]; p[1] += q[1] * k.w[i]; p[2] += q[2] * k.w[i]
         uv[0] += u[0] * k.w[i]; uv[1] += u[1] * k.w[i]
       }
-      r = { v: appendVertCopy(m, f.v[k.c[0]]), uv }
+      const vc = f.vc ? mixHex(k.c.map(c => cornerColor(m, f, c)), k.w) : undefined
+      // skin: the heaviest corner's (an interior point follows the joint that owns most of the face there)
+      const heavy = k.c[k.w.indexOf(Math.max(...k.w))]
+      r = { v: appendVertCopy(m, f.v[heavy]), uv, vc }
       m.verts[r.v] = p
       innerV.set(k, r)
     }
     return r
   }
-  const idOf = (k: KPoint): number => (k.kind === 'vert' ? k.v : k.kind === 'edge' ? edgeVert(k) : innerVert(k).v)
+  const idOf = (k: KPoint): number => (k.kind === 'vert' ? k.v : k.kind === 'edge' ? edgeVert(k) : k.kind === 'face' ? innerVert(k).v : -1)
   const plan = chords.map(c => ({ f: c.f, u: idOf(c.u), w: idOf(c.w), inner: c.inner.map(k => innerVert(k as Extract<KPoint, { kind: 'face' }>)) }))
-  plan.forEach(p => { touched.add(p.u); touched.add(p.w); p.inner.forEach(i => touched.add(i.v)) })
-  // 3. insert edge points into every face using a cut edge
-  for (const f of m.faces) {
+  const holePlan = holes.map(h => ({ f: h.f, inner: h.inner.map(k => innerVert(k as Extract<KPoint, { kind: 'face' }>)) }))
+  plan.forEach(p => { if (p.u >= 0) touched.add(p.u); if (p.w >= 0) touched.add(p.w); p.inner.forEach(i => touched.add(i.v)) })
+  holePlan.forEach(h => h.inner.forEach(i => touched.add(i.v)))
+  // 3. insert edge points into every face using a cut edge (the halves keep the edge's seam / sharp flag)
+  m.faces.forEach((f, fi) => {
     const n = f.v.length
     let changed = false
-    const v2: number[] = [], uv2: Vec2[] = []
+    const src = cornersOf(m, f), cs: Corner[] = []
     for (let c = 0; c < n; c++) {
       const p = f.v[c], q = f.v[(c + 1) % n]
-      v2.push(p); uv2.push(f.uv[c])
+      cs.push(src[c])
       const list = edgeNew.get(edgeKey(p, q))
       if (!list) continue
       changed = true
       const fromLow = p < q
+      const a = src[c], b = src[(c + 1) % n]
       const items = list.map(x => ({ v: x.v, t: fromLow ? x.t : 1 - x.t })).sort((x, y) => x.t - y.t)
-      for (const it of items) { v2.push(it.v); uv2.push(lerp2(f.uv[c], f.uv[(c + 1) % n], it.t)) }
+      for (const it of items) cs.push({ v: it.v, uv: lerp2(a.uv, b.uv, it.t), vc: a.vc && b.vc ? mixHex([a.vc, b.vc], [1 - it.t, it.t]) : undefined, seam: a.seam, sharp: a.sharp, pin: false })
     }
-    if (changed) { f.v = v2; f.uv = uv2 }
-  }
+    if (changed) m.faces[fi] = faceFrom(f, cs)
+  })
+  const inCorner = (x: { v: number; uv: Vec2; vc?: string }): Corner => ({ v: x.v, uv: [x.uv[0], x.uv[1]], vc: x.vc, seam: false, sharp: false, pin: false })
+  const addPath = (ids: number[]) => { for (let i = 0; i + 1 < ids.length; i++) if (ids[i] !== ids[i + 1]) cutEdges.add(edgeKey(ids[i], ids[i + 1])) }
   // 4. split faces along chords; a face split earlier is searched among its pieces
   const pieces = new Map<number, number[]>()
   for (const c of plan) {
+    if (c.u < 0 || c.w < 0 || c.u === c.w) continue
     const cand = pieces.get(c.f) ?? [c.f]
     const fi = cand.find(i => m.faces[i].v.includes(c.u) && m.faces[i].v.includes(c.w))
-    if (fi === undefined || c.u === c.w) continue
+    if (fi === undefined) continue
     const f = m.faces[fi], v = f.v, n = v.length
     const iu = v.indexOf(c.u), iw = v.indexOf(c.w)
-    if (!c.inner.length && ((iu + 1) % n === iw || (iw + 1) % n === iu)) continue // already an edge
+    if (!c.inner.length && ((iu + 1) % n === iw || (iw + 1) % n === iu)) { addPath([c.u, c.w]); continue } // along an existing edge
     const walk = (from: number, to: number) => { const idx: number[] = []; for (let i = from; ; i = (i + 1) % n) { idx.push(i); if (i === to) break } return idx }
     const a = walk(iu, iw), b = walk(iw, iu)
-    const innerRev = [...c.inner].reverse()
-    const fa: Face = { ...f, v: [...a.map(i => v[i]), ...innerRev.map(x => x.v)], uv: [...a.map(i => [...f.uv[i]] as Vec2), ...innerRev.map(x => [...x.uv] as Vec2)] }
-    const fb: Face = { ...f, v: [...b.map(i => v[i]), ...c.inner.map(x => x.v)], uv: [...b.map(i => [...f.uv[i]] as Vec2), ...c.inner.map(x => [...x.uv] as Vec2)] }
-    if (fa.v.length < 3 || fb.v.length < 3) continue
-    m.faces[fi] = fa
+    const cs = cornersOf(m, f)
+    // the last outer corner of each piece starts a chord edge: no seam / sharp there
+    const piece = (idx: number[], inner: typeof c.inner) => {
+      const out = idx.map(i => ({ ...cs[i] }))
+      out[out.length - 1].seam = false; out[out.length - 1].sharp = false
+      return [...out, ...inner.map(inCorner)]
+    }
+    const fa = piece(a, [...c.inner].reverse()), fb = piece(b, c.inner)
+    if (fa.length < 3 || fb.length < 3) continue
+    m.faces[fi] = faceFrom(f, fa)
     pieces.set(c.f, [...cand, m.faces.length])
-    m.faces.push(fb)
+    m.faces.push(faceFrom(f, fb))
+    addPath([c.u, ...c.inner.map(x => x.v), c.w])
+  }
+  // 5. face-in-face: the loop becomes its own face; the ring around it is split in two by two bridge edges
+  for (const h of holePlan) {
+    const cand = pieces.get(h.f) ?? [h.f]
+    if (h.inner.length < 3 || cand.length !== 1) continue // the face was also split by a chord: not supported
+    const fi = h.f, f = m.faces[fi], outer = cornersOf(m, f)
+    const nrm = (ids: number[]) => {
+      const n = new THREE.Vector3()
+      for (let i = 0; i < ids.length; i++) { const a = m.verts[ids[i]], b = m.verts[ids[(i + 1) % ids.length]]; n.x += (a[1] - b[1]) * (a[2] + b[2]); n.y += (a[2] - b[2]) * (a[0] + b[0]); n.z += (a[0] - b[0]) * (a[1] + b[1]) }
+      return n
+    }
+    let ring = h.inner.map(inCorner)
+    if (nrm(ring.map(c => c.v)).dot(nrm(outer.map(c => c.v))) < 0) ring = ring.reverse()
+    const P = (v: number) => V(m.verts[v])
+    // bridge 1: the closest outer / inner pair; bridge 2: the outer corner half way round, to its closest other inner point
+    let o0 = 0, i0 = 0, bd = Infinity
+    outer.forEach((oc, oi) => ring.forEach((rc, ri) => { const d = P(oc.v).distanceToSquared(P(rc.v)); if (d < bd) { bd = d; o0 = oi; i0 = ri } }))
+    const o1 = (o0 + Math.floor(outer.length / 2)) % outer.length
+    let i1 = -1; bd = Infinity
+    ring.forEach((rc, ri) => { if (ri === i0) return; const d = P(outer[o1].v).distanceToSquared(P(rc.v)); if (d < bd) { bd = d; i1 = ri } })
+    if (o1 === o0 || i1 < 0) continue
+    const walkF = <T,>(L: T[], from: number, to: number) => { const r: T[] = []; for (let i = from; ; i = (i + 1) % L.length) { r.push(L[i]); if (i === to) break } return r }
+    const walkB = <T,>(L: T[], from: number, to: number) => { const r: T[] = []; for (let i = from; ; i = (i - 1 + L.length) % L.length) { r.push(L[i]); if (i === to) break } return r }
+    const cut = (c: Corner): Corner => ({ ...c, seam: false, sharp: false })
+    // piece A: outer o0 → o1, bridge to i1, inner backwards i1 → i0, bridge back to o0
+    const outA = walkF(outer, o0, o1).map(c => ({ ...c })); outA[outA.length - 1] = cut(outA[outA.length - 1])
+    const inA = walkB(ring, i1, i0).map(cut)
+    const outB = walkF(outer, o1, o0).map(c => ({ ...c })); outB[outB.length - 1] = cut(outB[outB.length - 1])
+    const inB = walkB(ring, i0, i1).map(cut)
+    m.faces[fi] = faceFrom(f, [...outA, ...inA])
+    m.faces.push(faceFrom(f, [...outB, ...inB]))
+    m.faces.push(faceFrom(f, ring.map(cut)))
+    const ids = ring.map(c => c.v)
+    addPath([...ids, ids[0]])
   }
   edgeNew.forEach(l => l.forEach(x => touched.add(x.v)))
+  if (out) { out.verts = [...touched]; out.edges = [...cutEdges] }
   return [...touched]
 }
 
+/** One knife polyline: its clicked points (each with the eye it was drawn from), optionally closed back to the first. */
+export interface KnifeChain { clicks: { k: KPoint; eye: Eye }[]; closed?: boolean }
+
 /** The whole knife from clicked points: crossings per segment (each with the eye it was drawn with), chords, apply. */
 export function knifeCut(m: Model, P: Vec3[], clicks: { k: KPoint; eye: Eye }[], opts: KnifeOpts = {}): number[] {
+  return knifeCutChains(m, P, [{ clicks }], opts).verts
+}
+
+/** A chain's clicks as cut: closed chains repeat the first point at the end (seen with the last segment's eye). */
+export const chainClicks = (c: KnifeChain) => (c.closed && c.clicks.length > 2 ? [...c.clicks, { k: c.clicks[0].k, eye: c.clicks[c.clicks.length - 1].eye }] : c.clicks)
+
+/**
+ * Several separate cuts at once (RMB starts a new polyline), computed on the unchanged mesh and applied as one edit.
+ * A closed chain lying inside one face (no edge crossed, no point on an edge) cuts a face in that face.
+ */
+export function knifeCutChains(m: Model, P: Vec3[], chains: KnifeChain[], opts: KnifeOpts = {}): KnifeResult {
   const topo = opts.topo ?? topology(m)
-  const path = knifePath(m, P, clicks, { ...opts, topo })
-  const chords = chordsOf(m, P, path, clicks, opts.visible ? (_f, mid) => opts.visible!(mid) : undefined, topo)
-  return applyKnife(m, chords)
+  const chords: Chord[] = [], holes: Hole[] = []
+  for (const ch of chains) {
+    const clicks = chainClicks(ch)
+    if (clicks.length < 2) continue
+    const path = knifePath(m, P, clicks, { ...opts, topo })
+    const f0 = ch.clicks[0].k.kind === 'face' ? ch.clicks[0].k.f : -1
+    if (ch.closed && ch.clicks.length >= 3 && f0 >= 0 && path.length === clicks.length && ch.clicks.every(c => c.k.kind === 'face' && c.k.f === f0)) {
+      if (!opts.visible || opts.visible(kpos(m, P, ch.clicks[0].k))) holes.push({ f: f0, inner: ch.clicks.map(c => c.k) })
+      continue
+    }
+    chords.push(...chordsOf(m, P, path, clicks, opts.visible ? (_f, mid) => opts.visible!(mid) : undefined, topo))
+  }
+  const res: KnifeResult = { verts: [], edges: [] }
+  applyKnife(m, chords, holes, res)
+  return res
 }
 
 /** Clicked points with the crossings between them, in cut order. */
@@ -286,3 +414,10 @@ export function knifePath(m: Model, P: Vec3[], clicks: { k: KPoint; eye: Eye }[]
   })
   return pts
 }
+
+/** What the knife / tool hover point snapped to. */
+export type HoverKind = 'snap' | 'mid' | 'edge' | 'face' | 'grid' | 'free'
+/** Snap marker shapes (UX: by shape, not just colour): hollow square = vertex, diamond = edge, small triangle = edge
+ *  midpoint, cross = grid, dot = face / free. */
+export type MarkerShape = 'square' | 'diamond' | 'triangle' | 'cross' | 'dot'
+export const markerShape = (k: HoverKind): MarkerShape => (k === 'snap' ? 'square' : k === 'edge' ? 'diamond' : k === 'mid' ? 'triangle' : k === 'grid' ? 'cross' : 'dot')

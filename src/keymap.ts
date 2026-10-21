@@ -189,10 +189,14 @@ export const PRESETS: Preset[] = [
 
 const KEY = 'polyform.keymap.v1'
 
+/** command ids that were renamed: saved overrides under the old id apply to the new one */
+const RENAMED: Record<string, string> = { 'edit.knife': 'mesh.knife' }
+
 function cleanKeyMap(raw: unknown): KeyMap {
   const out: KeyMap = {}
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
-  for (const [id, row] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [id0, row] of Object.entries(raw as Record<string, unknown>)) {
+    const id = RENAMED[id0] ?? id0
     if (!row || typeof row !== 'object' || Array.isArray(row)) continue
     for (const [s, keys] of Object.entries(row as Record<string, unknown>)) {
       if (!SCOPES.includes(s as Scope) || !Array.isArray(keys)) continue

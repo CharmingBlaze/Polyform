@@ -135,7 +135,8 @@ export const commands: Command[] = [
       { id: 'verts', label: 'Extrude Vertices Only', run: go('verts') },
     ] } })
   } },
-  { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
+  // MOD-5: Blender's id; was `edit.knife` (saved rebinds are carried over by keymap.ts)
+  { id: 'mesh.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
   { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', canRun: meshTool(), run: () => S().loopCut() },
   { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', canRun: meshTool(R.points('Merge', 2)), run: () => {
     const s = S()
