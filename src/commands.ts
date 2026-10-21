@@ -41,6 +41,13 @@ const edit = (m: EditMode, n: number): Command[] => [
 // Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
 // Ctrl+B / Ctrl+Shift+B: Blender's edge / vertex bevel (bevel.ts); plain B stays the classic face bevel.
 const OP_KEYS: Record<string, string> = { 'mul.bevel': 'Ctrl+B', 'mul.bevelVerts': 'Ctrl+Shift+B', 'mul.bevelFaces': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+/** Ctrl+B / Ctrl+Shift+B (and the context menus' Bevel rows): Blender's interactive bevel in the hovered viewport (MOD-2) */
+const BEVEL_MODAL: Record<string, string> = { 'mul.bevel': 'bevel-edges', 'mul.bevelVerts': 'bevel-verts' }
+const bevelModal = (opId: string) => () => {
+  const s = S()
+  if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('modal-tool', { detail: BEVEL_MODAL[opId] }))
+}
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
@@ -220,7 +227,7 @@ export const commands: Command[] = [
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', canRun: R.hasMesh, run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => !HIDDEN_KINDS.has(k)).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
-  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : () => S().runOp(o.id) ,
+  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : BEVEL_MODAL[o.id] ? bevelModal(o.id) : () => S().runOp(o.id) ,
     canRun: o.id === 'mul.duplicate' ? canDuplicateMove : opCanRun(o), PARAMS: o.PARAMS ?? (o.params.length ? paramsFromDefs(o.params) : undefined) })),
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,

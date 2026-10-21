@@ -45,7 +45,7 @@ export * from './status'
 
 export interface BeginModalOptions {
   /**
-   * The command id registered in `src/commands.ts` / `src/ops.ts` (e.g. `xf.grab`, `mul.bevel`, `edit.loopcut`), NOT a
+   * The command id registered in `src/commands.ts` / `src/ops.ts` (e.g. `xf.grab`, `mul.bevel`, `mesh.loopcut`), NOT a
    * free-form name: Repeat Last, canRun and the last-op record all look the tool up by this one key.
    */
   id: string

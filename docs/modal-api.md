@@ -39,7 +39,7 @@ Pure helpers (also exported, in `src/modal/status.ts`): `formatNumber`, `formatV
 
 * **`id` is the registered command id.** Pass the tool's id from `src/commands.ts` (or its op id in `src/ops.ts`):
   `xf.grab` (G), `xf.rotateModal` (R), `xf.scaleModal` (S), `edit.extrude` (E, and Grow joint), `mul.bevel`,
-  `edit.loopcut`, `edit.knife`, `edit.inset`. Repeat Last, canRun and the last-op record share this one key, so do not
+  `mesh.loopcut`, `mesh.knife`, `edit.inset`. Repeat Last, canRun and the last-op record share this one key, so do not
   invent names like `mesh.bevel`.
 * **`updateModal` merges.** Any field you leave out keeps its current value; send only what changed.
   `updateModal({ typed: '0.2' })` keeps the numbers, axis chip, tags and hints. `axis: null` clears the chip,
@@ -141,6 +141,15 @@ repeatTransform(getLastOp()!.id, getLastOp()!.opts)  // Repeat Last for xf.grab 
 * **Alt+S** `xf.shrinkFatten`: points move along their vertex normals; S toggles Offset Even; last op
   `{ offset, even }`.
 * G/R/S record `{ op, axis, plane, space, pivot, typed?, translate | angle + axisVec | factor + scale }`.
+
+## Bevel modal (Ctrl+B / Ctrl+Shift+B, `src/modal/bevelModal.ts`)
+
+`op.mul.bevel` / `op.mul.bevelVerts` (and the context menus' Bevel rows) start Blender's interactive bevel in the hovered
+view. It drives the op's own params (`BEVEL_PARAMS`, through `runOp` / `updateOp`), so the numeric panel shows the same
+values during the drag and can still adjust the result after Enter. Mouse distance from the pivot = Width (P: Shape),
+Wheel / PageUp / PageDown = Segments, C = Clamp Overlap, V = Vertices, digits = typed value, Ctrl snaps, Shift
+precision. The last-op record is `endModal('op.mul.bevel', { confirmed, opts: bevelOptsFromParams(params) })`. Esc /
+RMB leaves the mesh untouched. Plain B is still the classic face bevel (`mul.bevelFaces`).
 
 ## Not in MOD-1
 

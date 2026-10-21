@@ -424,7 +424,8 @@ check('duplicateMove(false) + startGrab({ mergeUndo }) + Esc: copy left in place
 await p.keyboard.press('Control+z'); await frame()
 check('… one Ctrl+Z removes it', (await S(() => window.__polyform.getState().model.faces.length)) === 6)
 
-// 15. Ctrl+B = Blender's bevel (op.mul.bevel) on a selected cube edge, Ctrl+Shift+B = mul.bevelVerts, B = classic faces
+// 15. Ctrl+B = Blender's interactive bevel (op.mul.bevel modal) on a selected cube edge, Ctrl+Shift+B = vertices,
+// B = classic faces. The drag drives the op's params: the numeric panel (lastOp.params) shows the same width.
 const bevelRun = async (mode, pick, key) => {
   await reset()
   await S(async ({ mode, pick }) => {
@@ -437,22 +438,46 @@ const bevelRun = async (mode, pick, key) => {
   await p.keyboard.press(key); await frame()
   return n
 }
+const nfaces = () => S(() => window.__polyform.getState().model.faces.length)
+const loParams = () => S(() => { const lo = window.__polyform.getState().lastOp; return lo ? { id: lo.id, ...lo.params } : null })
 let bn = await bevelRun('edge', 'edge', 'Control+b')
-let bo = await S(() => window.__polyform.getState().lastOp?.id)
-check('Ctrl+B on a selected cube edge runs op.mul.bevel (Blender bevel)', bo === 'mul.bevel', bo)
-let bf = await S(() => { window.__polyform.getState().updateOp({ width: 0.1 }); return window.__polyform.getState().model.faces.length })
-check('… width 0.1 (redo panel) bevels the edge: 6 → 7 faces, one undo step', bf === 7 && (await steps()) - bn === 1, String(bf))
+ln = await line()
+check('Ctrl+B on a selected cube edge starts the Bevel modal (op.mul.bevel) with Width / Segments / Shape', ln?.id === 'op.mul.bevel' && /^Bevel · Width 0\.000 m · Segments \d+ · Shape 0\.50$/.test(ln.readout) && ln.tags.some(t => /^CClamp Overlap/.test(t)), JSON.stringify(ln))
+await p.mouse.move(vmid.x + 140, vmid.y + 90, { steps: 5 }); await frame()
+ln = await line()
+let lp = await loParams()
+const wShown = parseFloat(/Width (\d+\.\d+)/.exec(ln?.readout ?? '')?.[1] ?? 'NaN')
+check('… dragging away bevels the edge live (6 → 7 faces) and the numeric panel holds the same width', (await nfaces()) === 7 && lp?.id === 'mul.bevel' && lp.width > 0 && Math.abs(lp.width - wShown) < 6e-4, JSON.stringify({ lp, readout: ln?.readout }))
+await p.mouse.wheel(0, -100); await frame()
+lp = await loParams()
+check('… wheel up: 2 segments (8 faces), same params in the panel', lp?.segments === 2 && (await nfaces()) === 8 && /Segments 2/.test((await line())?.readout ?? ''), JSON.stringify(lp))
+await p.keyboard.type('0.1'); await frame()
+check('… typing 0.1 sets the width exactly', (await loParams())?.width === 0.1 && (await line())?.typed === '0.1')
+await p.keyboard.press('Enter'); await frame()
+let blo = await lastOp()
+check('… Enter: last op op.mul.bevel with bevelOptsFromParams opts (width 0.1, 2 segments, profile, clamp)', blo?.id === 'op.mul.bevel' && blo.opts?.width === 0.1 && blo.opts?.segments === 2 && blo.opts?.profile === 0.5 && blo.opts?.clampOverlap === true && blo.opts?.affect === 'edges', JSON.stringify(blo))
+check('… the numeric panel can still adjust it after Enter (width 0.2); one undo step', await S(() => { const st = window.__polyform.getState(); st.updateOp({ width: 0.2 }); return window.__polyform.getState().lastOp.params.width === 0.2 && window.__polyform.getState().model.faces.length === 8 }) && (await steps()) - bn === 1)
 await p.keyboard.press('Control+z'); await frame()
-check('… one Ctrl+Z restores the cube', (await S(() => window.__polyform.getState().model.faces.length)) === 6)
+check('… one Ctrl+Z restores the cube', (await nfaces()) === 6)
+bn = await bevelRun('edge', 'edge', 'Control+b')
+await p.mouse.move(vmid.x + 140, vmid.y + 90, { steps: 5 }); await frame()
+await p.keyboard.press('Escape'); await frame()
+check('Ctrl+B, drag, Esc: the cube is untouched and nothing was added to undo', (await nfaces()) === 6 && (await steps()) === bn && (await line()) === null)
 bn = await bevelRun('vertex', 'vert', 'Control+Shift+b')
-bo = await S(() => window.__polyform.getState().lastOp?.id)
-bf = await S(() => { window.__polyform.getState().updateOp({ width: 0.1 }); return window.__polyform.getState().model.faces.length })
-check('Ctrl+Shift+B on a point runs op.mul.bevelVerts and cuts the corner (6 → 7 faces)', bo === 'mul.bevelVerts' && bf === 7, `${bo} ${bf}`)
+ln = await line()
+await p.keyboard.type('0.2'); await p.keyboard.press('Enter'); await frame()
+blo = await lastOp()
+check('Ctrl+Shift+B on a point: Bevel Vertices modal, typed 0.2 cuts the corner (6 → 7 faces)', ln?.id === 'op.mul.bevelVerts' && (await nfaces()) === 7 && blo?.id === 'op.mul.bevelVerts' && blo.opts?.affect === 'vertices' && blo.opts?.width === 0.2, JSON.stringify({ ln: ln?.id, blo }))
 await p.keyboard.press('Control+z'); await frame()
 await bevelRun('face', 'face', 'b')
-bo = await S(() => window.__polyform.getState().lastOp?.id)
+const bo = await S(() => window.__polyform.getState().lastOp?.id)
 check('plain B still runs the classic face bevel (mul.bevelFaces, "Bevel faces (classic)")', bo === 'mul.bevelFaces' && (await S(async () => (await import('/src/ops.ts')).OPS.find(o => o.id === 'mul.bevelFaces')?.label)) === 'Bevel faces (classic)', bo)
 await p.keyboard.press('Control+z'); await frame()
+if (process.env.BEVEL_SHOT !== '0') {
+  await bevelRun('edge', 'edge', 'Control+b'); await p.mouse.move(vmid.x + 140, vmid.y + 90, { steps: 5 }); await p.mouse.wheel(0, -100); await frame()
+  await p.screenshot({ path: '/workspace/fe-shots/bevel-modal.png' })
+  await p.keyboard.press('Escape'); await frame()
+}
 
 await b.close()
 for (const [n, ok, info] of results) console.log(ok ? 'PASS' : 'FAIL', n, ok ? '' : info)

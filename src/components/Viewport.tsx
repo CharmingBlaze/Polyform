@@ -22,6 +22,8 @@ import { canEven, clampFactor, loopCut, orientedRing, previewLines, ringNormals,
 import { beginModal, endModal, isModalRunning, MOUSE, setModal, transformStatus, updateModal, type ModalHint, type ModalValue } from '../modal'
 import { emptyNum, flipsWinding, lockedScale, nextAxisLock, numApply, numKey, numText, numTyping, numValue, precisionStep, scaleFactor, snapFactor, type NumInput } from '../modal/numinput'
 import { modalRequestOf, type ModalRequest } from '../modal/transform'
+import { bevelEdgesOfSelection } from '../bevel'
+import { bevelMouse, bevelModalOpts, bevelReadout, bevelSet, bevelSnap, bevelStart, bevelTags, type BevelMode, type BevelParams } from '../modal/bevelModal'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -703,6 +705,103 @@ export function Viewport({ pane }: { pane: number }) {
         const n = numKey(num, e)
         if (n) { num = n; apply(); return }
         if (/^s$/i.test(k)) { even = !even; apply() }
+      },
+      keyUp: e => { if (e.key === 'Shift') precise = false; else if (e.key === 'Control' || e.key === 'Meta') { ctrl = false; apply() } },
+    }
+    beginModal({ id, label, cursor: 'crosshair' })
+    apply()
+    return true
+  }
+
+  /**
+   * MOD-2 · Blender's Bevel modal (Ctrl+B edges, Ctrl+Shift+B vertices; also the context menu's Bevel rows). The mouse
+   * distance from the pivot sets the width (P: the shape), the wheel / PageUp / PageDown the segments, C clamp overlap,
+   * V vertices; typed numbers, Ctrl snap, Shift precision. It drives the op's own params (runOp / updateOp), so the
+   * numeric panel shows the same values, and records `bevelOptsFromParams(params)` as the last op.
+   */
+  function startBlenderBevel(affect0: 0 | 1): boolean {
+    const st0 = useStore.getState()
+    const opId = affect0 ? 'mul.bevelVerts' : 'mul.bevel', id = `op.${opId}`, label = affect0 ? 'Bevel Vertices' : 'Bevel'
+    if (st0.mode !== 'model' || st0.selectMode === 'joint') { st0.notify('Switch to Model mode to bevel'); return false }
+    const sel = st0.opSel()
+    if (affect0 ? !sel.verts.length : !bevelEdgesOfSelection(st0.model, sel).length) { st0.notify(affect0 ? 'Bevel vertices: select points first' : 'Bevel: select edges (or faces) first'); return false }
+    const lo = st0.lastOp
+    let params: BevelParams = bevelStart(lo && (lo.id === 'mul.bevel' || lo.id === 'mul.bevelVerts') ? lo.params : undefined, affect0)
+    const vs = new Set<number>(sel.verts)
+    sel.edges.forEach(([a, b]) => { vs.add(a); vs.add(b) })
+    sel.faces.forEach(f => st0.model.faces[f]?.v.forEach(v => vs.add(v)))
+    const center = new THREE.Vector3()
+    vs.forEach(v => { const p = sceneManager.posed[v] ?? st0.model.verts[v]; center.add(new THREE.Vector3(p[0], p[1], p[2])) })
+    center.multiplyScalar(1 / Math.max(1, vs.size))
+    const at0 = interaction.mouse[pane] ?? { x: ctx.current!.w / 2, y: ctx.current!.h / 2 }
+    const cs = project(center)
+    const wpp = worldPerPixel(center)
+    let mode: BevelMode = 'width', anchorVal = 0, anchorDist = Math.hypot(at0.x - cs.x, at0.y - cs.y)
+    let num = emptyNum(), ctrl = false, precise = false, started = false
+    let virt = { x: at0.x, y: at0.y }, real = { ...virt }
+    const dist = () => Math.hypot(virt.x - cs.x, virt.y - cs.y)
+    const hints = (): ModalHint[] => [
+      { keys: [MOUSE.LMB, '↵'], label: 'Confirm', p: 1 }, { keys: [MOUSE.RMB, 'Esc'], label: 'Cancel', p: 1 },
+      { keys: ['Wheel'], label: 'Segments', p: 2 }, { keys: ['Ctrl'], label: 'Snap', p: 2, on: ctrl }, { keys: ['Shift'], label: 'Precision', p: 2, on: precise },
+      { keys: ['0–9'], label: 'Type', p: 3 },
+    ]
+    /** re-anchor the mouse when the mode (or the typed state) changes, so the value doesn't jump */
+    const anchor = () => { anchorVal = params[mode] ?? 0; anchorDist = dist() }
+    const run = () => {
+      const st = useStore.getState()
+      if (!started) {
+        if (!(params.width > 0)) return
+        st.runOp(opId, params)
+        started = useStore.getState().lastOp?.id === opId
+      } else st.updateOp(params)
+      sceneManager.tryUpdatePositions()
+    }
+    const apply = () => {
+      let v = bevelMouse(mode, anchorVal, anchorDist, dist(), wpp)
+      if (ctrl && !numTyping(num)) v = bevelSnap(mode, v, precise)
+      v = numApply(num, v, mode === 'width' ? 'length' : 'factor')
+      params = bevelSet(params, mode, v)
+      run()
+      setModal({ id, op: label, values: bevelReadout(params, mode, num.active ? numText(num) : undefined), axis: null, tags: bevelTags(params, mode), keys: hints(), cursor: 'crosshair' })
+      sceneManager.setModalGuides({ guide: { from: [center.x, center.y, center.z], to: (p => [p.x, p.y, p.z] as Vec3)(unproject(virt.x, virt.y, center)), pane, dash: wpp * 4 } })
+    }
+    const toggle = (name: string, v: number) => { params = bevelSet(params, name, v); apply() }
+    const end = (ok: boolean) => {
+      const st = useStore.getState()
+      sceneManager.dragging = false
+      sceneManager.setModalGuides(null)
+      interaction.modal = false
+      activeXf = null
+      const done = ok && started
+      endModal(id, done ? { confirmed: true, opts: bevelModalOpts(params) } : { confirmed: false })
+      // confirmed: the step stays open like any runOp, so the numeric panel can still adjust it (Adjust Last Operation)
+      if (started && !ok) st.cancelEdit()
+      st.set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+    }
+    sceneManager.dragging = true
+    interaction.modal = true
+    activeXf = {
+      pane,
+      cancel: () => end(false),
+      confirm: () => end(true),
+      move: () => {},
+      hover: (x, y, c) => { ctrl = c; const r = { x, y }; virt = precisionStep(virt, real, r, precise); real = r; apply() },
+      down: button => { if (button === 0) end(true); else if (button === 2) end(false) },
+      wheel: dy => toggle('segments', (params.segments ?? 1) + (dy < 0 ? 1 : -1)),
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return end(false)
+        if (k === 'Enter') return end(true)
+        if (k === 'Shift') { precise = true; return }
+        if (k === 'Control' || k === 'Meta') { ctrl = true; apply(); return }
+        if (k === 'PageUp' || k === 'PageDown') return toggle('segments', (params.segments ?? 1) + (k === 'PageUp' ? 1 : -1))
+        const n = numKey(num, e)
+        if (n) { num = n; if (!num.active) anchor(); apply(); return }
+        if (/^c$/i.test(k)) return toggle('clampOverlap', params.clampOverlap ? 0 : 1)
+        if (/^v$/i.test(k)) return toggle('affect', params.affect ? 0 : 1)
+        if (/^p$/i.test(k)) { num = emptyNum(); mode = mode === 'profile' ? 'width' : 'profile'; anchor(); apply() }
       },
       keyUp: e => { if (e.key === 'Shift') precise = false; else if (e.key === 'Control' || e.key === 'Meta') { ctrl = false; apply() } },
     }
@@ -1466,6 +1565,8 @@ export function Viewport({ pane }: { pane: number }) {
       else if (kind === 'knife') startKnife()
       else if (kind === 'inset') startInset()
       else if (kind === 'bevel') startBevel()
+      else if (kind === 'bevel-edges') startBlenderBevel(0)
+      else if (kind === 'bevel-verts') startBlenderBevel(1)
     }
     window.addEventListener('modal-tool', onTool)
     return () => {
