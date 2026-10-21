@@ -11,7 +11,7 @@ const AX = ['X', 'Y', 'Z'] as const
 /** Ctrl+M menu letters for commands with no key of their own */
 const VIA_MENU: Record<string, string> = {
   ...Object.fromEntries(AX.flatMap(a => [[`mesh.flip${a}`, a], [`mesh.copy${a}`, `Shift+${a}`], [`mesh.rotate${a}`, `Alt+${a}`]])),
-  'view.flipH': 'H', 'view.flipV': 'V',
+  'view.flipH': 'H', 'view.flipV': 'V', 'view.rotateCCW': '[', 'view.rotateCW': ']',
 }
 /** tooltip: label · own key (getBindingLabel), else the Ctrl+M route, else where to bind one */
 const tip = (id: string, extra = '') => {

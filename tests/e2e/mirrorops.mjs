@@ -56,7 +56,9 @@ const cols = await S(() => [...document.querySelectorAll('.mrow')].map(r => [...
 check('4-column grid: every row is label + 4 cells and X/Y/Z line up across rows', cols.every(c => c.length === 5) && cols.every(c => c.join() === cols[0].join()), JSON.stringify(cols))
 check('Flip and Rotate have an empty 4th cell; the weld link is only on Copy', await S(() => document.querySelectorAll('.mrow .mempty').length === 2 && !!document.querySelector('[data-testid="mrow-copy"] [data-testid="mr-weld"]') && document.querySelectorAll('[data-testid="mr-weld"]').length === 1))
 const vt = await S(() => ['flip-h', 'flip-v', 'rot-ccw', 'rot-cw'].map(k => document.querySelector(`[data-testid="mr-${k}"]`).title))
-check('View icons have tooltips with the shortcut (Ctrl+M H / V; rotate says where to bind one)', /Ctrl\+M H$/.test(vt[0]) && /Ctrl\+M V$/.test(vt[1]) && vt.slice(2).every(t => /·\s+\S/.test(t)), JSON.stringify(vt))
+check('View icons have tooltips with the shortcut (Ctrl+M H / V / [ / ])', /Ctrl\+M H$/.test(vt[0]) && /Ctrl\+M V$/.test(vt[1]) && /Ctrl\+M \[$/.test(vt[2]) && /Ctrl\+M \]$/.test(vt[3]), JSON.stringify(vt))
+const allTips = await S(() => [...document.querySelectorAll('[data-testid="mirror-rotate"] .mcell[data-testid^="mr-"]:not([data-testid="mr-weld"])')].map(e => e.title))
+check('every Mirror & Rotate button tooltip names a key (no "no key" fallback)', allTips.length === 13 && allTips.every(t => !/no key/.test(t) && /·\s+(Ctrl\+M \S+|\S+)$/.test(t)), JSON.stringify(allTips))
 check('axis tooltips show the Ctrl+M route', /Ctrl\+M X$/.test(await p.getAttribute('[data-testid="mr-flip-x"]', 'title')) && /Ctrl\+M Shift\+Y$/.test(await p.getAttribute('[data-testid="mr-copy-y"]', 'title')))
 
 // --- Flip X (button), median pivot, one undo step
@@ -79,7 +81,29 @@ check('axis tooltips show the Ctrl+M route', /Ctrl\+M X$/.test(await p.getAttrib
   await p.keyboard.press('x'); await frame()
   check('Ctrl+M then X = Flip X', close(await verts(), v0.map(([x, y, z]) => [2 - x, y, z])) && !(await p.locator('[data-testid="popup"]').count()))
   await p.keyboard.press('Control+m'); await frame(); await p.keyboard.press('Escape'); await frame()
-  check('Esc closes the Mirror menu and changes nothing', !(await p.locator('[data-testid="popup"]').count()) && close(await verts(), v0.map(([x, y, z]) => [2 - x, y, z])))
+  const escOk = !(await p.locator('[data-testid="popup"]').count())
+  check('Esc closes the Mirror menu and changes nothing', escOk && close(await verts(), v0.map(([x, y, z]) => [2 - x, y, z])))
+}
+// --- Ctrl+M then [ / ] = view Rotate CCW / CW (menu only); outside the menu [ / ] stay Shrink / Grow selection
+{
+  for (const [key, id, sign] of [['BracketLeft', 'rotCCW', -1], ['BracketRight', 'rotCW', 1]]) {
+    await reset(); await hover(1)
+    await S(() => { const s = window.__polyform.getState(); s.set({ pivot: 'cursor', cursor3d: [0, 0, 0] }); s.setSelection({ verts: s.model.verts.map((_, i) => i) }) })
+    await p.keyboard.press('Control+m'); await frame()
+    await p.keyboard.press(key); await frame()
+    const lo = await S(() => window.__polyform.getState().lastOp)
+    check(`Ctrl+M then ${key === 'BracketLeft' ? '[' : ']'} = view ${id} (one mesh.rotate of ±90°, menu closed)`, lo?.id === 'mesh.rotate' && Math.abs(Math.abs(lo.params.angle) - 90) < 1e-9 && !(await p.locator('[data-testid="popup"]').count()), JSON.stringify(lo?.params))
+  }
+  await reset([0, 0, 0], 'face', 3)
+  await S(() => { const s = window.__polyform.getState(); s.setSelectMode('face'); s.setSelection({ faces: [0] }) })
+  await hover(1)
+  const n0 = await S(() => window.__polyform.getState().selFaces.size)
+  await p.keyboard.press(']'); await frame()
+  const n1 = await S(() => window.__polyform.getState().selFaces.size)
+  await p.keyboard.press('['); await frame()
+  const n2 = await S(() => window.__polyform.getState().selFaces.size)
+  const lo = await S(() => window.__polyform.getState().lastOp?.id)
+  check('outside the menu ] grows and [ shrinks the selection (no rotate)', n1 > n0 && n2 < n1 && lo !== 'mesh.rotate' && !(await p.locator('[data-testid="popup"]').count()), JSON.stringify([n0, n1, n2, lo]))
 }
 // --- cursor pivot at x = 2
 {
@@ -237,7 +261,7 @@ await p.click('[data-testid="mr-copy-x"]').catch(() => {})
 await S(() => { const s = window.__polyform.getState(); s.set({ pivot: 'cursor', cursor3d: [0, 0, 0] }) })
 await p.click('[data-testid="mr-copy-x"]'); await frame(300)
 await p.locator('[data-testid="mirror-rotate"]').scrollIntoViewIfNeeded()
-await p.screenshot({ path: '/workspace/shot-mirror-after-1366.png' })
+await p.screenshot({ path: '/workspace/shot-mirror-ux2-1366.png' })
 await p.setViewportSize({ width: 1024, height: 700 }); await frame(400)
 const tabMod = p.locator('[data-testid="tab-modify"]')
 const openPanel = async () => { if (await p.locator('[data-testid="rail-expand"]').count()) { await p.click('[data-testid="rail-expand"]'); await frame(400) } if (await tabMod.count()) await tabMod.click() }
@@ -246,7 +270,7 @@ await frame()
 if (await p.locator('[data-testid="mirror-rotate"]').count()) await p.locator('[data-testid="mirror-rotate"]').scrollIntoViewIfNeeded()
 rows = await rowsOk()
 check('1024: rows fit when the panel is open', rows.length === 4 && rows.every(r => r.ok), JSON.stringify(rows))
-await p.screenshot({ path: '/workspace/shot-mirror-after-1024.png' })
+await p.screenshot({ path: '/workspace/shot-mirror-ux2-1024.png' })
 await reset([1, 0, 0]); await openPanel(); await frame()
 await p.screenshot({ path: '/workspace/shot-mirror-before-1024.png' })
 

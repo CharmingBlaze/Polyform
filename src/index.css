@@ -637,7 +637,7 @@ button.danger { color: #ff9a9a; }
 .side-rail .rail-btn:hover { color: var(--text); background: var(--panel2); }
 .side-rail .rail-btn.on { color: var(--text); background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); }
 .side-rail .rail-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-.side-rail .rail-badge { position: absolute; right: 2px; bottom: 2px; min-width: 12px; height: 12px; padding: 0 2px; font-size: 8.5px; line-height: 12px; text-align: center; border-radius: 2px; background: var(--line2); color: var(--text); font-variant-numeric: tabular-nums; pointer-events: none; }
+.side-rail .rail-badge { position: absolute; right: 2px; bottom: 2px; min-width: 14px; height: 14px; padding: 0 2px; font-size: var(--fs-xs); line-height: 14px; text-align: center; border-radius: 2px; background: var(--line2); color: var(--text); font-variant-numeric: tabular-nums; pointer-events: none; }
 .side-rail .rail-btn.on .rail-badge { background: var(--accent); color: #fff; }
 .side-icons { display: flex; height: 100%; justify-content: flex-end; }
 .side-icons .side-rail { border-left: none; }
@@ -790,7 +790,7 @@ button.danger { color: #ff9a9a; }
    (4.5:1) on --panel and --panel2: --dim 5.3–5.7:1, --text-2 6.4–6.9:1. */
 :root {
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 8px; --sp-5: 12px;
-  --fs-xs: 10.5px; --fs-sm: 11.5px; --fs-md: 12.5px;
+  --fs-xs: 11px; --fs-sm: 11.5px; --fs-md: 12.5px;
   --text-2: #9aa2b3;
   --ctl-h: 24px; --tab-h: 26px; --foot-h: 28px;
   --side-pad: var(--sp-4);
@@ -906,9 +906,9 @@ button.danger { color: #ff9a9a; }
 /* Modify › Mirror & Rotate (MirrorRotate.tsx): four 22 px segmented rows, a 40 px label then equal square-cornered
    cells; axis letters in the axis colours. No wrapping from a 144 px panel up. */
 .mirror-rotate { display: flex; flex-direction: column; gap: var(--sp-1); }
-.mrow { display: grid; grid-template-columns: 40px repeat(4, minmax(0, 1fr)); height: 22px; min-width: 0; border: 1px solid var(--line); border-radius: 0; background: var(--panel2); overflow: hidden; }
-.mrow .mlabel { display: flex; min-width: 0; align-items: center; padding: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); border-right: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
-.mrow .mcell { min-width: 0; height: 100%; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font-size: var(--fs-xs); font-weight: 700; }
+.mrow { display: grid; grid-template-columns: 44px repeat(4, minmax(0,1fr)); height: 22px; min-width: 0; border: 1px solid var(--line); border-radius: 0; background: var(--panel2); overflow: hidden; }
+.mrow .mlabel { display: flex; min-width: 0; align-items: center; padding: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); border-right: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mrow .mcell { min-width: 0; height: 100%; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font-size: var(--fs-xs); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mrow .mcell:last-child { border-right: 0; }
 .mrow .mcell:hover { background: var(--line); }
 .mrow .mempty, .mrow .mempty:hover { background: transparent; }

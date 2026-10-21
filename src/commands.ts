@@ -42,7 +42,7 @@ const edit = (m: EditMode, n: number): Command[] => [
 // Ctrl+B / Ctrl+Shift+B: Blender's edge / vertex bevel (bevel.ts); plain B stays the classic face bevel.
 const OP_KEYS: Record<string, string> = { 'mul.bevel': 'Ctrl+B', 'mul.bevelVerts': 'Ctrl+Shift+B', 'mul.bevelFaces': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
-export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint' | 'dupmove'
+export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
 /** Ask for a factor and scale the timing of the shown joints' and the objects' keys around the playhead. */
 async function scaleKeysPrompt() {

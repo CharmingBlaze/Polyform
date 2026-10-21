@@ -115,7 +115,7 @@ export async function viewOp(op: ViewOp, angle = 90) {
   rotate(f.axis, (cw ? 1 : -1) * f.sign * angle)
 }
 
-/** Ctrl+M: a small menu at the mouse. X / Y / Z flip (the UV editor: X / H = Flip H, Y / V = Flip V), Shift+X/Y/Z
+/** Ctrl+M: a small menu at the mouse. [ / ] rotate in view (menu only). X / Y / Z flip (the UV editor: X / H = Flip H, Y / V = Flip V), Shift+X/Y/Z
  *  copy, Alt+X/Y/Z rotate +90° (Shift+Alt: −90°), H / V flip in view, digits as in every popup. */
 export function openMirrorMenu() {
   const s = S()
@@ -134,11 +134,19 @@ export function openMirrorMenu() {
       { id: 'mirror-flip-h', label: 'Flip in view: horizontal  ·  H', run: go(() => viewOp('flipH')) },
       { id: 'mirror-flip-v', label: 'Flip in view: vertical  ·  V', run: go(() => viewOp('flipV')) },
       ...AX.map((a, i) => ({ id: `mirror-rot-${a.toLowerCase()}`, label: `Rotate ${a} 90°  ·  Alt ${a}`, run: go(() => rotate(i as MO.Axis)) })),
+      { id: 'mirror-rot-ccw', label: 'Rotate in view: counter-clockwise  ·  [', run: go(() => viewOp('rotCCW')) },
+      { id: 'mirror-rot-cw', label: 'Rotate in view: clockwise  ·  ]', run: go(() => viewOp('rotCW')) },
     ] } })
   }
   // letter keys for the menu (the popup itself answers digits and Esc); registered before the popup's own listener
   const onKey = (e: KeyboardEvent) => {
     if (!S().popup) return done()
+    // [ / ] rotate in view, only while this menu is open (globally they stay Shrink / Grow selection)
+    if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const op = e.code === 'BracketLeft' ? 'rotCCW' : 'rotCW'
+      e.preventDefault(); e.stopImmediatePropagation()
+      done(); close(); void viewOp(op); return
+    }
     const code = /^Key([A-Z])$/.exec(e.code)?.[1]
     if (!code || e.ctrlKey || e.metaKey) return
     const ax = 'XYZ'.indexOf(code) as -1 | MO.Axis

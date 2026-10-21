@@ -475,7 +475,7 @@ export function Viewport({ pane }: { pane: number }) {
   /** MOD-1: the status line for a modal transform (readout, typed field, axis chip, key hints) */
   // the registered command ids (src/commands.ts): Repeat Last / canRun look the tool up by the same key
   const XF_CMD = { move: 'xf.grab', rotate: 'xf.rotateModal', scale: 'xf.scaleModal' } as const
-  const xfModalId = (d: XfDrag) => d.req?.id ?? (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : d.modal === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[d.op])
+  const xfModalId = (d: XfDrag) => d.req?.id ?? (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : XF_CMD[d.op])
   /** final parameters of a confirmed G/R/S/E, recorded as the last op (and replayed by `repeatTransform`) */
   const xfOpts = (d: XfDrag): Record<string, unknown> => {
     const xf = d.lastXf
@@ -521,8 +521,8 @@ export function Viewport({ pane }: { pane: number }) {
     if (!d.started) {
       d.started = true
       sceneManager.dragging = true
-      // extrude / grow joint / duplicate already opened their undo step: the move joins it
-      if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint' && d.modal !== 'dupmove')) { if (!st.extruding) st.checkpoint(d.label) }
+      // extrude / grow joint already opened their undo step: the move joins it
+      if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint')) { if (!st.extruding) st.checkpoint(d.label) }
     }
     const xf = computeXf(d, x, y)
     d.lastXf = xf
@@ -558,8 +558,6 @@ export function Viewport({ pane }: { pane: number }) {
     st.set({ modalInfo: null })
     if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
     else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
-    // Shift+D: cancelling the move leaves the copy where the original is (Blender); either way one undo step
-    else if (d.modal === 'dupmove') { if (!ok) { applyXf(d.T, identityXf()); st.touch() } st.commit() }
     else if (d.started) { if (ok) { if (d.req?.mergeUndo) st.amendCommit(); else st.commit() } else st.cancelEdit() }
     gizmoDirty = true
     sceneManager.rebuild()
@@ -1156,11 +1154,11 @@ export function Viewport({ pane }: { pane: number }) {
       if (activeXf) return
       const st = useStore.getState()
       // canRunCommand (when commands.ts has it): a refused transform does not start and says why
-      const cmdId = req.id ?? (kind === 'shrink' ? 'xf.shrinkFatten' : kind === 'extrude' || kind === 'joint' ? 'edit.extrude' : kind === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[kind])
+      const cmdId = req.id ?? (kind === 'shrink' ? 'xf.shrinkFatten' : kind === 'extrude' || kind === 'joint' ? 'edit.extrude' : XF_CMD[kind])
       const gate = (Commands as unknown as Record<string, unknown>).canRunCommand
       if (typeof gate === 'function') {
         const r = (gate as (id: string, s: typeof st) => { ok: boolean; reason?: string } | undefined)(cmdId, st)
-        if (r && !r.ok) { st.notify(r.reason ?? 'Cannot run that here'); if (kind === 'extrude') st.cancelExtrude(); else if (kind === 'dupmove') st.commit(); return }
+        if (r && !r.ok) { st.notify(r.reason ?? 'Cannot run that here'); if (kind === 'extrude') st.cancelExtrude(); return }
       }
       const at = interaction.mouse[pane] ?? { x: ctx.current.w / 2, y: ctx.current.h / 2 }
       if (kind === 'shrink') { if (startShrink(req)) req.started = true; return }
@@ -1178,9 +1176,6 @@ export function Viewport({ pane }: { pane: number }) {
         const label = ex.kind === 'individual' ? 'Extrude individual faces' : ex.kind === 'edges' ? 'Extrude edges' : ex.kind === 'verts' ? 'Extrude points' : 'Extrude'
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'extrude', axisVec: n, label, verts: ex.moved })
         if (!d) { st.cancelExtrude(); return }
-      } else if (kind === 'dupmove') {
-        d = beginXf('modal', 'move', at.x, at.y, { modal: 'dupmove', label: 'Duplicate' })
-        if (!d) { st.commit(); return }
       } else if (kind === 'joint') {
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'joint', label: 'Grow joint' })
         if (!d) return

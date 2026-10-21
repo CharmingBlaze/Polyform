@@ -136,12 +136,35 @@ check('one Ctrl+Z removes the duplicate', (await groups()).length === 2)
 await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectGroup(1, false) })
 await overViewport()
 n0 = await steps()
+const jsonDup0 = await S(() => JSON.stringify(window.__polyform.getState().model))
 await p.keyboard.press('Shift+d'); await frame()
-await p.keyboard.press('x'); await p.keyboard.type('2'); await p.keyboard.press('Enter'); await frame()
+await p.keyboard.press('x'); await p.keyboard.type('2'); await frame()
+const dline = await S(() => {
+  const el = document.querySelector('footer.status [data-testid="modal-status"]')
+  return el ? { id: el.dataset.op, typed: el.querySelector('[data-testid="modal-typed"]')?.textContent ?? null, axis: el.querySelector('[data-testid="modal-axis"]')?.textContent ?? null } : null
+})
+const dinfo = await S(() => window.__polyform.getState().modalInfo)
+check('Shift+D runs MOD-2\'s grab: the status line says Duplicate with the X lock and typed 2', /Duplicate/.test(dinfo ?? '') && dline?.id === 'op.mul.duplicate' && /2/.test(dline.typed ?? '') && /X/.test(dline.axis ?? ''), JSON.stringify({ dinfo, dline }))
+await p.keyboard.press('Enter'); await frame()
 const moved = await centre(2)
-check('Shift+D, X, 2, Enter moves the copy 2 along X', near(moved[0], orig[0] + 2) && near(moved[1], orig[1]) && near(moved[2], orig[2]), JSON.stringify({ orig, moved }))
-check('Shift+D + move is one undo step', (await steps()) - n0 === 1)
+check('Shift+D, X, 2, Enter moves the copy +2 along X', near(moved[0], orig[0] + 2) && near(moved[1], orig[1]) && near(moved[2], orig[2]), JSON.stringify({ orig, moved }))
+const dlast = await S(async () => (await import('/src/modal/index.ts')).getLastOp())
+check('… recorded as the last op op.mul.duplicate (axis x, +2)', dlast?.id === 'op.mul.duplicate' && dlast.opts?.axis === 'x' && near(dlast.opts?.translate?.[0] ?? 0, 2), JSON.stringify(dlast))
+check('Shift+D + move is one undo step, labelled Duplicate', (await steps()) - n0 === 1 && /Duplicate/.test(await S(() => { const h = window.__polyformHistory; return h.steps[h.cur].label })))
 await p.keyboard.press('Control+z'); await frame()
+check('one Ctrl+Z removes the moved duplicate entirely (copy and move)', (await groups()).length === 2 && (await S(() => JSON.stringify(window.__polyform.getState().model))) === jsonDup0)
+
+// RMB cancels the move but keeps the copy on the original (Blender), one undo step
+await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectGroup(1, false) })
+await overViewport()
+n0 = await steps()
+await p.keyboard.press('Shift+d'); await frame()
+{ const c = await vpCenter(p); await p.mouse.move(c.x + 70, c.y + 30, { steps: 4 }); await frame(); await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame() }
+const rmb = await centre(2)
+check('Shift+D then RMB: the copy stays, on the original', (await groups()).length === 3 && rmb.every((v, i) => near(v, orig[i])) && (await S(() => window.__polyform.getState().modalInfo)) === null, JSON.stringify(rmb))
+check('… one undo step; one Ctrl+Z removes the copy', (await steps()) - n0 === 1)
+await p.keyboard.press('Control+z'); await frame()
+check('… gone after Ctrl+Z', (await groups()).length === 2)
 
 // Edit mode: points only
 await S(() => { const s = window.__polyform.getState(); s.setSelectMode('vertex'); s.setSelection({ verts: [0, 1] }) })

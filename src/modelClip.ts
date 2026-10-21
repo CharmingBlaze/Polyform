@@ -14,6 +14,7 @@ import { xformMatrix } from './anim'
 import { normalizeSkin, primaryJoint, unboundSkin } from './skin'
 import { history, useStore } from './store'
 import { textures } from './textures'
+import { startGrab } from './modal/transform'
 
 export const CLIP_APP = 'polyform'
 export const CLIP_KIND = 'model-clip'
@@ -469,6 +470,10 @@ export function duplicateMove(grab = true): boolean {
     else if (sm === 'edge') S().setSelection({ edges: r.edges })
     else S().setSelection({ verts: r.verts })
   }
-  if (grab && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('modal-transform', { detail: 'dupmove' }))
+  // Blender's duplicate_move: MOD-2's grab (typed values, axis locks, snap, Shift precision) folded into the Duplicate
+  // undo step, so one Ctrl+Z removes the copy and the move; Esc / RMB undoes only the move and keeps the copy in place.
+  // The id is the command id (op.mul.duplicate) so the status line, canRunCommand and Repeat Last name it Duplicate.
+  // No viewport to grab in (hidden, nothing hovered): the duplicate is its own undo step.
+  if (grab && !startGrab({ id: 'op.mul.duplicate', label: 'Duplicate', mergeUndo: true })) S().commit()
   return true
 }
