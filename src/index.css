@@ -801,7 +801,9 @@ button.danger { color: #ff9a9a; }
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; padding: 0;
   background: var(--line); border-bottom: 1px solid var(--line);
 }
-@container toolpanel (min-width: 232px) { .rail .tabs:not(.n1) { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* one row from 220 px (LEFT_W, the default; measured: the four labels need ~170 px of text, so each tab keeps ≥ 5 px of
+   padding a side): content-sized tracks share the spare room evenly, so the long Construct never clips */
+@container toolpanel (min-width: 220px) { .rail .tabs:not(.n1) { grid-template-columns: repeat(4, auto); } }
 .rail .tabs:not(.n1) button {
   height: var(--tab-h); padding: 0 var(--sp-2); border: none; border-radius: 0; justify-content: center;
   background: var(--bg); color: var(--dim); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

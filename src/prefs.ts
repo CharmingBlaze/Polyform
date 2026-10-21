@@ -62,13 +62,20 @@ export const DEFAULT_UNWRAP: UnwrapPrefs = { method: 'angle', margin: 0.01, live
 export const UV_VIEW3D_DEFAULT = 0.32
 export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
+/** The tool panel's default width: the four Model mode tabs (Create · Modify · Multiply · Construct) fit on one row
+ * (their labels need ~170 px of text plus ≥ 5 px padding a side and the 1 px dividers), see LEFT_TABS_ROW_W in the CSS. */
+export const LEFT_W = 220
+/** Below NARROW_W a tool panel still at the default opens at this width instead (the views keep their room on 1024–1180
+ * windows); the mode tabs show as the 2×2 grid there. */
+export const LEFT_NARROW_W = 144
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: LEFT_W, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars; 3 = the right column has a real
- * minimum (RIGHT_MIN): the 140 px "slim rail column" of v2 truncated every tab, so saved v2 widths below it are reset */
-const PREFS_V = 3
+ * minimum (RIGHT_MIN): the 140 px "slim rail column" of v2 truncated every tab, so saved v2 widths below it are reset;
+ * 4 = the tool panel defaults to LEFT_W (mode tabs on one row): saved narrower widths move up to it */
+const PREFS_V = 4
 
 export function loadPrefs(): UIPrefs {
   try {
@@ -79,13 +86,15 @@ export function loadPrefs(): UIPrefs {
     const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
     const tri = (v: unknown) => (typeof v === 'boolean' ? v : null)
     const ver = (p as { v?: unknown }).v
-    const v1 = ver !== 2 && ver !== PREFS_V
+    const v1 = ver !== 2 && ver !== 3 && ver !== PREFS_V
+    const preV4 = ver !== PREFS_V
     return {
       timelineH: num(p.timelineH, DEFAULT_PREFS.timelineH),
       timelineLastH: num(p.timelineLastH, DEFAULT_PREFS.timelineLastH),
       timelineHidden: p.timelineHidden === true,
       // v1 saved the old default widths with everything else: those move to the new, narrower defaults
-      leftW: v1 && p.leftW === 168 ? DEFAULT_PREFS.leftW : num(p.leftW, DEFAULT_PREFS.leftW),
+      // (v4) and anything saved before v4 narrower than the new default moves up to it; wider widths are kept (≤ 280 by clampSide)
+      leftW: (v1 && p.leftW === 168) || (preV4 && num(p.leftW, LEFT_W) < LEFT_W) ? DEFAULT_PREFS.leftW : num(p.leftW, DEFAULT_PREFS.leftW),
       // the old 320 default and anything narrower than the minimum (the v2 140 px default) move to the default width
       rightW: (v1 && p.rightW === 320) || num(p.rightW, DEFAULT_PREFS.rightW) < RIGHT_MIN ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
       panels: (() => {

@@ -31,13 +31,13 @@ describe('unwrap options pref', () => {
 describe('side panels per workspace', () => {
   it('defaults: slim tool panel, a right column wide enough for every tab, automatic everywhere except the UV rail (icons)', () => {
     const p = loadPrefs()
-    expect([p.leftW, p.rightW]).toEqual([144, 256])
+    expect([p.leftW, p.rightW]).toEqual([220, 256])
     expect(p.panels.model).toEqual({ left: null, right: null })
     expect(p.panels.uv).toEqual({ left: true, right: null })
   })
   it('migrates v1 prefs: one rail / side flag for all, the UV rail its own; old default widths move to the new ones', () => {
     const p = withPrefs({ leftW: 168, rightW: 320, leftCollapsed: false, rightCollapsed: true, uvLeftCollapsed: false })
-    expect([p.leftW, p.rightW]).toEqual([144, 256])
+    expect([p.leftW, p.rightW]).toEqual([220, 256])
     expect(p.panels.paint).toEqual({ left: false, right: true })
     expect(p.panels.uv).toEqual({ left: false, right: true })
     expect(withPrefs({ leftW: 200, rightW: 300 }).rightW).toBe(300)
@@ -51,6 +51,14 @@ describe('side panels per workspace', () => {
     expect(clampSide(900, 'right', 1920)).toBe(520)
     // a third of a small window is under the minimum: the minimum wins (narrower windows fold to the rail instead)
     expect(clampSide(256, 'right', 640)).toBe(RIGHT_MIN)
+  })
+  it('v4: the tool panel defaults to 220 (mode tabs on one row); narrower saved widths move up, wider ones stay', () => {
+    expect(DEFAULT_PREFS.leftW).toBe(220)
+    expect(withPrefs({ v: 3, leftW: 144 }).leftW).toBe(220)
+    expect(withPrefs({ v: 2, leftW: 200 }).leftW).toBe(220)
+    expect(withPrefs({ v: 3, leftW: 260 }).leftW).toBe(260)
+    // once saved as v4, a width the user dragged narrower is theirs
+    expect(withPrefs({ v: 4, leftW: 150 }).leftW).toBe(150)
   })
   it('keeps v2 choices (widths too) and sanitizes junk', () => {
     const p = withPrefs({ v: 2, rightW: 320, panels: { rig: { left: true, right: 'x' }, uv: {} } })

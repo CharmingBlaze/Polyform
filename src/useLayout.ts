@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
-import { clampSide, DEFAULT_PREFS, ICON_W, NARROW_W, RAIL_W, type UIPrefs } from './prefs'
+import { clampSide, DEFAULT_PREFS, ICON_W, LEFT_NARROW_W, NARROW_W, RAIL_W, type UIPrefs } from './prefs'
 
 /** Window width, live. */
 export function useWinW() {
@@ -49,6 +49,9 @@ export const ANIM_RIGHT_W = DEFAULT_PREFS.rightW
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const baseRightW = (ui: UIPrefs, _uvSpace?: boolean, _animate = false) => ui.rightW
 
+/** The tool panel's open width: the saved one, except that the default opens slimmer (2×2 mode tabs) on narrow windows. */
+export const baseLeftW = (ui: UIPrefs, winW = typeof window !== 'undefined' ? window.innerWidth : 1440) => (winW < NARROW_W && ui.leftW === DEFAULT_PREFS.leftW ? LEFT_NARROW_W : ui.leftW)
+
 /** Effective sidebar state: collapsed to icons (explicit, or automatically on narrow windows) and pixel widths. */
 export function useSides() {
   const winW = useWinW()
@@ -61,7 +64,7 @@ export function useSides() {
   const hidden = leftHidden({ uvSpace, workspace, mode }, leftCollapsed)
   return {
     leftCollapsed, rightCollapsed, leftHidden: hidden,
-    leftW: hidden ? 0 : leftCollapsed ? ICON_W : clampSide(ui.leftW, 'left', winW),
+    leftW: hidden ? 0 : leftCollapsed ? ICON_W : clampSide(baseLeftW(ui, winW), 'left', winW),
     rightW: rightCollapsed ? RAIL_W : clampSide(baseRightW(ui, uvSpace, panelKey({ uvSpace, workspace, mode }) === 'animate'), 'right', winW),
   }
 }
@@ -75,7 +78,7 @@ export function sideHandle(side: 'left' | 'right', collapsed: boolean) {
       if (e.button !== 0 || collapsed) return
       const el = e.currentTarget
       el.setPointerCapture(e.pointerId)
-      const x0 = e.clientX, w0 = clampSide(side === 'left' ? useStore.getState().ui.leftW : baseRightW(useStore.getState().ui, useStore.getState().uvSpace, panelKey(useStore.getState()) === 'animate'), side)
+      const x0 = e.clientX, w0 = clampSide(side === 'left' ? baseLeftW(useStore.getState().ui) : baseRightW(useStore.getState().ui, useStore.getState().uvSpace, panelKey(useStore.getState()) === 'animate'), side)
       const move = (ev: PointerEvent) => {
         const w = clampSide(w0 + (side === 'left' ? ev.clientX - x0 : x0 - ev.clientX), side)
         useStore.getState().setUI(side === 'left' ? { leftW: w } : { rightW: w })
