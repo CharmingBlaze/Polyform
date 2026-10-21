@@ -24,8 +24,8 @@ describe('keymap (team/user decision of 2026-10-19)', () => {
     expect(by()['E']).toBe('edit.extrude')
     expect(by()['Shift+E']).toBeUndefined()
   })
-  it('no W/E/R gizmo shortcuts: W is unbound and the gizmo tools have no keys', () => {
-    expect(by()['W']).toBeUndefined()
+  it('no W/E/R gizmo shortcuts: W opens the context menu (not a gizmo) and the gizmo tools have no keys', () => {
+    expect(by()['W']).toBe('view.contextMenu')
     for (const id of ['tool.move', 'tool.rotate', 'tool.scale']) expect(commands.find(c => c.id === id)!.keys).toBeUndefined()
   })
   it('G / R / S start modal move / rotate / scale; Shift+R is unused', () => {

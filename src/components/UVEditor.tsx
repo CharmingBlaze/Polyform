@@ -1,3 +1,5 @@
+import { MenuPanel } from './ContextMenu'
+import type { CtxEntry } from '../ctxmenu/menus'
 import { textures } from '../textures'
 import { importImage } from '../io'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -33,39 +35,10 @@ let uvClip: U.UVClip | null = null
 type ToolGroup = 'unwrap' | 'transform' | 'arrange' | 'pixels' | 'seams'
 const TOOL_GROUPS: [ToolGroup, string, LucideIcon][] = [['unwrap', 'Unwrap', WandSparkles], ['transform', 'Transform', Move3d], ['arrange', 'Arrange', LayoutGrid], ['pixels', 'Pixels', Grid2x2], ['seams', 'Seams & pins', Scissors]]
 type UVMenuItem = { id: string; label: string; keys?: string; run: () => void; enabled?: boolean; tip?: string } | 'sep'
-/** right-click menu of the UV editor: same look as the menu bar; Esc / outside press closes; arrows + Enter work */
+/** UV editor menus (right-click, UV ▾, Image ▾, View ▾) on the shared context-menu panel: same rows, keys and test ids */
 function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuItem[]; close: () => void }) {
-  const el = useRef<HTMLDivElement>(null)
-  const [act, setAct] = useState(-1)
-  const [pos, setPos] = useState({ x, y })
-  // pos is viewport px; the menu's own px are those ÷ its UI-scale zoom
-  const z = useZoom(el)
-  useEffect(() => {
-    const r = el.current!.getBoundingClientRect()
-    setPos({ x: Math.max(2, Math.min(x, innerWidth - r.width - 2)), y: Math.max(2, Math.min(y, innerHeight - r.height - 2)) })
-    el.current!.focus()
-    const off = (e: PointerEvent) => { if (!el.current?.contains(e.target as Node)) close() }
-    window.addEventListener('pointerdown', off, true)
-    return () => window.removeEventListener('pointerdown', off, true)
-  }, [x, y]) // eslint-disable-line react-hooks/exhaustive-deps
-  const live = items.map((it, i) => (it !== 'sep' && it.enabled !== false ? i : -1)).filter(i => i >= 0)
-  const run = (it: UVMenuItem) => { if (it === 'sep' || it.enabled === false) return; close(); it.run() }
-  const key = (e: React.KeyboardEvent) => {
-    e.stopPropagation()
-    if (e.key === 'Escape') { e.preventDefault(); close() }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const k = live.indexOf(act), n = live.length; setAct(live[k < 0 ? (e.key === 'ArrowDown' ? 0 : n - 1) : (k + (e.key === 'ArrowDown' ? 1 : n - 1)) % n]) }
-    else if (e.key === 'Enter' && act >= 0) { e.preventDefault(); run(items[act]) }
-  }
-  return (
-    <div ref={el} className="mb-panel uv-menu" role="menu" tabIndex={-1} data-menu-open="true" data-testid="uv-menu" style={{ left: pos.x / z, top: pos.y / z, maxHeight: (innerHeight - 4) / z }} onKeyDown={key} onContextMenu={e => e.preventDefault()}>
-      {items.map((it, i) => it === 'sep' ? <div key={i} className="mi-sep" /> : (
-        <div key={it.id} role="menuitem" title={it.tip} aria-disabled={it.enabled === false || undefined} data-testid={`uvm-${it.id}`} className={`mi ${act === i ? 'active' : ''} ${it.enabled === false ? 'disabled' : ''}`}
-          onPointerEnter={() => setAct(i)} onPointerLeave={() => setAct(-1)} onClick={() => run(it)}>
-          <span /><span>{it.label}</span><span className="mi-keys">{it.keys ?? ''}</span><span />
-        </div>
-      ))}
-    </div>
-  )
+  const entries: CtxEntry[] = items.map(it => (it === 'sep' ? { sep: true } : { id: it.id, label: it.label, keys: it.keys, run: it.run, why: it.enabled === false ? (it.tip ?? 'Not available right now') : null, hint: it.tip, noRepeat: true }))
+  return <MenuPanel x={x} y={y} onClose={close} menu={{ ctx: 'uv', title: 'UV', entries, repeat: false, filter: false, testid: 'uv-menu', itemTestid: id => `uvm-${id}` }} />
 }
 
 /** Faces the UV editor shows and picks: every visible face, or only the frozen selection with Selected only on. */

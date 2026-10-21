@@ -11,6 +11,8 @@ import { PaintCanvas, PaintDivider } from './components/PaintCanvas'
 import { usePaintView } from './paintview'
 import { EmptyScene } from './components/Workspace'
 import { installShortcuts, openKeymapDialog } from './keymap'
+import { installContextMenus } from './ctxmenu/input'
+import { ContextMenuHost } from './components/ContextMenu'
 import { KeymapDialog } from './components/KeymapDialog'
 import { CommandPalette } from './components/CommandPalette'
 import { SettingsDialog } from './components/SettingsDialog'
@@ -77,6 +79,7 @@ export default function App() {
     return () => ro.disconnect()
   }, [])
   useEffect(() => installShortcuts(() => setPalette(true)), [])
+  useEffect(() => installContextMenus(), [])
   useEffect(() => { window.addEventListener('open-keymap', openKeymapDialog); return () => window.removeEventListener('open-keymap', openKeymapDialog) }, [])
   useEffect(() => { window.addEventListener('open-settings', openSettings); return () => window.removeEventListener('open-settings', openSettings) }, [])
   useEffect(() => {
@@ -121,6 +124,7 @@ export default function App() {
       <StatusBar />
       <ModalStatus />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
+      <ContextMenuHost />
       <KeymapDialog />
       <SettingsDialog />
       <HelpPopover />

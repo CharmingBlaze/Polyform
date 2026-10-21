@@ -12,7 +12,7 @@ import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction, setHoverFace } from '../interaction'
 import { topology } from '../topology'
-import { openSetOrigin, selectedObjects, type ModalKind } from '../commands'
+import { type ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
 import { facePoint, knifeCut, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
@@ -1232,11 +1232,9 @@ export function Viewport({ pane }: { pane: number }) {
       drag.current = null; return
     }
     if ((d?.kind === 'pan' || d?.kind === 'orbit') && d.menuAt) {
-      // right-click without dragging on a selection: the object menu (Set Origin) at the mouse
-      const { x, y } = local(e)
+      // right-click without dragging: no orbit / pan; the shared context menu (src/ctxmenu/input.ts) opens at the
+      // mouse, with Set Origin in its Edit group
       drag.current = null
-      const st = useStore.getState()
-      if (Math.hypot(x - d.menuAt.x, y - d.menuAt.y) < 4 && !st.draw && st.mode === 'model' && selectedObjects().length) openSetOrigin('Object · Set Origin')
       return
     }
     if (d?.kind === 'drawHandle') { drag.current = null; return }

@@ -17,7 +17,9 @@ import { mirrorCommands } from './mirrorCmds'
 import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
 import { copyModel, cutModel, duplicateMove, pasteModel } from './modelClip'
 
-export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
+/** Where a command shows up in the right-click menus (src/ctxmenu/menus.ts appends it to that section). */
+export interface MenuPlacement { ctx: string | string[]; section?: string; label?: string; opt?: string }
+export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean; menus?: MenuPlacement[] }
 
 const S = () => useStore.getState()
 /** Advanced paint modes: switch to the Paint tab and open Options so the control is on screen. */
@@ -194,6 +196,8 @@ export const commands: Command[] = [
   ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : () => S().runOp(o.id) })),
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,
+  // W was free in both presets. Tap: list at the mouse; hold: marking menu; W + flick: run a direction (src/ctxmenu/input.ts)
+  { id: 'view.contextMenu', label: 'Context menu at the mouse (hold: marking menu)', group: 'View', keys: 'W', run: () => window.dispatchEvent(new CustomEvent('open-context-menu')) },
   { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
   { id: 'app.settings', label: 'Settings (UI scale…)', group: 'File', keys: 'Ctrl+,', run: () => window.dispatchEvent(new Event('open-settings')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },

@@ -1,5 +1,5 @@
 // E2E: object origins. A box drawn off-centre gets its origin at its centre (gizmo there, points where drawn); Origin
-// to geometry from the Scene tab's Transform button (right under Position), the Edit menu, the viewport right-click,
+// to geometry from the Scene tab's Transform button (right under Position), the Edit menu, the viewport right-click (context menu › Set Origin),
 // Ctrl+Shift+Alt+C and Ctrl+K; one undo step each; points never move; the .glb validates.
 import { chromium } from 'playwright-core'
 import validator from 'gltf-validator'
@@ -64,11 +64,13 @@ await p.keyboard.press('Control+z'); await frame()
 x = await xf()
 check('Ctrl+Z puts the origin back on the cursor', [-1, 0.5, -2].every((v, i) => near(x.pos[i] + x.pivot[i], v, 1e-6)), JSON.stringify(x))
 
-// right-click in a view (no drag) on the selection: the same menu
+// right-click in a view (no drag) on the selection: the context menu, Set Origin ▸ in its Edit group
 const rc = await screen(1, ctr)
+/** the Set Origin submenu of the open context menu: hover it, wait for Origin to geometry */
+const originSub = async () => { await p.hover('[data-testid="ctx-menu"] [data-testid="cm-sub-set-origin"]'); await frame(); return p.locator('[data-testid="cm-object-originToGeometry"]').isVisible().catch(() => false) }
 await p.mouse.click(rc.x, rc.y, { button: 'right' }); await frame()
-check('right-click (no drag) opens the Set Origin menu', (await p.locator('[data-testid="popup-origin-geometry"]').count()) === 1)
-await p.click('[data-testid="popup-origin-geometry"]'); await frame()
+check('right-click (no drag) opens the context menu with Set Origin ▸ (Origin to geometry)', (await p.locator('[data-testid="ctx-menu"]').count()) === 1 && await originSub())
+await p.click('[data-testid="cm-object-originToGeometry"]'); await frame()
 x = await xf()
 check('… and Origin to Geometry from it centres the origin', x.pivot.every((v, i) => near(v, ctr[i], 1e-6)), JSON.stringify(x))
 // QA path: pick the Box by clicking it in Object mode, then a quick right-click (down / up, under 4 px of movement)
@@ -76,16 +78,18 @@ await S(() => { const s = window.__polyform.getState(); s.set({ popup: null }); 
 await p.mouse.click(rc.x, rc.y); await frame()
 check('clicking the Box in Object mode selects it', (await S(() => window.__polyform.getState().selFaces.size)) > 0)
 await p.mouse.move(rc.x, rc.y); await p.mouse.down({ button: 'right' }); await p.mouse.move(rc.x + 2, rc.y + 1); await p.mouse.up({ button: 'right' }); await frame()
-check('quick right-click (<4 px) on the clicked Box opens Set Origin with Origin to Geometry visible', await p.locator('[data-testid="popup-origin-geometry"]').isVisible().catch(() => false) && /Origin to Geometry/.test(await p.locator('[data-testid="popup-origin-geometry"]').textContent().catch(() => '')))
-await S(() => window.__polyform.getState().set({ popup: null })); await frame()
-// …and nothing selected: a right-click opens nothing
+check('quick right-click (<4 px) on the clicked Box opens the menu; Set Origin ▸ shows Origin to geometry', await originSub() && /Origin to geometry/.test(await p.locator('[data-testid="cm-object-originToGeometry"]').textContent().catch(() => '')))
+await p.keyboard.press('Escape'); await frame()
+// …and nothing selected: Set Origin is greyed (no objects to act on)
 await S(() => window.__polyform.getState().selectNone()); await frame()
 await p.mouse.click(rc.x, rc.y, { button: 'right' }); await frame()
-check('right-click with nothing selected opens no Set Origin menu', (await p.locator('[data-testid="popup-origin-geometry"]').count()) === 0)
+const offRow = (await p.locator('[data-testid="cm-sub-set-origin"]').count()) ? (await originSub(), await p.locator('[data-testid="cm-object-originToGeometry"]').getAttribute('class')) : 'absent'
+check('right-click with nothing selected: Origin to geometry is disabled (or absent)', /disabled|absent/.test(offRow ?? ''), offRow)
+await p.keyboard.press('Escape'); await frame()
 await S(() => { const s = window.__polyform.getState(); s.set({ popup: null }); s.setSelectMode('object'); s.selectAll() }); await frame()
 // a right-drag still orbits and opens nothing
 await p.mouse.move(rc.x, rc.y); await p.mouse.down({ button: 'right' }); await p.mouse.move(rc.x + 60, rc.y + 10, { steps: 5 }); await p.mouse.up({ button: 'right' }); await frame()
-check('right-drag orbits without opening the menu', (await p.locator('[data-testid="popup"]').count()) === 0)
+check('right-drag orbits without opening the menu', (await p.locator('[data-testid="popup"]').count()) === 0 && (await p.locator('[data-testid="ctx-menu"], [data-testid="marking-menu"]').count()) === 0)
 // the same quick right-click at laptop sizes (UI scale Auto)
 for (const [w, h] of [[1366, 768], [1024, 768]]) {
   await p.setViewportSize({ width: w, height: h }); await frame(400)
@@ -93,8 +97,8 @@ for (const [w, h] of [[1366, 768], [1024, 768]]) {
   const q = await screen(1, ctr)
   await p.mouse.click(q.x, q.y); await frame()
   await p.mouse.move(q.x, q.y); await p.mouse.down({ button: 'right' }); await p.mouse.move(q.x + 1, q.y + 2); await p.mouse.up({ button: 'right' }); await frame()
-  check(`at ${w}×${h}: click the Box, quick right-click opens Set Origin`, await p.locator('[data-testid="popup-origin-geometry"]').isVisible().catch(() => false))
-  await S(() => window.__polyform.getState().set({ popup: null })); await frame()
+  check(`at ${w}×${h}: click the Box, quick right-click opens the menu with Set Origin ▸`, await originSub())
+  await p.keyboard.press('Escape'); await frame()
 }
 await p.setViewportSize({ width: 1440, height: 900 }); await frame(400)
 await S(() => { const s = window.__polyform.getState(); s.setSelectMode('object'); s.selectAll() }); await frame()
