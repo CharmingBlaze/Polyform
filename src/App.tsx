@@ -119,9 +119,11 @@ export default function App() {
           {showTimeline && <Timeline />}
         </div>
         {sides.rightCollapsed ? <div className="right-col collapsed" data-collapsed="true"><SideIcons /></div>
-          : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><Sidebar><DrawPanel /><NumericPanel /></Sidebar></div>}
+          : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><Sidebar><DrawPanel /></Sidebar></div>}
       </div>
       <StatusBar />
+      {/* N's host: always mounted (also with the right column collapsed), so edit.numeric only flips store.numericOpen */}
+      <NumericPanel />
       <ModalStatus />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <ContextMenuHost />

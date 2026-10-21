@@ -153,3 +153,6 @@ export function xfOptsFrom(id: string, opts: Record<string, unknown>, v: Values)
   else if (id === 'xf.scaleModal') { o.scale = [v.sx, v.sy, v.sz]; o.factor = (v.sx + v.sy + v.sz) / 3 }
   return o
 }
+
+/** the dock / F9 popover's one muted line under the title row when the last op has no adjustable fields */
+export const NO_OPTIONS = 'No options to adjust.'

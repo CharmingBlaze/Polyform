@@ -14,7 +14,7 @@ import { createRoot } from 'react-dom/client'
 import { useModalStatus, formatValue } from '../modal'
 import { useStore } from '../store'
 import { useCurrentOp, type CurrentOp } from '../oppanel/lastop'
-import { fieldsOf, materialOptions, type Field, type ParamGroup } from '../oppanel/schema'
+import { fieldsOf, materialOptions, NO_OPTIONS, type Field, type ParamGroup } from '../oppanel/schema'
 import { adjustField, closeOpPopover, useOpPopover } from '../oppanel/actions'
 import { useDockTool } from '../oppanel/dockslot'
 import './OperatorPanel.css'
@@ -117,7 +117,7 @@ function StackBody({ children }: { children: React.ReactNode }) {
   return <div className="opp-body" data-testid="op-panel-body" ref={ref}>{children}</div>
 }
 
-/** The body shared by the dock and the popover; null when there is nothing to show. */
+/** The body shared by the dock and the popover; null when there is no last op (nor a running modal). */
 function useBody(tid: string) {
   const status = useModalStatus(s => s.status)
   const cur = useCurrentOp()
@@ -131,7 +131,9 @@ function useBody(tid: string) {
       ),
     }
   }
-  if (!cur || !cur.schema.length) return null
+  if (!cur) return null
+  // general rule (UX): an op without adjustable fields keeps the usual title row (kicker + op name) and says so
+  if (!cur.schema.length) return { title: 'Adjust Last Operation', sub: cur.label, live: cur.live, modal: false, body: <p className="opp-empty" data-testid={`${tid}-empty`}>{NO_OPTIONS}</p> }
   return {
     title: 'Adjust Last Operation', sub: cur.label, live: cur.live, modal: false,
     body: <>

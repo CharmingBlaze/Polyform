@@ -1,7 +1,7 @@
 // E2E (MOD-3): the docked Operator panel / Adjust Last Operation. Ctrl+B bevel (live fields during the modal, typed
 // width, Enter), the panel changing segments (number box + slider) and the width type's showIf, one undo step, F9
 // focus (docked) and the F9 popover (panel hidden), G with an adjusted Move X and Shift+R, Shift+D then Shift+R, two
-// more ops with params, and the dock's tool-options slot (setDockTool, a dummy tool through window.__polyformDock).
+// more ops with params, the no-options empty state (a fake schema-less modal), and the dock's tool-options slot (setDockTool, a dummy tool through window.__polyformDock).
 // The dock: Panels.tsx RailDock, pinned at the bottom of the LEFT panel under the scrolling tab content (1024 and
 // 1366 wide), collapsible. N shows only the selection's values (no op fields); the right-click Repeat row = Shift+R.
 // Usage: node tests/e2e/run.mjs oppanel.mjs   (or: node tests/e2e/oppanel.mjs <url>)   SHOT=<png>
@@ -255,6 +255,25 @@ await p.locator('[data-testid="opp-pop-dist"]').fill('0.75'); await p.locator('[
 check('… the popover edits the op too (Distance 0.75)', (await lo())?.dist === 0.75)
 await p.keyboard.press('Escape'); await frame()
 check('… Esc closes it', (await S(() => !!document.querySelector('[data-testid="redo-popover"]'))) === false)
+await S(async () => (await import('/src/useLayout.ts')).togglePanel('left')); await frame()
+
+// 7b. a confirmed modal tool without a schema (a fake id, not Dev2's knife): the usual title row with the label the
+// tool gave beginModal (never the raw id), then one muted 11px line "No options to adjust."; the F9 popover the same
+await S(async () => { const m = await import('/src/modal/index.ts'); m.beginModal({ id: 'test.fakeTool', label: 'Fake Knife' }); m.endModal('test.fakeTool', { confirmed: true, opts: { cuts: 2 } }) }); await frame()
+const emptyOf = sel => S(sel => {
+  const el = document.querySelector(sel); if (!el) return null
+  const e = el.querySelector('.opp-empty'), k = el.querySelector('.opp-kicker'), cs = e && getComputedStyle(e)
+  return { kicker: k?.textContent, name: el.querySelector('.opp-name')?.textContent, text: e?.textContent, size: cs?.fontSize, muted: !!cs && !!k && cs.color === getComputedStyle(k).color, lines: el.querySelectorAll('.opp-body > *').length, fields: el.querySelectorAll('input,select').length }
+}, sel)
+const em = await emptyOf('[data-testid="rail-dock"] [data-testid="op-panel"]')
+check('no-options op: dock keeps the title row (ADJUST LAST OPERATION / Fake Knife, not the id) and one muted 11px line "No options to adjust."',
+  em?.kicker === 'Adjust Last Operation' && em.name === 'Fake Knife' && em.text === 'No options to adjust.' && em.size === '11px' && em.muted && em.lines === 1 && em.fields === 0, JSON.stringify(em))
+await S(async () => (await import('/src/useLayout.ts')).togglePanel('left')); await frame()
+await p.mouse.move(vmid.x - 60, vmid.y - 40); await p.keyboard.press('F9'); await p.waitForTimeout(300)
+const ep = await emptyOf('[data-testid="redo-popover"]')
+check('… panel hidden: F9 opens the popover with the same title row and "No options to adjust."',
+  ep?.kicker === 'Adjust Last Operation' && ep.name === 'Fake Knife' && ep.text === 'No options to adjust.' && ep.size === '11px' && ep.muted && ep.lines === 1, JSON.stringify(ep))
+await p.keyboard.press('Escape'); await frame()
 await S(async () => (await import('/src/useLayout.ts')).togglePanel('left')); await frame()
 
 // 8. text size: nothing in the panel below 11px

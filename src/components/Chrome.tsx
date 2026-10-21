@@ -20,6 +20,7 @@ import { ClipsPanel } from './ClipsPanel'
 import { MenuBar } from './MenuBar'
 import { uiScale } from '../uiscale'
 import { CreateTab } from './CreatePicker'
+import { SymStatusChip } from './SymChip'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -312,6 +313,7 @@ export function StatusBar() {
         {uv.echo ? <span className="uv-st-echo" data-testid="uv-modal-echo">{uv.echo}</span>
           : <>{uv.note && <span className="uv-st-note" data-testid="uv-status-note">{uv.note}</span>}{uv.hints.map(([k, l]) => <span key={k} className="uv-st-hint"><kbd>{k}</kbd>{l}</span>)}</>}
       </span>}
+      <SymStatusChip />
       <span className="grow" />
       {!uvLine && <span className={`hint ${modalInfo ? 'modal' : ''}`} data-testid="hint" data-full={full} title={full}>{short}</span>}
       <button className={`icon-btn help-btn ${helpOpen ? 'on' : ''}`} data-testid="help-btn" onClick={byId['help.shortcuts'].run} title="Hints and shortcuts · F1"><HelpCircle size={15} /></button>

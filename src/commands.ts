@@ -56,7 +56,7 @@ const bevelModal = (opId: string) => () => {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('modal-tool', { detail: BEVEL_MODAL[opId] }))
 }
 /** MOD-3 contract rows: F9 needs an adjustable last op; Shift+R a repeatable one (its own guards on this selection) */
-const canAdjustLast: CanRun = () => { const c = currentOp(); return c && c.live && c.schema.length ? OK : no('Adjust Last Operation: run a tool first') }
+const canAdjustLast: CanRun = () => { const c = currentOp(); return c && (c.live || !c.schema.length) ? OK : no('Adjust Last Operation: run a tool first') } // no fields: F9 still shows "No options to adjust."
 const canRepeatLast: CanRun = s => {
   const c = currentOp()
   if (c && c.kind === 'modal' && c.id === 'op.mul.duplicate') return canDuplicateMove(s) // Shift+D: duplicate + move again
@@ -255,11 +255,11 @@ export const commands: Command[] = [
   { id: 'app.settings', label: 'Settings (UI scale…)', group: 'File', keys: 'Ctrl+,', run: () => window.dispatchEvent(new Event('open-settings')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
   { id: 'help.shortcuts', label: 'Help: hints and keyboard shortcuts', group: 'Help', keys: 'F1', run: () => S().set({ helpOpen: !S().helpOpen }) },
-  // N = the selection's position / rotation / scale / dimensions (SelectionNumeric.tsx); op options are F9 (MOD-3)
+  // N = the selection's position / rotation / scale / dimensions (SelectionNumeric.tsx); op options are F9 (MOD-3).
+  // It only flips store.numericOpen: the dialog's host is always mounted by App (<NumericPanel />), so no lazy import here.
   { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', canRun: s => (s.numericOpen || (s.selectMode === 'object' ? selectedObjects().length > 0 : s.activeVerts().length > 0) ? OK : no('Numeric: select something first')), run: () => {
     const s = S(), any = s.selectMode === 'object' ? selectedObjects().length > 0 : s.activeVerts().length > 0
     if (!s.numericOpen && !any) s.notify('Numeric: select something to type its position, rotation, scale or size (tool options: F9)')
-    void import('./components/SelectionNumeric').then(m => m.ensureNumericHost())
     s.set({ numericOpen: !s.numericOpen })
   } },
   // MOD-3 (src/oppanel): one last operation (lastop.ts) for the Operator panel, F9 and Shift+R. actions.ts needs the

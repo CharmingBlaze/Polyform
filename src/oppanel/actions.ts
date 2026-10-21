@@ -67,7 +67,8 @@ export const closeOpPopover = () => useOpPopover.setState({ at: null })
 export function adjustLast(): boolean {
   ensureOpPopoverHost()
   const cur = currentOp(), st = useStore.getState()
-  if (!cur || !cur.live || !cur.schema.length) { st.notify('Adjust Last Operation: run a tool first (nothing to adjust)'); return false }
+  // an op without fields still opens (its title row + "No options to adjust."); one with fields must still be live
+  if (!cur || (cur.schema.length && !cur.live)) { st.notify('Adjust Last Operation: run a tool first (nothing to adjust)'); return false }
   const panel = typeof document !== 'undefined' ? document.querySelector<HTMLElement>('[data-testid="op-panel"]') : null
   if (panel && panel.offsetParent !== null && panel.getBoundingClientRect().width > 0) {
     panel.removeAttribute('data-collapsed')

@@ -154,7 +154,7 @@ describe('MOD-1 API review fixes', () => {
     expect(getLastOp()).toBeNull()
     beginModal({ id: 'xf.grab', label: 'Move' })
     endModal('xf.grab', { confirmed: true, opts: { axis: 'x', translate: [1.5, 0, 0] } })
-    expect(getLastOp()).toEqual({ id: 'xf.grab', opts: { axis: 'x', translate: [1.5, 0, 0] } })
+    expect(getLastOp()).toEqual({ id: 'xf.grab', opts: { axis: 'x', translate: [1.5, 0, 0] }, label: 'Move' }) // label: the line's op name
     expect(useLastOp.getState().lastOp?.id).toBe('xf.grab')
     beginModal({ id: 'mul.bevel', label: 'Bevel' })
     endModal('mul.bevel', { confirmed: false, opts: { offset: 1 } })
@@ -167,7 +167,7 @@ describe('MOD-1 API review fixes', () => {
     expect(isModalRunning()).toBe(true)
     expect(getLastOp()?.id).toBe('xf.grab')
     endModal('mul.bevel', { confirmed: true, opts: { offset: 0.1, segments: 2 } })
-    expect(getLastOp()).toEqual({ id: 'mul.bevel', opts: { offset: 0.1, segments: 2 } })
+    expect(getLastOp()).toEqual({ id: 'mul.bevel', opts: { offset: 0.1, segments: 2 }, label: 'Bevel' })
   })
   it('G/R/S/E ids are registered command ids', async () => {
     const { commands } = await import('../src/commands')

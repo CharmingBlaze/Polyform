@@ -39,11 +39,18 @@ const tick = () => useOpTick.setState(s => ({ n: s.n + 1 }))
 // commands.ts imports this module while the modal layer may still be loading (modal → keymap → commands), so the
 // two subscriptions install once both stores exist: right after the module graph has run, or on first use
 let installed = false
+/**
+ * Modal records that are an operator's own record (the Bevel modal's `op.mul.bevel` while store.lastOp is mul.bevel).
+ * Once that op is gone (undone: store.lastOp cleared), the record goes with it instead of showing as a field-less
+ * modal ("No options to adjust." for a bevel that no longer exists).
+ */
+const owned = new WeakSet<object>()
+function claim(rec: { id: string } | null, lo: { id: string } | null) { if (rec && lo && rec.id === `op.${lo.id}`) owned.add(rec) }
 function ensure() {
   if (installed || !useStore?.subscribe || !useLastOp?.subscribe) return
   installed = true
   useStore.subscribe((s, p) => { if (s.lastOp !== p.lastOp && s.lastOp) stamp.op = ++seq })
-  useLastOp.subscribe((s, p) => { if (s.lastOp !== p.lastOp && s.lastOp) stamp.modal = ++seq })
+  useLastOp.subscribe((s, p) => { if (s.lastOp !== p.lastOp && s.lastOp) { stamp.modal = ++seq; claim(s.lastOp, useStore.getState().lastOp) } })
 }
 queueMicrotask(ensure)
 setTimeout(ensure, 0)
@@ -60,6 +67,19 @@ export function noteTransformCommitted() {
 }
 
 const MODAL_LABEL: Record<string, string> = { 'xf.grab': 'Move', 'xf.rotateModal': 'Rotate', 'xf.scaleModal': 'Scale', 'xf.shrinkFatten': 'Shrink/Fatten', 'edit.extrude': 'Extrude', 'op.mul.duplicate': 'Duplicate' }
+
+/**
+ * The name a modal record shows (panel title, Repeat Last): the label the tool passed to `beginModal` (carried on the
+ * record), else the command's title in the registry (`op.*` ids: the operator's label), else MODAL_LABEL, else the
+ * raw id. Never shows "mesh.knife" when the tool said "Knife".
+ */
+export function modalLabel(id: string, recorded?: string): string {
+  if (recorded) return recorded
+  const cmd = Commands.byId?.[id]?.label
+  if (cmd) return cmd
+  const op = id.startsWith('op.') ? opById[id.slice(3)]?.label : undefined
+  return op ?? MODAL_LABEL[id] ?? id
+}
 
 /**
  * Option-box schema of command `id`: XF_PARAMS for G / R / S, else Backend's `paramsOf(id)` (opcontract.ts PARAMS),
@@ -84,17 +104,18 @@ export function currentOp(): CurrentOp | null {
     const id = `op.${lo.id}`
     return { kind: 'op', id, opId: lo.id, label: opById[lo.id].label, schema: schemaFor(id), values: { ...lo.params }, live: lo.rev === s.version, note: lo.note }
   }
-  if (rec && lo && rec.id === `op.${lo.id}`) return asOp()
+  claim(rec, lo)
+  if (rec && owned.has(rec)) return asOp()
   if (rec && stamp.modal > stamp.op) {
-    if (XF_PARAMS[rec.id]) return { kind: 'xf', id: rec.id, label: MODAL_LABEL[rec.id], schema: XF_PARAMS[rec.id], values: xfValues(rec.id, rec.opts), opts: rec.opts, live: xfVersion === s.version }
-    return { kind: 'modal', id: rec.id, label: MODAL_LABEL[rec.id] ?? rec.id, schema: [], values: {}, opts: rec.opts, live: false }
+    if (XF_PARAMS[rec.id]) return { kind: 'xf', id: rec.id, label: modalLabel(rec.id, rec.label), schema: XF_PARAMS[rec.id], values: xfValues(rec.id, rec.opts), opts: rec.opts, live: xfVersion === s.version }
+    return { kind: 'modal', id: rec.id, label: modalLabel(rec.id, rec.label), schema: [], values: {}, opts: rec.opts, live: false }
   }
-  return asOp() ?? (rec ? currentOpFromRecord(rec.id, rec.opts) : null)
+  return asOp() ?? (rec ? currentOpFromRecord(rec.id, rec.opts, rec.label) : null)
 }
-function currentOpFromRecord(id: string, opts: Record<string, unknown>): CurrentOp {
+function currentOpFromRecord(id: string, opts: Record<string, unknown>, recorded?: string): CurrentOp {
   const s = useStore.getState()
-  if (XF_PARAMS[id]) return { kind: 'xf', id, label: MODAL_LABEL[id], schema: XF_PARAMS[id], values: xfValues(id, opts), opts, live: xfVersion === s.version }
-  return { kind: 'modal', id, label: MODAL_LABEL[id] ?? id, schema: [], values: {}, opts, live: false }
+  if (XF_PARAMS[id]) return { kind: 'xf', id, label: modalLabel(id, recorded), schema: XF_PARAMS[id], values: xfValues(id, opts), opts, live: xfVersion === s.version }
+  return { kind: 'modal', id, label: modalLabel(id, recorded), schema: [], values: {}, opts, live: false }
 }
 /** React: re-render on any change to the last operation, then read `currentOp()` */
 export function useCurrentOp(): CurrentOp | null {

@@ -38,6 +38,7 @@
 .opp :disabled { opacity: 0.6; }
 .opp-ro { font-variant-numeric: tabular-nums; }
 .opp-note { color: var(--dim); margin: 4px 0 0; }
+.opp-empty { color: var(--dim); font-size: 11px; margin: 2px 0 0; }
 .opp-pop { position: fixed; z-index: 60; width: 260px; margin: 0; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
 .opp-pop .opp-head { cursor: default; }
 

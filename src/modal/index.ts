@@ -123,8 +123,11 @@ export function setModal(s: ModalStatus): void { publish({ ...s }) }
 
 /** How a modal ended: `confirmed` plus the op's final parameters (for Repeat Last and the F9 / docked panel). */
 export interface ModalResult { confirmed: boolean; opts?: Record<string, unknown> }
-/** The last confirmed modal op: `id` is the command id, `opts` its final parameters. */
-export interface LastModalOp { id: string; opts: Record<string, unknown> }
+/**
+ * The last confirmed modal op: `id` is the command id, `opts` its final parameters, `label` the op name the line
+ * showed when it ended (`beginModal`'s `label`, or the latest `updateModal({ label })`), e.g. "Knife".
+ */
+export interface LastModalOp { id: string; opts: Record<string, unknown>; label?: string }
 
 /** The shared last-operation record (Repeat Last, the docked panel, F9). Subscribe with `useLastOp(s => s.lastOp)`. */
 export const useLastOp = create<{ lastOp: LastModalOp | null }>(() => ({ lastOp: null }))
@@ -133,14 +136,15 @@ export const getLastOp = () => useLastOp.getState().lastOp
 
 /**
  * End the line. With an `id`, only that owner's line ends (a late end from an old tool cannot clear a new one).
- * `result.confirmed && result.opts` records `{ id, opts }` as the last operation (`getLastOp()` / `useLastOp`);
+ * `result.confirmed && result.opts` records `{ id, opts, label }` as the last operation (`getLastOp()` / `useLastOp`;
+ * `label` = the line's op name);
  * a cancel, or a call without `result`, records nothing and leaves the previous last op as it was.
  */
 export function endModal(id?: string, result?: ModalResult): void {
   const cur = useModalStatus.getState().status
   if (!cur || (id !== undefined && cur.id !== id)) return
   publish(null)
-  if (result?.confirmed && result.opts) useLastOp.setState({ lastOp: { id: cur.id, opts: { ...result.opts } } })
+  if (result?.confirmed && result.opts) useLastOp.setState({ lastOp: { id: cur.id, opts: { ...result.opts }, ...(cur.op ? { label: cur.op } : {}) } })
 }
 
 /** Is a modal status line up? (The gizmo hides while it is.) */
