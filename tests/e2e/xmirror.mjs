@@ -1,4 +1,4 @@
-// E2E: X-mirror editing — transforms on one side update the paired verts across X = 0; midplane locked.
+// E2E: X-mirror editing (Alt+X): transforms on one side update the paired verts across the object's X plane through its pivot (SYM-3: xMirrorOpts); centre line locked.
 import { chromium } from 'playwright-core'
 const url = process.argv[2] || 'http://127.0.0.1:5173/'
 const b = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
@@ -70,6 +70,41 @@ await p.keyboard.press('Alt+X'); await frame()
 check('Alt+X toggles X-mirror on', await S(() => window.__polyform.getState().xMirror))
 await p.click('[data-testid="x-mirror"]'); await frame()
 check('button toggles it off again', !(await S(() => window.__polyform.getState().xMirror)))
+
+// SYM-3: a real G on an off-origin object mirrors across its pivot (local space, xMirrorOpts), and the status
+// count from symmetryStatus(m, xMirrorOpts()) is the number of partners that move
+await S(() => {
+  const s = window.__polyform.getState()
+  const m = s.model; m.verts = []; m.vbone = []; m.faces = []; m.groups = []; m.bones = []
+  s.loadModel(m); s.addPrimitive('box'); s.selectNone()
+  s.edit(mm => { mm.verts.forEach(v => { v[0] += 3 }); mm.groups[0].xf.pivot = [3, 0, 0] }, 'offset')
+  s.set({ mode: 'model', workspace: 'model', tool: 'move', gizmoSpace: 'global', snap: false, maximized: 1, pivot: 'median', xMirror: false, xMirrorMap: null })
+  s.setSelectMode('vertex')
+})
+await p.keyboard.press('Alt+X'); await frame()
+const offv = await S(() => window.__polyform.getState().model.verts.findIndex(v => v[0] > 3 && v[1] > 0 && v[2] > 0))
+const offInfo = await S(async i => {
+  const s = window.__polyform.getState()
+  const { symmetryStatus } = await import('/src/symmetry.ts')
+  const st = symmetryStatus(s.model, window.__polyformXMirror.xMirrorOpts())
+  return { pair: s.xMirrorMap?.pair[i] ?? -1, pairs: st.pairs, opts: window.__polyformXMirror.xMirrorOpts() }
+}, offv)
+check('off-origin box: Alt+X pairs across its pivot (x = 3), 4 pairs, local / 0.001', offInfo.pair >= 0 && offInfo.pairs === 4 && offInfo.opts.space === 'local' && offInfo.opts.tolerance === 0.001, JSON.stringify(offInfo))
+await S(i => window.__polyform.getState().setSelection({ verts: [i] }), offv)
+const offBefore = await S(() => window.__polyform.getState().model.verts.map(v => [...v]))
+{
+  const pb = await p.locator('[data-testid="pane-1"]').boundingBox()
+  await p.mouse.move(pb.x + pb.width / 2 + 30, pb.y + pb.height / 2 + 20); await frame()
+}
+await p.keyboard.press('g'); await p.keyboard.press('y'); await p.keyboard.type('0.5'); await p.keyboard.press('Enter'); await frame()
+{
+  const after = await S(() => window.__polyform.getState().model.verts.map(v => [...v]))
+  const q = offInfo.pair
+  const movedOthers = after.filter((v, i) => i !== offv && v.some((x, k) => Math.abs(x - offBefore[i][k]) > 1e-6)).length
+  check('G Y 0.5 moves the vert and its partner mirrored across x = 3', Math.abs(after[offv][1] - offBefore[offv][1] - 0.5) < 1e-4 && Math.abs(after[q][1] - after[offv][1]) < 1e-4 && Math.abs(after[q][0] - (6 - after[offv][0])) < 1e-4, JSON.stringify([after[offv], after[q]]))
+  check('only the partner moved with it', movedOthers === 1, String(movedOthers))
+}
+await S(() => window.__polyform.getState().set({ xMirror: false, xMirrorMap: null }))
 
 await S(() => window.__polyform.getState().openSample('character')); await frame()
 // samples open into Animate; X-Mirror lives on Model's Modify tab

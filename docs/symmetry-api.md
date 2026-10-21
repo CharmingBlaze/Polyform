@@ -8,7 +8,7 @@ store, tools and UI wrap it. Unit tests: `tests/symmetry.test.ts`.
 
 ```ts
 type Axis = 0 | 1 | 2
-type SymSpace = 'local' | 'world' | 'cursor' | 'mesh'   // 'mesh' = raw stored coords through 0 (legacy X-Mirror only)
+type SymSpace = 'local' | 'world' | 'cursor' | 'mesh'   // 'mesh' = raw stored coords through 0 (Symmetrize/hand-made maps; X-Mirror is 'local' since SYM-3)
 type SymMatch = 'position' | 'topology'
 
 interface Symmetry {                 // spec §3.1; to be saved as model.props.symmetry by the store slice
@@ -72,7 +72,7 @@ symmetryBuildCount(): number                            // builds since load (te
 
 - **Spaces.** `local`: the object's own axes through its pivot (verts are stored in object space, so this ignores the
   object's rotation; points pair only within their own object). `world`: world axes through the origin (object
-  transform applied). `cursor`: world axes through `cursor`. `mesh`: stored coordinates through 0 (old X-Mirror).
+  transform applied). `cursor`: world axes through `cursor`. `mesh`: stored coordinates through 0 (X-Mirror before SYM-3).
 - **Position match.** Points within `tolerance` of the plane are centre-line points. Every other point pairs with the
   nearest unpaired point on the other side whose mirrored position is within `tolerance` (spatial hash, cell =
   tolerance). Unpaired points stay unpaired and are listed in `unmatched`.
@@ -140,8 +140,8 @@ canSymmetrize(state.model, state.opSel(), last-used options))`, `PARAMS = SYMMET
 
 ## Wrappers (no behaviour change)
 
-- `xmirror.ts`: `pairs` builds through `buildPairs({ axis: 0, space: 'mesh', tolerance: 1e-4 })` and returns the same
-  `XMirror { pair (-1 for mid), mid: Set, sig }` (plus `core`); `applyMirror` → `applySymmetric(…, { clip: true })`.
+- `xmirror.ts` (Alt+X; SYM-3, see "X-Mirror settings" below): `pairs` returns the same `XMirror { pair (-1 for
+  mid / unpaired), mid: Set, sig }` (plus `core`); `applyMirror` → `applySymmetric(…, { clip })`.
 - `bones.mirrorName` → `mirrorNameLegacy` (legacy rules: whole-word Left/Right only, `.001` kept, unsided names get
   `.R`), unchanged behaviour.
 - `timeline/pose.mirrorPartner(name, names?: { has(name): boolean })` (a Set or a name → index Map) uses the Blender rules (approved by Developer 2):
@@ -166,3 +166,22 @@ scene model. `applyXf` no longer mirrors separately.
 - Symmetrize's F9 panel is `SYMMETRIZE_PARAMS` (Main: Direction, Threshold; Geometry: Space, Cursor X/Y/Z only in
   cursor space; Shading: Flip UVs). The Mirror-tab ops have no `op.*` command, so `commands.paramsOf('op.<opId>')`
   falls back to that OpDef's `PARAMS`; Flip / Mirror copy / Rotate get their PARAMS panel the same way.
+
+## X-Mirror settings (SYM-3)
+
+```ts
+xMirrorOpts(): Readonly<{ axes: { x: true; y: false; z: false }; space: 'local'; tolerance: 0.001; match: 'position'; clip: true }>
+```
+
+One frozen object, Jesse's approved spec defaults: the object's own X axis through its **pivot** (local space), partners
+within **0.001 m** by position, points within 0.001 of the plane are centre-line points and stay on it (clip). Points
+with no partner are left alone when their side moves (shown as unmatched). `xmirror.pairs` builds from it, G / R / S
+(`applyTransformDelta`) mirror with it, and the status chip should call `symmetryStatus(m, xMirrorOpts())`: its
+`pairs` is exactly the number of partners a move of one side updates (tested), so the chip and the edit cannot drift.
+
+- Was: `space: 'mesh'` (stored coordinates through x = 0), tolerance 1e-4. An object whose pivot is off x = 0 now
+  mirrors across its pivot; objects with the pivot on x = 0 (the samples, primitives added at the origin) are unchanged.
+- Cache: `XMirror.sig` = topology + each object's pivot, so the map is reused across moves and rebuilt after a topology
+  change, undo / redo, or a pivot edit (`store.touch` / undo / redo / Alt+X). `applyTransformDelta` gets the map
+  before writing any point, because pairing is by position.
+- Objects are paired within themselves (local space); two separate objects never pair with each other.

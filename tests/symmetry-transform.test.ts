@@ -89,3 +89,22 @@ describe('F9 adjust of Symmetrize', () => {
     expect(Math.max(...xs(b.model))).toBeCloseTo(0.2)
   })
 })
+
+describe('SYM-3: G / R / S use xMirrorOpts (local space, across the pivot, 0.001)', () => {
+  it('an off-origin object mirrors across its pivot, and the status pair count is what the move mirrors', async () => {
+    const { xMirrorOpts } = await import('../src/xmirror')
+    const { symmetryStatus } = await import('../src/symmetry')
+    const m = emptyModel(); addPrimitive(m, 'box', [3, 0, 0], { seg: 2 }); addPrimitive(m, 'box', [-2, 1, 0])
+    history.reset(m)
+    useStore.setState({ model: m, xMirror: true, xMirrorMap: null })
+    const st = symmetryStatus(m, xMirrorOpts())
+    const src = m.verts.map((p, i) => i).filter(i => m.verts[i][0] > m.groups[m.faces.find(f => f.v.includes(i))!.g].xf.pivot[0] + 0.01)
+    const before = m.verts.map(p => [...p] as Vec3)
+    applyTransformDelta(m, src, v => [before[v][0] + 0.1, before[v][1] + 0.2, before[v][2]])
+    const partners = m.verts.map((_, i) => i).filter(i => !src.includes(i) && m.verts[i].some((x, k) => Math.abs(x - before[i][k]) > 1e-9))
+    expect(partners.length).toBe(st.pairs)
+    const v = src.find(i => m.verts[i][0] > 3)!, w = partners.find(i => Math.abs(m.verts[i][1] - m.verts[v][1]) < 1e-9 && Math.abs(m.verts[i][2] - m.verts[v][2]) < 1e-9 && m.verts[i][0] < 3)!
+    expect(m.verts[w][0]).toBeCloseTo(6 - m.verts[v][0]) // across x = 3, the first box's pivot
+    useStore.setState({ xMirror: false, xMirrorMap: null })
+  })
+})
