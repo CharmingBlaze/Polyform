@@ -15,6 +15,7 @@ import { checkCanRun, OK, paramsFromDefs } from '../src/opcontract'
 import { useStore } from '../src/store'
 import * as M from '../src/model'
 import { BEVEL_PARAMS } from '../src/bevel'
+import { SYMMETRIZE_PARAMS } from '../src/symmetry'
 import { FIXTURES, OPT_RUNS, POPUPS, runOne, stubDom, wrapOps, type Run } from './util/cmdsweep'
 
 const S = () => useStore.getState()
@@ -178,6 +179,7 @@ const EDITS: [string, string][] = [
   ['mesh.rotateXNeg', 'xx.xx.xx...'],
   ['mesh.rotateYNeg', 'xxxxx..x...'],
   ['mesh.rotateZNeg', 'xxxxx.xx...'],
+  ['mesh.symmetrize', 'xxxxx..x...'],
   ['edit.delete', 'xxxxx.xx...'],
   ['edit.deleteX', 'xxxxx.xx...'],
   ['edit.cut', 'xx.xx..x...'],
@@ -273,6 +275,8 @@ describe('operator contract', () => {
     // Blender bevel: the redo-panel schema itself, on both edge and vertex bevel
     expect(paramsOf('op.mul.bevel')).toBe(BEVEL_PARAMS)
     expect(paramsOf('op.mul.bevelVerts')).toBe(BEVEL_PARAMS)
+    // Symmetrize: its redo-panel schema, and the op's own canRun through the same contract
+    expect(paramsOf('mesh.symmetrize')).toBe(SYMMETRIZE_PARAMS)
   })
   it('right-click menus grey rows by canRunCommand alone where a command has canRun', () => {
     FIXTURES.find(f => f.id === 'cube/edge')!.setup()
@@ -293,6 +297,12 @@ describe('operator contract', () => {
     expect(canRunCommand('add.box').ok).toBe(true)
     FIXTURES.find(f => f.id === 'cube/object-animate')!.setup()
     expect(canRunCommand('op.mul.extrude')).toEqual({ ok: false, reason: 'Switch to Model mode to edit geometry' })
+    FIXTURES.find(f => f.id === 'rig/joint')!.setup()
+    expect(canRunCommand('mesh.symmetrize')).toEqual({ ok: false, reason: 'Switch to Object, Point, Edge or Face mode' })
+    FIXTURES.find(f => f.id === 'empty')!.setup()
+    expect(canRunCommand('mesh.symmetrize')).toEqual({ ok: false, reason: 'Symmetrize: there are no faces to mirror' })
+    FIXTURES.find(f => f.id === 'cube/object')!.setup()
+    expect(canRunCommand('mesh.symmetrize').ok).toBe(true)
   })
   it('MOD-3: Adjust Last (F9), Repeat Last (Shift+R) and N carry canRun; the panel reads PARAMS through paramsOf', async () => {
     const { useLastOp } = await import('../src/modal')

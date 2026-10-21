@@ -9,7 +9,8 @@ import { primitiveImageUVs, primitiveUVNote } from './primuv'
 import { BEVEL_PARAMS, bevel, bevelEdgesOfSelection, bevelOptsFromParams } from './bevel'
 import type { Model, ParamDef, Params, PrimitiveKind, Vec3 } from './model'
 import * as MO from './mirrorOps'
-import type { OpParam } from './opcontract'
+import { all, no, OK, rules, type CanRun, type OpParam } from './opcontract'
+import * as SYM from './symmetry'
 
 export interface OpSel { verts: number[]; faces: number[]; edges: [number, number][]; bones: number[]; axis: boolean[]; /** what the selection is: points (edit), whole objects or joints */ mode?: MO.MirrorMode }
 export interface OpResult { verts?: number[]; faces?: number[]; edges?: [number, number][]; bones?: number[]; note?: string }
@@ -24,6 +25,11 @@ export interface OpDef {
   run: (m: Model, s: OpSel, p: Params) => OpResult | void
   /** option-box schema (opcontract.ts); absent = generated from `params` */
   PARAMS?: readonly OpParam<never>[]
+  /**
+   * The op's own rule on top of the generic guards (opcontract `opCanRun`: Model mode, `needs`): same CanRun as every
+   * command, so the menus, palette and runOp all ask one mechanism.
+   */
+  canRun?: CanRun
 }
 
 const N = (key: string, label: string, def: number, min: number, max: number, step: number, int = false): ParamDef => ({ key, label, def, min, max, step, int })
@@ -40,10 +46,12 @@ function paramDefs<O>(list: readonly MO.OpParam<O>[]): ParamDef[] {
     if (d.type === 'bool') return BOOL(d.name, d.label, def ? 1 : 0)
     if (d.type === 'axis') return AXIS(d.name, d.label, def as 0 | 1 | 2)
     if (d.type === 'enum') return { key: d.name, label: d.label, def, min: 0, max: (d.options?.length ?? 1) - 1, step: 1, int: true, kind: 'enum', options: [...(d.options ?? [])] }
-    const step = d.name === 'angle' ? 15 : d.name === 'weldDistance' ? 0.001 : 0.1
+    const step = d.name === 'angle' ? 15 : d.name === 'weldDistance' || d.name === 'threshold' ? 0.001 : 0.1
     return N(d.name, d.unit === '°' ? `${d.label}°` : d.label, def, d.min ?? -1e6, d.max ?? 1e6, step, d.type === 'int')
   })
 }
+const SYM_PARAMS = SYM.SYMMETRIZE_PARAMS as unknown as readonly MO.OpParam<SYM.SymmetrizeOptions>[]
+const symOpts = (p: Params) => MO.optsFromParams(SYM_PARAMS, p)
 const center = (m: Model, verts: number[]) => G.selectionBounds(m, verts).getCenter(new THREE.Vector3())
 
 
@@ -105,6 +113,12 @@ export const OPS: OpDef[] = [
   { id: 'mesh.flip', label: 'Flip', tab: 'Mirror', params: paramDefs(MO.FLIP_PARAMS), PARAMS: MO.FLIP_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.flipWith(m, s, MO.optsFromParams(MO.FLIP_PARAMS, p)) },
   { id: 'mesh.copy', label: 'Mirror copy', tab: 'Mirror', params: paramDefs(MO.COPY_PARAMS), PARAMS: MO.COPY_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.copyWith(m, s, MO.optsFromParams(MO.COPY_PARAMS, p)) },
   { id: 'mesh.rotate', label: 'Rotate', tab: 'Mirror', params: paramDefs(MO.ROTATE_PARAMS), PARAMS: MO.ROTATE_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.rotateWith(m, s, MO.optsFromParams(MO.ROTATE_PARAMS, p)) },
+  // ---------- Symmetry (SYM-4): Symmetrize; schema = symmetry.SYMMETRIZE_PARAMS (selected faces, or the whole mesh)
+  {
+    id: 'mesh.symmetrize', label: 'Symmetrize', tab: 'Mirror', params: paramDefs(SYM_PARAMS), PARAMS: SYM.SYMMETRIZE_PARAMS as unknown as readonly OpParam<never>[],
+    canRun: all(rules.notJointMode, st => { const r = SYM.canSymmetrize(st.model, st.opSel(), symOpts(st.lastOp?.id === 'mesh.symmetrize' ? st.lastOp.params : {})); return r.ok ? OK : no(r.reason ?? 'Symmetrize: nothing to do') }),
+    run: (m, s, p) => { const r = SYM.symmetrize(m, s, symOpts(p)); return { faces: r.faces, note: r.note } },
+  },
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {

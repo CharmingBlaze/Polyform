@@ -756,6 +756,8 @@ export const useStore = create<State>((set, get) => ({
     const op = opById[id]
     if (!op) return
     if (s.mode === 'animate' && op.tab !== 'Create') return s.notify('Switch to Model mode to edit geometry')
+    // the op's own contract rule (OpDef.canRun, opcontract.ts): the toast says what the greyed menu entry says
+    if (op.canRun) { const c = op.canRun(s); if (!c.ok) return s.notify(c.reason ?? `${op.label}: can't run here`) }
     if (id === 'mul.duplicate' && s.selectMode === 'object') {
       // Object mode: whole objects, each copy its own object (selected afterwards)
       const gs = [...new Set([...s.selFaces].map(f => s.model.faces[f]?.g).filter((g): g is number => g !== undefined))]

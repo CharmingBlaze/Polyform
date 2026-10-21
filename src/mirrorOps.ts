@@ -129,7 +129,7 @@ export function facesInside(m: Model, verts: Set<number>, among?: Iterable<numbe
 const boneByName = (m: Model) => new Map(m.bones.map((b, i) => [b.name, i] as const))
 /** L/R partner joint of `b` (by name), or -1. */
 export function partnerJoint(m: Model, b: number, names = boneByName(m)): number {
-  const pn = m.bones[b] ? mirrorPartner(m.bones[b].name) : null
+  const pn = m.bones[b] ? mirrorPartner(m.bones[b].name, names) : null
   const p = pn === null ? undefined : names.get(pn)
   return p === undefined || p === b ? -1 : p
 }
@@ -162,7 +162,7 @@ export function carryJoints(m: Model, bones: Iterable<number>, A: THREE.Matrix4)
     const names = boneByName(m), done = new Set<number>()
     for (const b of set) {
       if (done.has(b)) continue
-      const pn = mirrorPartner(m.bones[b].name)
+      const pn = mirrorPartner(m.bones[b].name, names)
       if (pn === null) continue
       const pj = names.get(pn)
       if (pj !== undefined && pj !== b && set.has(pj)) {

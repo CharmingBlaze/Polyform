@@ -78,10 +78,11 @@ export const rules = {
 
 /**
  * canRun of an operator from ops.ts: the same guards runOp applies (Model mode, `needs`), so a greyed entry and the
- * toast it would show say the same thing. Create ops (add.*) can always run.
+ * toast it would show say the same thing, then the op's own `canRun` when it has one (OpDef.canRun, e.g.
+ * mesh.symmetrize). Create ops (add.*) can always run.
  */
-export function opCanRun(op: Pick<OpDef, 'id' | 'label' | 'tab' | 'needs'>): CanRun | undefined {
-  if (op.tab === 'Create') return undefined
+export function opCanRun(op: Pick<OpDef, 'id' | 'label' | 'tab' | 'needs' | 'canRun'>): CanRun | undefined {
+  if (op.tab === 'Create') return op.canRun
   const need: CanRun = s => {
     if (op.id === 'mul.duplicate' && s.selectMode === 'object') return s.selFaces.size ? OK : no('Duplicate: select objects first')
     const sel = s.opSel()
@@ -98,7 +99,7 @@ export function opCanRun(op: Pick<OpDef, 'id' | 'label' | 'tab' | 'needs'>): Can
     if (op.id === 'con.fill') return sel.verts.length >= 2 || sel.edges.length ? OK : no('Fill: select 2 or more points or a loop of edges')
     return OK
   }
-  return all(rules.modelMode, need)
+  return op.canRun ? all(rules.modelMode, need, op.canRun) : all(rules.modelMode, need)
 }
 
 /** OpDef ParamDefs → option-box schema (numbers; enums and axes are option indices, bools 0/1). */

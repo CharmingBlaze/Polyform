@@ -202,7 +202,7 @@ export const RESERVED: Record<string, string> = {
   'view.xray': 'Frontend · Alt+Z',
   'edit.duplicateLinked': 'Developer 2 · Alt+D',
   'sel.loop': 'Developer 2 · loop select', 'sel.ring': 'Developer 2 · Ctrl+Alt ring select',
-  'mesh.symmetrize': 'Backend · SYM-4', 'mesh.snapSymmetry': 'Backend · SYM-4', 'joint.symmetrize': 'Developer 2 · SYM-7', 'anim.flipPose': 'Developer 2 · SYM-8',
+  'mesh.snapSymmetry': 'Backend · SYM-4', 'joint.symmetrize': 'Developer 2 · SYM-7', 'anim.flipPose': 'Developer 2 · SYM-8',
   'tool.tri': 'Lead · MOD-11 (Shift+T)', 'tool.quad': 'Lead · MOD-11 (Shift+Q)',
   'add.menu': 'Lead · Shift+A Add menu', 'view.snapMenu': 'Lead · Shift+S', 'snap.selToCursor': 'Lead · Shift+S', 'snap.selToGrid': 'Lead · Shift+S',
   'obj.join': 'Lead · Ctrl+J', 'obj.separate': 'Lead · P', 'xf.apply': 'Lead · Ctrl+A apply transform',

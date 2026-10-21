@@ -147,10 +147,19 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
 
 /**
  * MOD-2: the one place a G / R / S / Alt+S / extrude drag writes moved points (`fn(v)` = the new object-space
- * position of point `v`). Symmetry (backend/symmetry `applySymmetric`) wraps this with a one-line change later.
+ * position of point `v`). With symmetry on (the X-Mirror toggle, Alt+X; off by default) the symmetry core
+ * (`applySymmetric`) then writes each moved point's mirror onto its partner and holds centre-line points on the
+ * plane; with it off this is just the write.
  */
 export function applyTransformDelta(m: Model, indices: Iterable<number>, fn: (v: number) => Vec3): void {
-  for (const v of indices) m.verts[v] = fn(v)
+  const st = useStore.getState()
+  // pair before writing: a map built after the move would pair by the moved positions
+  const xm = st.xMirror && m === st.model ? xPairs(m, st.xMirrorMap) : null
+  const moved: number[] = []
+  for (const v of indices) { m.verts[v] = fn(v); moved.push(v) }
+  if (!xm || !moved.length) return
+  applyMirror(m, xm, moved) // = symmetry core applySymmetric on the X-Mirror map
+  if (xm !== st.xMirrorMap) useStore.setState({ xMirrorMap: xm })
 }
 
 /** World matrix of a transform about `center`, scaling along `frame`'s axes. */
@@ -182,11 +191,7 @@ export function applyXf(T: Targets, x: Xf) {
     else p.applyMatrix4(Wv)
     return [p.x, p.y, p.z]
   })
-  if (st.xMirror && T.verts.size) {
-    const xm = xPairs(m, st.xMirrorMap)
-    applyMirror(m, xm, T.verts.keys())
-    if (xm !== st.xMirrorMap) useStore.setState({ xMirrorMap: xm })
-  }
+  // symmetry (X-Mirror) is applied inside applyTransformDelta
   T.bones.forEach((o, b) => { p.set(o[0], o[1], o[2]).applyMatrix4(W); m.bones[b].pos = [p.x, p.y, p.z] })
   const ci = Math.min(st.clip, m.clips.length - 1)
   T.objs.forEach((o, g) => {

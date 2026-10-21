@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import type { Clip, Model, Vec3 } from './model'
 import { skinnedGroups } from './anim'
 import { ensureSkin, remapSkin, setVertBone, syncVbone } from './skin'
+import { mirrorNameLegacy } from './symmetryNames'
 
 export function descendants(m: Model, b: number): number[] {
   const out: number[] = []
@@ -33,16 +34,12 @@ export function reparentBone(m: Model, b: number, parent: number): boolean {
   return true
 }
 
-const PAIRS: Record<string, string> = { Left: 'Right', Right: 'Left', left: 'right', right: 'left', LEFT: 'RIGHT', RIGHT: 'LEFT', L: 'R', R: 'L', l: 'r', r: 'l' }
-/** "Arm.L" -> "Arm.R", "Left Leg" -> "Right Leg", "hand_r" -> "hand_l"; names without a side get ".R". */
-export function mirrorName(name: string): string {
-  // one pass so a swapped word is never swapped back
-  const out = name
-    .replace(/\b(Left|Right|left|right|LEFT|RIGHT)\b/g, w => PAIRS[w])
-    .replace(/([._\s-])([LRlr])$/, (_, sep, s) => sep + PAIRS[s])
-    .replace(/^([LRlr])([._\s-])/, (_, s, sep) => PAIRS[s] + sep)
-  return out === name ? `${name}.R` : out
-}
+/**
+ * "Arm.L" -> "Arm.R", "Left Leg" -> "Right Leg", "hand_r" -> "hand_l"; names without a side get ".R".
+ * Wrapper over the symmetry names module (legacy rules: whole words, no `.001` stripping); new code should use
+ * `partnerName` / `flipName` from src/symmetry.ts.
+ */
+export const mirrorName = (name: string): string => mirrorNameLegacy(name)
 
 /**
  * Mirror joints across X = 0 (L/R naming). Each selected joint gets a mirrored twin; a twin's parent is the twin

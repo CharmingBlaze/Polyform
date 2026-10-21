@@ -37,7 +37,7 @@ function flipPose(axis: MO.Axis) {
   const m = s.model, clip = s.curClip()
   const names = new Map(m.bones.map((b, i) => [b.name, i] as const))
   const bones = new Set(s.selBones)
-  s.selBones.forEach(b => { const pn = m.bones[b] ? mirrorPartner(m.bones[b].name) : null; const p = pn === null ? undefined : names.get(pn); if (p !== undefined) bones.add(p) })
+  s.selBones.forEach(b => { const pn = m.bones[b] ? mirrorPartner(m.bones[b].name, names) : null; const p = pn === null ? undefined : names.get(pn); if (p !== undefined) bones.add(p) })
   const kc = capturePose(m, clip, s.frame, [...bones], [])
   const plan = planPaste(m, clip, kc, s.frame, true)
   if (!plan.writes.length) return s.notify('Flip pose: nothing to flip')

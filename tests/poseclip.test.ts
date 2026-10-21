@@ -32,6 +32,28 @@ describe('pose clipboard', () => {
     expect(mirrorPartner('Spine')).toBeNull()
   })
 
+  it('partner names use the Blender rules (symmetry core)', () => {
+    expect(mirrorPartner('LeftLeg')).toBe('RightLeg')
+    expect(mirrorPartner('L_foot')).toBe('R_foot')
+    expect(mirrorPartner('handL')).toBeNull()
+    // a numbered name keeps its number when that joint exists, else falls back to the plain partner
+    expect(mirrorPartner('Arm.L.001', new Set(['Arm.L.001', 'Arm.R.001', 'Arm.R']))).toBe('Arm.R.001')
+    expect(mirrorPartner('Arm.L.001', new Set(['Arm.L.001', 'Arm.R']))).toBe('Arm.R')
+    expect(mirrorPartner('Arm.L.001')).toBe('Arm.R.001')
+  })
+
+  it('paste mirrored lands on RightLeg / Arm.R.001 / Arm.R by those rules', () => {
+    const m = emptyModel()
+    m.bones = ['LeftLeg', 'RightLeg', 'Arm.L.001', 'Arm.R.001', 'Hand.L.001', 'Hand.R'].map((name, i) => ({ name, parent: -1, pos: [i, 0, 0] as [number, number, number] }))
+    const c = m.clips[0]
+    const k = key([0.1, 0.2, 0.3], [0.5, 0, 0])
+    c.keys = { 0: { 0: k }, 2: { 0: k }, 4: { 0: k } }
+    const kc = capturePose(m, c, 0, [0, 2, 4], [])
+    const plan = planPaste(m, c, kc, 0, true)
+    expect(plan.missing).toEqual([])
+    expect(plan.writes.map(w => m.bones[w.index].name).sort()).toEqual(['Arm.R.001', 'Hand.R', 'RightLeg'])
+  })
+
   it('copies the key on the frame (easing kept) or the interpolated pose between keys, with names', () => {
     const m = rig(), c = m.clips[0], aL = idx(m, 'Arm.L')
     const on = capturePose(m, c, 10, [aL], [])

@@ -5,16 +5,28 @@
  * joints were added or reordered, or in another project with the same rig; a name that is not there is skipped.
  */
 import { sampleBone, sampleObject, skinnedGroups } from '../anim'
-import { mirrorName } from '../bones'
+import { partnerName, stripNumber } from '../symmetryNames'
 import type { Clip, Key, Model, OKey, Vec3 } from '../model'
 import type { KeyClip } from '../store'
 import { mirrorKey } from './keys'
 
-/** The L/R partner name ("Arm.L" -> "Arm.R", "Left Leg" -> "Right Leg"); null for a name with no side (spine, root). */
-export function mirrorPartner(name: string): string | null {
-  const out = mirrorName(name)
-  return out === `${name}.R` ? null : out
+/**
+ * The L/R partner name, Blender rules (symmetry core `partnerName`): "Arm.L" -> "Arm.R", "Left Leg" -> "Right Leg",
+ * "LeftLeg" -> "RightLeg", "L_foot" -> "R_foot"; null for a name with no side (spine, root; "handL" has none).
+ * A numbered name keeps its number when that joint exists: with `names` (the joints that exist), "Arm.L.001" goes to
+ * "Arm.R.001" if it is there, else to "Arm.R" if that is there; without `names` it is "Arm.R.001". `names` can be a
+ * Set of names or a name → index Map. The one rule for paste mirrored, Flip pose and the Mirror & Rotate ops.
+ */
+export function mirrorPartner(name: string, names?: { has(name: string): boolean }): string | null {
+  const base = partnerName(name)
+  const num = name.slice(stripNumber(name).length)
+  const exact = base !== null && num ? base + num : base
+  if (!names) return exact ?? base
+  if (exact !== null && names.has(exact)) return exact
+  if (base !== null && names.has(base)) return base
+  return exact ?? base
 }
+
 
 const cloneKey = (k: Key): Key => ({ rot: [...k.rot] as Vec3, pos: [...k.pos] as Vec3, ...(k.ease ? { ease: k.ease } : {}) })
 const cloneOKey = (k: OKey): OKey => ({ pos: [...k.pos] as Vec3, rot: [...k.rot] as Vec3, scale: [...k.scale] as Vec3, ...(k.ease ? { ease: k.ease } : {}) })
@@ -68,18 +80,19 @@ export interface PastePlan {
 export function planPaste(m: Model, clip: Clip, kc: KeyClip, frame: number, mirror: boolean): PastePlan {
   const writes: PasteWrite[] = [], missing: string[] = []
   let clipped = 0
+  const have = { bones: new Set(m.bones.map(b => b.name)), objects: new Set(m.groups.map(g => g.name)) }
   const resolve = (list: { name: string }[], names: Record<number, string> | undefined, i: number): number | null => {
     const name = names?.[i]
     if (name === undefined) {
       // legacy clipboard (no names): same index, or the index of the partner when mirrored
       if (!list[i]) return null
       if (!mirror) return i
-      const want = mirrorPartner(list[i].name)
+      const want = mirrorPartner(list[i].name, list === m.bones ? have.bones : have.objects)
       if (!want) return i
       const j = list.findIndex(x => x.name === want)
       return j >= 0 ? j : null
     }
-    const want = mirror ? (mirrorPartner(name) ?? name) : name
+    const want = mirror ? (mirrorPartner(name, list === m.bones ? have.bones : have.objects) ?? name) : name
     const j = list.findIndex(x => x.name === want)
     if (j < 0) { missing.push(want); return null }
     return j

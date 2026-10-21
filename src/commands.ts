@@ -28,6 +28,11 @@ export interface MenuPlacement { ctx: string | string[]; section?: string; label
 export interface Command extends OperatorContract<never> { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean; menus?: MenuPlacement[] }
 
 const S = () => useStore.getState()
+/** `mesh.symmetrize`: the op's contract (opCanRun = Model mode + the op's own canRun; PARAMS = SYMMETRIZE_PARAMS). */
+function symmetrizeCommand(): Command {
+  const op = OPS.find(o => o.id === 'mesh.symmetrize')!
+  return { id: 'mesh.symmetrize', label: 'Symmetrize (+X → −X; Direction in the redo panel)', group: 'Modify', run: () => S().runOp('mesh.symmetrize'), canRun: opCanRun(op), PARAMS: op.PARAMS }
+}
 /** Advanced paint modes: switch to the Paint tab and open Options so the control is on screen. */
 function paintImageMode(mode: PaintMode) {
   setPaintOptionsOpen(true)
@@ -244,6 +249,8 @@ export const commands: Command[] = [
   ...mirrorCommands,
   // W was free in both presets. Tap: list at the mouse; hold: marking menu; W + flick: run a direction (src/ctxmenu/input.ts)
   { id: 'view.contextMenu', label: 'Context menu at the mouse (hold: marking menu)', group: 'View', keys: 'W', run: () => window.dispatchEvent(new CustomEvent('open-context-menu')) },
+  // Symmetry (SYM-4): Edit › Symmetry ▸ / Ctrl+K; one undo step through runOp, redo panel from SYMMETRIZE_PARAMS
+  symmetrizeCommand(),
   { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
   { id: 'app.settings', label: 'Settings (UI scale…)', group: 'File', keys: 'Ctrl+,', run: () => window.dispatchEvent(new Event('open-settings')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
@@ -427,7 +434,12 @@ export const byId: Record<string, Command> = Object.fromEntries(commands.map(c =
 /** Can command `id` run now? `{ ok: true }` when it has no canRun or the id is not a registered command. */
 export const canRunCommand = (id: string, s = S()): CanRunResult => checkCanRun(byId[id], s)
 /** Option-box schema of command `id`, or null when it has none (no option box). */
-export const paramsOf = (id: string): readonly OpParam<never>[] | null => byId[id]?.PARAMS ?? null
+/**
+ * Option-box schema of `id`. `op.<opId>` of an op that has no command of its own (the Mirror-tab ops: mesh.flip/copy/
+ * rotate/symmetrize, run through their own commands) resolves to that OpDef's PARAMS, so F9 on store.lastOp gets it.
+ */
+export const paramsOf = (id: string): readonly OpParam<never>[] | null =>
+  byId[id]?.PARAMS ?? (!byId[id] && id.startsWith('op.') ? OPS.find(o => o.id === id.slice(3))?.PARAMS ?? null : null)
 
 export function comboOf(e: KeyboardEvent) {
   const parts: string[] = []
