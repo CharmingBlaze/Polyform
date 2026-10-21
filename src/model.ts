@@ -1104,9 +1104,18 @@ export function duplicateFaces(m: Model, faces: number[]): number[] {
       return d
     })
     out.push(m.faces.length)
-    m.faces.push({ v, uv: f.uv.map(u => [...u] as Vec2), g: f.g })
+    // keep every corner attribute (vertex colours, material override, seams, pins, sharp edges)
+    m.faces.push({ ...(JSON.parse(JSON.stringify(f)) as Face), v, uv: f.uv.map(u => [...u] as Vec2), g: f.g })
   }
   return out
+}
+
+/** Blender-style unique name: Box → Box.001, Box.001 → Box.002 (the lowest free number). */
+export function uniqueName(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken)
+  if (!used.has(name)) return name
+  const base = name.replace(/\.\d{3,}$/, '')
+  for (let n = 1; ; n++) { const c = `${base}.${String(n).padStart(3, '0')}`; if (!used.has(c)) return c }
 }
 
 /** Object mode duplicate: each group gets a copy (its own group, same transform and material); returns the new faces. */
@@ -1116,7 +1125,7 @@ export function duplicateObjects(m: Model, groups: number[]): number[] {
     const src = m.groups[g]
     if (!src) continue
     const ng = m.groups.length
-    m.groups.push({ ...JSON.parse(JSON.stringify(src)) as Group, name: `${src.name} copy` })
+    m.groups.push({ ...JSON.parse(JSON.stringify(src)) as Group, name: uniqueName(src.name, m.groups.map(x => x.name)) })
     const faces = duplicateFaces(m, m.faces.map((f, i) => (f.g === g ? i : -1)).filter(i => i >= 0))
     faces.forEach(fi => (m.faces[fi].g = ng))
     out.push(...faces)

@@ -15,6 +15,7 @@ import { copyTimelineKeys, duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 import { mirrorCommands } from './mirrorCmds'
 import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
+import { copyModel, cutModel, duplicateMove, pasteModel } from './modelClip'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -34,7 +35,7 @@ const edit = (m: EditMode, n: number): Command[] => [
 // Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
 const OP_KEYS: Record<string, string> = { 'mul.bevel': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
-export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
+export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint' | 'dupmove'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
 /** Ask for a factor and scale the timing of the shown joints' and the objects' keys around the playhead. */
 async function scaleKeysPrompt() {
@@ -190,7 +191,7 @@ export const commands: Command[] = [
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => !HIDDEN_KINDS.has(k)).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
-  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
+  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : () => S().runOp(o.id) })),
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,
   { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
@@ -204,6 +205,12 @@ export const commands: Command[] = [
   } },
   { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', run: () => S().deleteSelection() },
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
+  // Model clipboard (modelClip.ts): Ctrl+C / X / V everywhere but Animate and the Timeline (keymap.ts scopes the pose
+  // clipboard there) and the UV editor (UV_CLIP_KEYS)
+  { id: 'edit.copy', label: 'Copy (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+C', run: () => { copyModel() } },
+  { id: 'edit.cut', label: 'Cut (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+X', run: () => cutModel() },
+  { id: 'edit.paste', label: 'Paste (in place)', group: 'Edit', keys: 'Ctrl+V', run: () => void pasteModel(false) },
+  { id: 'edit.pasteAtCursor', label: 'Paste at 3D cursor', group: 'Edit', keys: 'Ctrl+Shift+V', run: () => void pasteModel(true) },
   { id: 'edit.undo', label: 'Undo', group: 'Edit', keys: 'Ctrl+Z', run: () => S().doUndo() },
   { id: 'edit.redo', label: 'Redo', group: 'Edit', keys: 'Ctrl+Shift+Z', run: () => S().doRedo() },
   { id: 'edit.redo2', label: 'Redo', group: 'Edit', keys: 'Ctrl+Y', run: () => S().doRedo() },
@@ -249,11 +256,11 @@ export const commands: Command[] = [
     s.set({ ik: on })
     s.notify(on ? `IK on (depth ${s.ikDepth}): select the tip joint and drag Move` : 'IK off')
   } },
-  // Animation clipboard (Animate mode, or anywhere over the Timeline). Over the Timeline Ctrl+C copies the selected
+  // Animation clipboard (Animate mode, or anywhere over the Timeline; Ctrl+C / V / Shift+V scoped in keymap.ts). Over the Timeline Ctrl+C copies the selected
   // keys when there are any; the dope sheet's Ctrl+C / V / Shift+V / D are these same rebindable commands.
-  { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', keys: 'Ctrl+C', run: () => { if (!animKeysHere()) return; if (overTimeline() && copyTimelineKeys()) return; S().copyPose() } },
-  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', keys: 'Ctrl+V', run: () => { if (animKeysHere()) S().pasteKeys(false) } },
-  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', keys: 'Ctrl+Shift+V', run: () => { if (animKeysHere()) S().pasteKeys(true) } },
+  { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', run: () => { if (!animKeysHere()) return; if (overTimeline() && copyTimelineKeys()) return; S().copyPose() } },
+  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', run: () => { if (animKeysHere()) S().pasteKeys(false) } },
+  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', run: () => { if (animKeysHere()) S().pasteKeys(true) } },
   // Ctrl+D in Animate and over the Timeline (scoped in keymap.ts); mesh Duplicate keeps Ctrl+D everywhere else
   { id: 'anim.duplicateKeys', label: 'Duplicate keys (selected keys, or the keys on the playhead)', group: 'Animate', run: () => { if (animKeysHere()) duplicateTimelineKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },

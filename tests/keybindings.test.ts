@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { commands, type Command } from '../src/commands'
 import {
   APPLY_TRANSFORM_ID, applyPreset, bindingsOf, comboKey, currentBindings, defaultKeyMap, effectiveKeyMap, findClashes, getBindingLabel,
-  isBrowserReserved, normCombo, removeBinding, replaceBinding, resetAllBindings, resetBinding, resolveKey, scopesOverlap, setBinding,
+  isBrowserReserved, normCombo, removeBinding, replaceBinding, resetAllBindings, resetBinding, resolveKey, routeKey, scopesOverlap, setBinding,
   useKeymap, type Binding, type KeyContext,
 } from '../src/keymap'
 import { scaleFrames } from '../src/anim'
@@ -56,6 +56,39 @@ describe('default keymap and resolution', () => {
     expect(live('Ctrl+C', at('animate', 'timeline'))).toBe('anim.copy')
     expect(live('Ctrl+V', at('animate', 'timeline'))).toBe('anim.paste')
     expect(live('Ctrl+Shift+V', at('animate', 'timeline'))).toBe('anim.pasteMirror')
+  })
+  it('clipboard keys route by area: Model clipboard in Model workspaces, pose clipboard in Animate and over the Timeline, UV copy over the UV editor', () => {
+    const area = (workspace: KeyContext['workspace'], o: { panel?: KeyContext['panel']; uv?: boolean } = {}) =>
+      ({ ctx: at(workspace, o.panel ?? null), overUV: !!o.uv, overTimeline: o.panel === 'timeline', animate: workspace === 'animate' })
+    const to = (combo: string, a: ReturnType<typeof area>) => { const r = routeKey(combo, a); return r.to === 'command' ? r.id : r.to }
+    for (const w of ['model', 'uv', 'paint', 'rig', 'export'] as const) {
+      expect(to('Ctrl+C', area(w)), w).toBe('edit.copy')
+      expect(to('Ctrl+X', area(w)), w).toBe('edit.cut')
+      expect(to('Ctrl+V', area(w)), w).toBe('edit.paste')
+      expect(to('Ctrl+Shift+V', area(w)), w).toBe('edit.pasteAtCursor')
+    }
+    // Animate viewport: the pose clipboard
+    expect(to('Ctrl+C', area('animate'))).toBe('anim.copy')
+    expect(to('Ctrl+V', area('animate'))).toBe('anim.paste')
+    expect(to('Ctrl+Shift+V', area('animate'))).toBe('anim.pasteMirror')
+    // over the Timeline in any mode: the pose / key clipboard
+    for (const w of ['model', 'animate'] as const) {
+      expect(to('Ctrl+C', area(w, { panel: 'timeline' })), w).toBe('anim.copy')
+      expect(to('Ctrl+V', area(w, { panel: 'timeline' })), w).toBe('anim.paste')
+      expect(to('Ctrl+Shift+V', area(w, { panel: 'timeline' })), w).toBe('anim.pasteMirror')
+    }
+    // over the UV editor: its own UV copy / paste, except in Animate (pose clipboard)
+    for (const w of ['uv', 'model'] as const) {
+      expect(to('Ctrl+C', area(w, { uv: true })), w).toBe('uv')
+      expect(to('Ctrl+V', area(w, { uv: true })), w).toBe('uv')
+    }
+    expect(to('Ctrl+C', area('animate', { uv: true }))).toBe('anim.copy')
+    // labels follow the area
+    expect(getBindingLabel('edit.copy')).toBe('Ctrl+C')
+    expect(getBindingLabel('edit.pasteAtCursor')).toBe('Ctrl+Shift+V')
+    useStore.setState({ workspace: 'animate', mode: 'animate' })
+    expect(getBindingLabel('anim.copy')).toBe('Ctrl+C')
+    expect(getBindingLabel('anim.pasteMirror')).toBe('Ctrl+Shift+V')
   })
   it('Ctrl+A: Select all pixels in Paint; Select all elsewhere until Apply transform exists, then Apply transform', () => {
     expect(live('Ctrl+A', at('paint'))).toBe('paint.selectAll')

@@ -73,7 +73,8 @@ export const APPLY_TRANSFORM_ID = 'xf.apply'
  * Default keymap: every `Command.keys` in global scope, plus the scoped rules the team agreed on:
  * Shift+D and Ctrl+D duplicate, except Ctrl+D clears the pixel selection in Paint; Ctrl+A is Apply transform
  * (Select all while that command does not exist yet), except Select all pixels in Paint; S over the Timeline scales keys;
- * Ctrl+D duplicates keys in Animate and over the Timeline.
+ * Ctrl+D duplicates keys in Animate and over the Timeline; Ctrl+C / V / Shift+V are the pose clipboard in Animate and
+ * over the Timeline, the Model clipboard elsewhere (the UV editor keeps its own, see routeKey).
  */
 export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   const ids = new Set(list.map(c => c.id))
@@ -94,6 +95,8 @@ export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   // Ctrl+D duplicates keys in Animate (viewport) and over the Timeline in any mode; mesh Duplicate everywhere else
   add('anim.duplicateKeys', 'ws:animate', 'Ctrl+D')
   add('anim.duplicateKeys', 'panel:timeline', 'Ctrl+D')
+  // pose / key clipboard in Animate and over the Timeline; the Model clipboard (edit.copy …) has the global keys
+  for (const [id, k] of [['anim.copy', 'Ctrl+C'], ['anim.paste', 'Ctrl+V'], ['anim.pasteMirror', 'Ctrl+Shift+V']] as const) { add(id, 'ws:animate', k); add(id, 'panel:timeline', k) }
   return km
 }
 
@@ -300,6 +303,22 @@ export function useBinding(commandId: string): string {
 
 // ---------------------------------------------------------------------------------------------- the keyboard
 
+/** Where the pointer is and what that area takes before the keymap (see installShortcuts). */
+export interface KeyArea { ctx: KeyContext; overUV: boolean; overTimeline: boolean; animate: boolean }
+export type KeyRoute = { to: 'command'; id: string } | { to: 'uv' } | { to: 'timeline' } | { to: 'none' }
+/**
+ * Who handles a combo (pure; the paint hotkeys and armed dope-sheet edits are checked before this): a hovered panel's
+ * own binding, then the UV editor's keys (its Ctrl+C / V too, except in Animate), the dope sheet's letters, then the
+ * keymap for the workspace.
+ */
+export function routeKey(combo: string, a: KeyArea, bindings: readonly Binding[] = currentBindings()): KeyRoute {
+  const hit = resolveKey(combo, a.ctx, bindings)
+  if (hit && hit.scope.startsWith('panel:')) return { to: 'command', id: hit.id }
+  if (a.overUV && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && !a.animate))) return { to: 'uv' }
+  if (a.overTimeline && TIMELINE_KEYS.includes(combo)) return { to: 'timeline' }
+  return hit ? { to: 'command', id: hit.id } : { to: 'none' }
+}
+
 export function installShortcuts(openPalette: () => void) {
   const onPalette = () => openPalette()
   const onKey = (e: KeyboardEvent) => {
@@ -327,8 +346,9 @@ export function installShortcuts(openPalette: () => void) {
     }
     if (hit && hit.scope.startsWith('panel:')) return run(hit) // a hovered panel's own keys come first
     if (paintHotkey(e)) return
-    if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && useStore.getState().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
-    if (overTimeline() && TIMELINE_KEYS.includes(combo)) {
+    const route = routeKey(combo, { ctx: keyContext(), overUV: overUV(), overTimeline: overTimeline(), animate: useStore.getState().mode === 'animate' })
+    if (route.to === 'uv') { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
+    if (route.to === 'timeline') {
       e.preventDefault()
       if (combo === 'Space') { byId['anim.play']?.run(); return }
       if (combo === 'I') { byId['anim.insertKey']?.run(); return }

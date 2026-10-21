@@ -71,7 +71,7 @@ describe('duplicateObjects (Object mode Shift+D)', () => {
     const nf = m.faces.length, nv = m.verts.length
     const made = duplicateObjects(m, [1])
     expect(m.groups.length).toBe(3)
-    expect(m.groups[2].name).toBe(`${m.groups[1].name} copy`)
+    expect(m.groups[2].name).toBe(`${m.groups[1].name}.001`)
     expect(m.groups[2].xf.pos).toEqual([2, 0, 0])
     expect(made.length).toBe(6)
     expect(made.every(f => m.faces[f].g === 2)).toBe(true)

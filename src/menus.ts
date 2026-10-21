@@ -53,6 +53,10 @@ export function cmd(id: string, label?: string, extra: Partial<MenuItem> = {}): 
 }
 
 const hasSel = () => { const s = S(); return s.selVerts.size + s.selFaces.size + s.selEdges.size + s.selBones.size > 0 }
+/** Copy / Cut: Model mode with selected objects (Object mode) or whole faces (Edit mode) */
+const canCopy = () => { const s = S(); return s.mode === 'model' && s.selectMode !== 'joint' && s.activeFaces().length > 0 }
+/** Duplicate: Model mode with anything selected (objects, points, edges or faces) */
+const canDup = () => { const s = S(); return s.mode === 'model' && s.selectMode !== 'joint' && s.selVerts.size + s.selFaces.size + s.selEdges.size > 0 }
 const hasGeo = () => S().model.verts.length > 0 || S().model.bones.length > 0
 
 export function buildMenus(openPalette: () => void): Menu[] {
@@ -85,8 +89,15 @@ export function buildMenus(openPalette: () => void): Menu[] {
     cmd('edit.undo', 'Undo', { enabled: history.canUndo() }),
     cmd('edit.redo', 'Redo', { enabled: history.canRedo() }),
     'sep',
-    cmd('op.mul.duplicate', 'Duplicate', { enabled: s.selFaces.size > 0 }),
+    // Model clipboard + duplicate (Shift+D: objects in Object mode, points / edges / faces in Edit mode)
+    cmd('edit.cut', 'Cut', { enabled: canCopy() }),
+    cmd('edit.copy', 'Copy', { enabled: canCopy() }),
+    cmd('edit.paste', 'Paste', { enabled: !animate }),
+    cmd('edit.pasteAtCursor', 'Paste at Cursor', { enabled: !animate }),
+    cmd('op.mul.duplicate', 'Duplicate', { enabled: canDup() }),
+    'sep',
     cmd('edit.delete', 'Delete', { enabled: hasSel() }),
+    'sep',
     { id: 'edit.mirrorRotate', label: 'Mirror & Rotate', sub: [
       cmd('mesh.flipX', 'Flip X'), cmd('mesh.flipY', 'Flip Y'), cmd('mesh.flipZ', 'Flip Z'),
       'sep',
@@ -107,7 +118,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
       cmd('object.geometryToOrigin', 'Geometry to Origin'),
     ] },
     'sep',
-    // the animation clipboard, only in Animate mode (Ctrl+C / Ctrl+V do nothing in Model mode)
+    // the animation clipboard, only in Animate mode (in Model mode Ctrl+C / Ctrl+V are the model clipboard above)
     ...(animate ? [
       cmd('anim.copy', 'Copy Pose'),
       cmd('anim.paste', s.keyClipboard && s.keyClipboard.span > 0 ? 'Paste Keys' : 'Paste Pose', { enabled: !!s.keyClipboard }),

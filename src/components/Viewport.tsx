@@ -439,7 +439,7 @@ export function Viewport({ pane }: { pane: number }) {
   /** MOD-1: the status line for a modal transform (readout, typed field, axis chip, key hints) */
   // the registered command ids (src/commands.ts): Repeat Last / canRun look the tool up by the same key
   const XF_CMD = { move: 'xf.grab', rotate: 'xf.rotateModal', scale: 'xf.scaleModal' } as const
-  const xfModalId = (d: XfDrag) => (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : XF_CMD[d.op])
+  const xfModalId = (d: XfDrag) => (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : d.modal === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[d.op])
   /** final parameters of a confirmed G/R/S/E, recorded as the last op */
   const xfOpts = (d: XfDrag): Record<string, unknown> => {
     const xf = d.lastXf
@@ -466,7 +466,8 @@ export function Viewport({ pane }: { pane: number }) {
     if (!d.started) {
       d.started = true
       sceneManager.dragging = true
-      if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint')) { if (!st.extruding) st.checkpoint(d.label) }
+      // extrude / grow joint / duplicate already opened their undo step: the move joins it
+      if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint' && d.modal !== 'dupmove')) { if (!st.extruding) st.checkpoint(d.label) }
     }
     const xf = computeXf(d, x, y)
     d.lastXf = xf
@@ -495,6 +496,8 @@ export function Viewport({ pane }: { pane: number }) {
     st.set({ modalInfo: null })
     if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
     else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
+    // Shift+D: cancelling the move leaves the copy where the original is (Blender); either way one undo step
+    else if (d.modal === 'dupmove') { if (!ok) { applyXf(d.T, identityXf()); st.touch() } st.commit() }
     else if (d.started) { if (ok) st.commit(); else st.cancelEdit() }
     gizmoDirty = true
     sceneManager.rebuild()
@@ -988,6 +991,9 @@ export function Viewport({ pane }: { pane: number }) {
         const label = ex.kind === 'individual' ? 'Extrude individual faces' : ex.kind === 'edges' ? 'Extrude edges' : ex.kind === 'verts' ? 'Extrude points' : 'Extrude'
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'extrude', axisVec: n, label, verts: ex.moved })
         if (!d) { st.cancelExtrude(); return }
+      } else if (kind === 'dupmove') {
+        d = beginXf('modal', 'move', at.x, at.y, { modal: 'dupmove', label: 'Duplicate' })
+        if (!d) { st.commit(); return }
       } else if (kind === 'joint') {
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'joint', label: 'Grow joint' })
         if (!d) return

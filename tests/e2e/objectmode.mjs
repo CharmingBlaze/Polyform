@@ -64,6 +64,8 @@ await p.mouse.move(B.x, B.y); await p.keyboard.press('g'); await p.mouse.move(B.
 const xf = await S(() => window.__polyform.getState().model.groups.map(g => g.xf.pos))
 check('G in Object mode moves the object around its origin (transform changes, points do not)', xf[1][0] > 0.05 && xf[0][0] === 0 && v0 === await S(() => JSON.stringify(window.__polyform.getState().model.verts)), JSON.stringify(xf))
 await p.keyboard.press('Shift+d'); await frame()
+check('Shift+D starts a grab on the copy (Blender)', /Duplicate/.test(await S(() => window.__polyform.getState().modalInfo ?? '')))
+await p.keyboard.press('Escape'); await frame() // Esc leaves the copy where the original is
 let s1 = await st()
 check('Shift+D duplicates the object as a new object (selected)', s1.groups === 3 && s1.faces.length === 6 && await S(() => { const s = window.__polyform.getState(); return [...s.selFaces].every(f => s.model.faces[f].g === 2) && s.model.groups[2].xf.pos[0] === s.model.groups[1].xf.pos[0] }))
 await p.keyboard.press('Delete'); await frame()
