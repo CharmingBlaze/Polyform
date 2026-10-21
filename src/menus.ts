@@ -86,6 +86,14 @@ export function buildMenus(openPalette: () => void): Menu[] {
     cmd('op.mul.duplicate', 'Duplicate', { enabled: s.selFaces.size > 0 }),
     cmd('edit.delete', 'Delete', { enabled: hasSel() }),
     'sep',
+    // the animation clipboard, only in Animate mode (Ctrl+C / Ctrl+V do nothing in Model mode)
+    ...(animate ? [
+      cmd('anim.copy', 'Copy Pose'),
+      cmd('anim.paste', s.keyClipboard && s.keyClipboard.span > 0 ? 'Paste Keys' : 'Paste Pose', { enabled: !!s.keyClipboard }),
+      cmd('anim.pasteMirror', s.keyClipboard && s.keyClipboard.span > 0 ? 'Paste Keys Mirrored' : 'Paste Pose Mirrored', { enabled: !!s.keyClipboard }),
+      cmd('anim.duplicateKeys', 'Duplicate Keys', { enabled: s.animKeys.length > 0 }),
+      'sep' as const,
+    ] : []),
     cmd('sel.all', 'Select All', { enabled: hasGeo() }),
     cmd('sel.none', 'Select None', { enabled: hasSel() }),
     cmd('sel.invert', 'Invert Selection', { enabled: hasGeo() }),

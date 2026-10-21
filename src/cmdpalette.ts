@@ -39,7 +39,7 @@ const AVAILABLE: [RegExp, () => boolean][] = [
   [/^(sel\.(all2?|invert)|file\.(glb|gltf))$/, hasGeo],
   [/^file\.obj$/, () => S().model.faces.length > 0],
   [/^op\.mul\.duplicate$/, () => S().selFaces.size > 0],
-  [/^anim\.(key|unkey|copy|paste|prev|next)$/, () => S().mode === 'animate' || S().workspace === 'animate'],
+  [/^anim\.(key|unkey|copy|paste|pasteMirror|duplicateKeys|prev|next)$/, () => S().mode === 'animate' || S().workspace === 'animate'],
 ]
 
 /** The workspace a command belongs to, from its id and group; null for commands that work everywhere. */

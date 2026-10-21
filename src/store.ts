@@ -26,6 +26,7 @@ import * as IO from './imageops'
 import { hexToRgb } from './paintcore'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 import type { AnimKeyRef } from './timeline/keys'
+import { applyPaste, capturePose, clipNames, pasteMessage, planPaste } from './timeline/pose'
 
 /** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
@@ -60,7 +61,14 @@ export interface PaintSettings { color: string; size: number; hardness: number; 
 export type FillScope = 'face' | 'island' | 'object' | 'connected' | 'colour'
 /** Last parameterized operation, editable live in the Numeric panel while nothing else changed. */
 export interface LastOp { id: string; params: Params; sel: OpSel; rev: number; note?: string }
-export interface KeyClip { bones: Record<number, Record<number, M.Key>>; objects: Record<number, Record<number, M.OKey>>; span: number }
+/** Animation clipboard. Offsets are frames from the earliest copied key; span 0 is a pose. `names` maps the copied
+ *  joint / object indices to names so a paste finds them by name (missing in older clipboards: index match). */
+export interface KeyClip {
+  bones: Record<number, Record<number, M.Key>>
+  objects: Record<number, Record<number, M.OKey>>
+  span: number
+  names?: { bones: Record<number, string>; objects: Record<number, string> }
+}
 
 /** Primitive drawing: the box, which axes the user has dragged, the view that drew the footprint, segments. */
 export interface DrawState { kind: PrimitiveKind; min: Vec3; max: Vec3; has: boolean; seg: number; axes: [boolean, boolean, boolean]; view: string | null }
@@ -255,7 +263,10 @@ interface State {
   deleteKey: () => void
   deleteKeyRange: (from: number, to: number) => void
   copyKeys: (from?: number, to?: number) => void
-  pasteKeys: () => void
+  /** Copy the pose at the playhead: selected joints (all when none), plus selected objects in Object mode. */
+  copyPose: () => void
+  /** Paste the clipboard at the playhead, one undo step; mirrored swaps L/R and flips across X. */
+  pasteKeys: (mirror?: boolean) => void
   moveKey: (from: number, to: number) => void
   addClip: (dup?: boolean) => void
   deleteClip: (i: number) => void
@@ -979,16 +990,26 @@ export const useStore = create<State>((set, get) => ({
     Object.entries(c.okeys).forEach(([g, ks]) => Object.entries(ks).forEach(([f, k]) => { if (+f >= lo && +f <= hi) (clip.objects[+g] ||= {})[+f - lo] = structuredClone(k) }))
     const n = Object.values(clip.bones).reduce((a, k) => a + Object.keys(k).length, 0) + Object.values(clip.objects).reduce((a, k) => a + Object.keys(k).length, 0)
     if (!n) return s.notify('No keys in range to copy')
+    clip.names = clipNames(s.model, clip)
     set({ keyClipboard: clip }); s.notify(`Copied ${n} key${n > 1 ? 's' : ''}`)
   },
-  pasteKeys: () => {
+  copyPose: () => {
+    const s = get(), m = s.model
+    const objMode = s.selectMode === 'object' && s.selFaces.size > 0
+    const groups = objMode ? [...new Set([...s.selFaces].map(f => m.faces[f].g))] : m.bones.length ? [] : m.groups.map((_, i) => i)
+    const bones = objMode ? [] : s.selBones.size ? [...s.selBones] : m.bones.map((_, i) => i)
+    const kc = capturePose(m, s.curClip(), s.frame, bones, groups)
+    const nb = Object.keys(kc.bones).length, no = Object.keys(kc.objects).length
+    if (!nb && !no) return s.notify(groups.length ? 'Those objects have no keys to copy (objects bound to joints pose through their joints)' : 'Nothing to copy: select joints or objects')
+    set({ keyClipboard: kc })
+    s.notify(`Copied pose at frame ${s.frame}: ${[nb ? `${nb} joint${nb > 1 ? 's' : ''}` : '', no ? `${no} object${no > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ')}`)
+  },
+  pasteKeys: (mirror = false) => {
     const s = get(), kc = s.keyClipboard
     if (!kc) return s.notify('Nothing copied')
-    s.edit(m => {
-      const c = m.clips[s.clip]
-      Object.entries(kc.bones).forEach(([b, ks]) => { if (+b < m.bones.length) Object.entries(ks).forEach(([f, k]) => { const fr = s.frame + +f; if (fr < c.frames) (c.keys[+b] ||= {})[fr] = structuredClone(k) }) })
-      Object.entries(kc.objects).forEach(([g, ks]) => { if (+g < m.groups.length) Object.entries(ks).forEach(([f, k]) => { const fr = s.frame + +f; if (fr < c.frames) (c.okeys[+g] ||= {})[fr] = structuredClone(k) }) })
-    }, 'Paste keys')
+    const plan = planPaste(s.model, s.curClip(), kc, s.frame, mirror)
+    if (plan.writes.length) s.edit(m => applyPaste(m.clips[s.clip], plan), mirror ? 'Paste mirrored' : kc.span === 0 ? 'Paste pose' : 'Paste keys')
+    s.notify(pasteMessage(plan, kc, mirror))
   },
   moveKey: (from, to) => {
     const s = get()

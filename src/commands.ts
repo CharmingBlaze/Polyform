@@ -9,6 +9,7 @@ import * as G from './geom'
 import { interaction } from './interaction'
 import { ask } from './dialog'
 import { scaleFrames } from './anim'
+import { duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
@@ -208,8 +209,11 @@ export const commands: Command[] = [
     s.set({ ik: on })
     s.notify(on ? `IK on (depth ${s.ikDepth}): select the tip joint and drag Move` : 'IK off')
   } },
-  { id: 'anim.copy', label: 'Copy keys', group: 'Animate', keys: 'Ctrl+C', run: () => { if (S().mode === 'animate') S().copyKeys() } },
-  { id: 'anim.paste', label: 'Paste keys', group: 'Animate', keys: 'Ctrl+V', run: () => { if (S().mode === 'animate') S().pasteKeys() } },
+  // Animation clipboard (Animate mode). Over the Timeline the same keys copy / paste the selected keys instead.
+  { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', keys: 'Ctrl+C', run: () => { if (S().mode === 'animate') S().copyPose() } },
+  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', keys: 'Ctrl+V', run: () => { if (S().mode === 'animate') S().pasteKeys(false) } },
+  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', keys: 'Ctrl+Shift+V', run: () => { if (S().mode === 'animate') S().pasteKeys(true) } },
+  { id: 'anim.duplicateKeys', label: 'Duplicate selected keys to the playhead', group: 'Animate', run: () => { if (S().mode === 'animate') duplicateTimelineKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },
   { id: 'anim.next', label: 'Next frame', group: 'Animate', keys: '.', run: () => { const s = S(); s.set({ frame: Math.min(s.curClip().frames - 1, s.frame + 1) }) } },
   { id: 'edit.fill', label: 'Fill (or frame selection)', group: 'Construct', keys: 'F', run: () => {

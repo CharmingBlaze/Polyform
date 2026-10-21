@@ -11,7 +11,7 @@
     "lint:errors": "eslint . --quiet",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs shade.mjs incr.mjs palette.mjs ease.mjs polish.mjs layout.mjs input.mjs laptop.mjs menu.mjs props.mjs uvedit.mjs uvlayout.mjs unwrap.mjs objectmode.mjs pickperf.mjs paintlayers.mjs materials.mjs cmdk.mjs animtimeline.mjs backup.mjs keymap.mjs animlayout.mjs ruler.mjs uvselect.mjs",
+    "test:e2e": "node tests/e2e/run.mjs export.mjs viewport.mjs gizmo.mjs tweak.mjs extrude.mjs loopcut.mjs knife.mjs drawprim.mjs rig.mjs joints.mjs timeline.mjs uv.mjs paint.mjs vcolor.mjs workspace.mjs outliner.mjs samples.mjs xmirror.mjs dope.mjs onion.mjs import.mjs weights.mjs ik.mjs refs.mjs select.mjs inset.mjs bevel.mjs fillmerge.mjs snap.mjs shade.mjs incr.mjs palette.mjs ease.mjs polish.mjs layout.mjs input.mjs laptop.mjs menu.mjs props.mjs uvedit.mjs uvlayout.mjs unwrap.mjs objectmode.mjs pickperf.mjs paintlayers.mjs materials.mjs cmdk.mjs animtimeline.mjs backup.mjs keymap.mjs animlayout.mjs ruler.mjs uvselect.mjs poseclip.mjs",
     "test:viewport": "node tests/e2e/run.mjs viewport.mjs",
     "typecheck": "tsc -b",
     "test:gizmo": "node tests/e2e/run.mjs gizmo.mjs",

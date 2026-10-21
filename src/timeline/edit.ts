@@ -1,6 +1,7 @@
 import type { Ease, Key, OKey } from '../model'
 import { useStore, type KeyClip } from '../store'
-import { keyId, mirrorIndex, mirrorKey, retimeKeys, type AnimKeyRef, type KeyMove } from './keys'
+import { keyId, retimeKeys, type AnimKeyRef, type KeyMove } from './keys'
+import { clipNames } from './pose'
 
 let armed = false
 /** True while G / S is waiting for a typed offset or Enter. Shortcuts must not reach the viewport. */
@@ -41,42 +42,15 @@ export function copyTimelineKeys(): boolean {
   }
   const n = Object.values(clip.bones).reduce((a, k) => a + Object.keys(k).length, 0) + Object.values(clip.objects).reduce((a, k) => a + Object.keys(k).length, 0)
   if (!n) return false
+  clip.names = clipNames(s.model, clip)
   s.set({ keyClipboard: clip })
   s.notify(`Copied ${n} key${n > 1 ? 's' : ''}`)
   return true
 }
 
-/** Paste at the playhead. Mirrored paste lands on the L/R partner and flips the pose across X. */
+/** Paste at the playhead, one undo step. Mirrored paste lands on the L/R partner and flips the pose across X. */
 export function pasteTimelineKeys(mirror: boolean) {
-  const s = useStore.getState()
-  if (!mirror) { s.pasteKeys(); return }
-  const kc = s.keyClipboard
-  if (!kc) { s.notify('Nothing copied'); return }
-  let n = 0
-  s.edit(m => {
-    const c = m.clips[s.clip]
-    for (const [b, ks] of Object.entries(kc.bones)) {
-      const dst = mirrorIndex(m.bones, +b)
-      if (dst == null) continue
-      for (const [off, k] of Object.entries(ks)) {
-        const fr = s.frame + +off
-        if (fr < 0 || fr >= c.frames) continue
-        ;(c.keys[dst] ||= {})[fr] = mirrorKey(structuredClone(k))
-        n++
-      }
-    }
-    for (const [g, ks] of Object.entries(kc.objects)) {
-      const dst = mirrorIndex(m.groups, +g)
-      if (dst == null) continue
-      for (const [off, k] of Object.entries(ks)) {
-        const fr = s.frame + +off
-        if (fr < 0 || fr >= c.frames) continue
-        ;(c.okeys[dst] ||= {})[fr] = mirrorKey(structuredClone(k))
-        n++
-      }
-    }
-  }, 'Paste mirrored keys')
-  if (!n) s.notify('No L/R pair for the copied keys')
+  useStore.getState().pasteKeys(mirror)
 }
 
 /** Duplicate the selected keys so the earliest one lands on the playhead. One undo step. */

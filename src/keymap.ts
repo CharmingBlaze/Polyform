@@ -328,7 +328,7 @@ export function installShortcuts(openPalette: () => void) {
       if (combo === 'Space') { byId['anim.play']?.run(); return }
       if (combo === 'I') { byId['anim.insertKey']?.run(); return }
       if (combo === 'Del') { deleteTimelineKeys(); return }
-      if (combo === 'Ctrl+C') { if (!copyTimelineKeys()) useStore.getState().copyKeys(); return }
+      if (combo === 'Ctrl+C') { if (!copyTimelineKeys()) useStore.getState().copyPose(); return }
       if (combo === 'Ctrl+V') { pasteTimelineKeys(false); return }
       if (combo === 'Ctrl+Shift+V') { pasteTimelineKeys(true); return }
       if (combo === 'Ctrl+D') { duplicateTimelineKeys(); return }
