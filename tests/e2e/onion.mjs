@@ -16,7 +16,6 @@ await S(() => window.__polyform.getState().set({ frame: 6, maximized: 1, onion: 
 await frame()
 const ghosts = () => S(() => window.__polyformScene.onionObjs.filter(o => o.visible).length)
 check('onion off: no ghosts', (await ghosts()) === 0)
-await p.click('[data-testid="tab-animate"]')
 await p.click('[data-testid="onion"]'); await frame()
 check('onion on: past + future ghosts at steps=2', (await ghosts()) === 4, String(await ghosts()))
 const cols = await S(() => window.__polyformScene.onionObjs.filter(o => o.visible).map(o => '#' + (o.material.color.getHexString())))

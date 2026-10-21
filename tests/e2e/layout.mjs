@@ -57,7 +57,8 @@ check('height persists across reloads', Math.abs(hr - hMax) < 4, `${hr} vs ${hMa
 // rail shows only the relevant tabs per workspace
 // (the UV workspace shows the rail as icons: count those)
 const railTabs = () => p.locator('[data-testid="tool-rail"] .tabs button:not(.collapse-btn), [data-testid="tool-rail"][data-collapsed="true"] [data-testid^="railicon-"]').evaluateAll(bs => bs.map(b => b.dataset.testid.replace(/^(tab|railicon)-/, '')).join())
-const RAILS = { model: 'create,modify,multiply,construct', uv: 'uv', paint: 'paint', rig: 'rig,paint', animate: 'animate', export: 'export' }
+// Animate has no tool panel by default (its controls are in the transport above the timeline)
+const RAILS = { model: 'create,modify,multiply,construct', uv: 'uv', paint: 'paint', rig: 'rig,paint', animate: '', export: 'export' }
 for (const [ws, want] of Object.entries(RAILS)) {
   await p.click(`[data-testid="ws-${ws}"]`); await frame()
   const got = await railTabs()

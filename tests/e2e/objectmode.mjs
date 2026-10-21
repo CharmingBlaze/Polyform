@@ -124,7 +124,7 @@ check('1024×576: header fits (mode switch icons only), nothing scrolls', fit.ov
 const head = await p.locator('[data-testid="pane-1"] .vp-title').boundingBox()
 check('thin viewport headers (22 px)', Math.round(head.height) === 22, String(head.height))
 const corner = () => p.locator('[data-testid="pane-1"] .vp-corner').evaluate(e => +getComputedStyle(e).opacity)
-await p.mouse.move(2, 300); await frame(200)
+await p.mouse.move(300, 4); await frame(200) // over the header (the sample opens Animate, whose view starts at x = 0)
 const c0 = await corner()
 const pr = await p.locator('[data-testid="pane-1"]').boundingBox(); await p.mouse.move(pr.x + pr.width / 2, pr.y + pr.height / 2); await frame(250)
 check('Frame / All / Reset / Grid only show while the pointer is over the view', c0 === 0 && (await corner()) > 0.5, `${c0} ${await corner()}`)

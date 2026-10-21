@@ -155,7 +155,8 @@ check('View > Timeline hides the timeline', (await p.locator('[data-testid="time
 await p.click('[data-testid="mb-view"]'); await p.click('[data-testid="mi-view-timeline"]'); await frame()
 check('… and shows it again', (await p.locator('[data-testid="timeline"]').count()) === 1)
 await p.click('[data-testid="mb-view"]'); await p.click('[data-testid="mi-view-toolPanel"]'); await frame()
-check('View > Tool Panel collapses the rail', (await p.locator('[data-testid="tool-rail"][data-collapsed]').count()) === 1)
+// Animate starts without its tool panel, so here the item brings it back; the second click hides it again
+check('View > Tool Panel toggles the rail (Animate: shows it)', (await p.locator('[data-testid="tool-rail"]:not([data-collapsed])').count()) === 1)
 await p.click('[data-testid="mb-view"]'); await p.click('[data-testid="mi-view-toolPanel"]'); await frame()
 await p.click('[data-testid="mb-view"]'); await p.hover('[data-testid="mi-view-gizmoSpace"]'); await p.click('[data-testid="mi-view-gizmo-local"]'); await frame()
 check('View > Gizmo Axes > Local', (await st(() => window.__polyform.getState().gizmoSpace)) === 'local')

@@ -159,7 +159,7 @@ await p.locator('.right-col').screenshot({ path: '/workspace/shot-outliner-tabs.
     await p.waitForFunction(() => document.querySelector('.right-col').getBoundingClientRect().width > 100, null, { timeout: 3000 }).catch(() => {})
     folds.push([ws, Math.round(w[0]), Math.round(w[1]), Math.round(folded)])
   }
-  check('1366 px: the right column is narrower than the left panel (its open width) in every workspace but UV (its tool rail folds to icons; UV Tools need 3 columns)', folds.every(f => f[0] === 'uv' ? f[1] <= 256 : f[1] < f[2]), JSON.stringify(folds))
+  check('1366 px: the right column is narrower than the left panel (its open width) in every workspace but UV (its tool rail folds to icons; UV Tools need 3 columns) and Animate (no tool panel; 200 px for the joint tree)', folds.every(f => f[0] === 'uv' ? f[1] <= 256 : f[0] === 'animate' ? f[1] <= 200 : f[1] < f[2]), JSON.stringify(folds))
   check('…and clicking the active icon folds it to the rail in every workspace', folds.every(f => f[3] < 40), JSON.stringify(folds))
   await S(() => window.__polyform.getState().setWorkspace('paint')); await S(() => window.__polyform.getState().setSideTab('uv')); await frame()
   check('Paint › Images has no reference images (they live in the Refs tab)', !(await p.locator('.side-body [data-testid="refs-panel"]').count()))

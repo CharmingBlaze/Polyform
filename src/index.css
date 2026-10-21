@@ -710,3 +710,37 @@ button.danger { color: #ff9a9a; }
 .km-empty { padding: 16px; color: var(--dim); text-align: center; }
 .km-hint { color: var(--dim); font-size: 11px; }
 .palette kbd.scoped { border-style: dashed; }
+
+/* ---- Animate workspace: transport, auto-key border, key dots ---- */
+:root { --autokey: var(--red); }
+.rail-gone { width: 0; min-width: 0; overflow: hidden; }
+/* auto-key on: a red recording frame round the views (above the panes, never in the way of the pointer) */
+.views.autokey::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--autokey); pointer-events: none; z-index: 20; }
+.transport { gap: 3px; }
+.transport .tl-sep { width: 1px; height: 18px; background: var(--line2); margin: 0 4px; }
+.transport .tl-spacer { flex: 1 1 0; min-width: 4px; }
+.transport .clip-pick { max-width: 120px; margin-right: 0; }
+.transport .frame-box { margin: 0 4px; }
+.tl-tog { height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid transparent; background: transparent; color: var(--dim); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.tl-tog:hover { color: var(--text); background: var(--panel2); }
+.tl-tog.on { color: var(--text); background: rgba(109,139,255,.16); border-color: rgba(109,139,255,.45); }
+.tl-tog.rec .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+.tl-tog.rec.on { color: var(--autokey); background: color-mix(in srgb, var(--autokey) 14%, transparent); border-color: color-mix(in srgb, var(--autokey) 60%, transparent); }
+.tl-tog.rec.on .dot { background: currentColor; }
+.transport input.tl-num { width: 38px; height: 24px; padding: 0 4px; margin-left: -2px; }
+.clip-pop { position: fixed; z-index: 60; width: 240px; display: flex; flex-direction: column; gap: 6px; padding: 10px; background: var(--panel2); border: 1px solid var(--line2); border-radius: var(--r); box-shadow: 0 8px 24px #0008; }
+.clip-pop .label { margin: 0 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-pop .mini { display: flex; align-items: center; justify-content: space-between; margin: 0; }
+.clip-pop .mini input[type=number] { width: 72px; }
+.clip-pop .btn-row { display: flex; gap: 6px; margin-top: 4px; }
+.clip-pop .btn-row button { flex: 1; }
+/* Outliner joint rows in Animate: a dot when the joint has keys in this clip, filled on a key frame */
+.key-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; border: 1.5px solid var(--gold); margin-left: 4px; }
+.key-dot.on { background: var(--gold); }
+/* the key inspector in the slim right column (Clips / Joints tab): one axis per line, the ease select fits the width */
+@container (max-width: 170px) {
+  .key-insp .vec .num { flex: 1 1 100%; }
+  .key-insp .mini { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+  .key-insp .mini select { flex: 1 1 100%; min-width: 0; width: 100%; }
+  .key-insp .label { white-space: normal; }
+}

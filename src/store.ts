@@ -302,6 +302,8 @@ interface State {
 let toastTimer = 0
 let prePaintMax: number | null = null
 let preUVMax: number | null = null
+/** the views layout before Animate maximized its perspective view (restored on leaving Animate) */
+let preAnimMax: number | null = null
 const DEFAULT_PANES: Pane[] = [
   { type: 'top', shade: 'wire', grid: true }, { type: 'persp', shade: 'textured', grid: true },
   { type: 'front', shade: 'wire', grid: true }, { type: 'right', shade: 'wire', grid: true },
@@ -412,6 +414,8 @@ export const useStore = create<State>((set, get) => ({
     const s = get()
     const RAIL: Record<Workspace, RailTab> = { model: 'Create', uv: 'Map', paint: 'Paint', rig: 'Setup', animate: 'Animate', export: 'Export' }
     const was = s.workspace
+    // leaving Animate gives the views back first, so Paint / UV remember the right layout
+    if (was === 'animate' && w !== 'animate') set({ maximized: preAnimMax })
     s.setMode(w === 'animate' ? 'animate' : 'model')
     s.setUVSpace(w === 'uv')
     // a manual pick wins; Animate with no joints opens the Scene tab (objects are what gets keyed)
@@ -427,6 +431,11 @@ export const useStore = create<State>((set, get) => ({
     } else {
       if (tool === 'paint') p.tool = 'select'
       if (was === 'paint' && w !== 'uv') p.maximized = prePaintMax
+    }
+    // Animate: one big perspective view (the quad toggle in the transport, or a view's corner button, brings all four back)
+    if (w === 'animate' && was !== 'animate') {
+      preAnimMax = was === 'paint' ? prePaintMax : get().maximized
+      p.maximized = Math.max(0, get().panes.findIndex(q => q.type === 'persp'))
     }
     if (w === 'rig') { p.showSkeleton = true; if (!s.model.bones.length) p.tool = 'joint' }
     if (w !== 'rig' && w !== 'model' && get().tool === 'joint') p.tool = 'select'

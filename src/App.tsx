@@ -35,6 +35,8 @@ export default function App() {
   const paintSpace = workspace === 'paint' && !uvSpace && !animate
   const timelineH = useStore(s => s.ui.timelineH)
   const showTimeline = useStore(s => !s.ui.timelineHidden) && animate
+  // auto-key records every pose change: a red border round the views says so (--autokey, themeable)
+  const recording = useStore(s => s.autoKey) && animate
   const sides = useSides()
   useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvSwap, uvMax, showTimeline, timelineH, sides.leftW, sides.rightW, paintSpace, paintView.split, paintView.swap, paintView.max])
   // UV workspace: [3D preview | divider | UV editor], or mirrored with Swap; the UV editor gets ~2/3 by default
@@ -81,10 +83,11 @@ export default function App() {
       onDrop={e => { e.preventDefault(); setDragging(false); [...e.dataTransfer.files].forEach(f => importFile(f).catch(err => useStore.getState().notify(String(err.message || err)))) }}>
       <Header onPalette={() => setPalette(true)} />
       <div className={`main ${anim ? 'anim' : ''}`} data-left={sides.leftCollapsed ? 'icons' : 'open'} data-right={sides.rightCollapsed ? 'icons' : 'open'} style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
-        <ToolRail />
+        {/* Animate without its tool panel: an empty 0 px column keeps the grid's three columns */}
+        {sides.leftHidden ? <div className="rail-gone" data-testid="rail-gone" /> : <ToolRail />}
         <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''} ${paintSpace ? 'paint-space' : ''} ${swapped ? 'swap' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : paintSpace ? { gridTemplateColumns: paintCols } : undefined}>
-            <div ref={viewsRef} className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''}`} data-testid="views">
+            <div ref={viewsRef} className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''} ${recording ? 'autokey' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
               {[0, 1, 2, 3].map(i => <Viewport key={i} pane={i} />)}
               <EmptyScene />

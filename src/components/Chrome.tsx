@@ -1,6 +1,6 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useState } from 'react'
-import { Undo2, Redo2, Download, X, Circle, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
+import { Undo2, Redo2, Download, X, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
 import { openSideTab, setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands } from '../commands'
@@ -97,12 +97,7 @@ export function ToolRail() {
   const snap = useStore(s => s.snap)
   const snapTarget = useStore(s => s.snapTarget)
   const pivot = useStore(s => s.pivot)
-  const autoKey = useStore(s => s.autoKey)
   const xMirror = useStore(s => s.xMirror)
-  const onion = useStore(s => s.onion)
-  const onionSteps = useStore(s => s.onionSteps)
-  const ik = useStore(s => s.ik)
-  const ikDepth = useStore(s => s.ikDepth)
   const uvSpace = useStore(s => s.uvSpace)
   const set = useStore(s => s.set)
   const { leftCollapsed } = useSides()
@@ -192,17 +187,9 @@ export function ToolRail() {
           <CmdBtn cmd="anim.mode" label="Model / Animate" />
           <CmdBtn cmd="anim.key" label="Insert key" testid="key" />
           <CmdBtn cmd="anim.unkey" label="Delete key" />
-          <button className={`tool-btn rec ${autoKey ? 'on' : ''}`} data-testid="auto-key" onClick={() => set({ autoKey: !autoKey })}><Circle size={10} fill={autoKey ? 'currentColor' : 'none'} /> <span>Auto-key</span></button>
-          <button className={`tool-btn ${ik ? 'on' : ''}`} data-testid="ik" onClick={() => byId['anim.ik'].run()} title="IK (Shift+I): drag the tip joint to pose its parent chain"><span>IK</span></button>
-          {ik && <label className="paint-range" style={{ padding: '0 4px' }}><span>Depth</span><b>{ikDepth}</b>
-            <input type="range" min={1} max={4} step={1} value={ikDepth} data-testid="ik-depth"
-              onChange={e => set({ ikDepth: Number(e.target.value) })} /></label>}
+          {/* Auto-key, IK and onion skin live in the transport above the timeline */}
           <CmdBtn cmd="anim.copy" label="Copy keys" />
           <CmdBtn cmd="anim.paste" label="Paste keys" />
-          <button className={`tool-btn ${onion ? 'on' : ''}`} data-testid="onion" onClick={() => byId['view.onion'].run()}><span>Onion skin</span></button>
-          {onion && <label className="paint-range" style={{ padding: '0 4px' }}><span>Steps</span><b>{onionSteps}</b>
-            <input type="range" min={1} max={3} step={1} value={onionSteps} data-testid="onion-steps"
-              onChange={e => set({ onionSteps: Number(e.target.value) })} /></label>}
           <ClipsPanel />
         </>}
         {tab === 'Export' && <>

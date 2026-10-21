@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, KeyRound, Trash2, Link, Bone, Box, Clapperboard, Image as ImageIcon, Images as ImagesIcon, Wrench, Palette } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, ChevronFirst, ChevronLast, Trash2, Link, Bone, Box, Clapperboard, Image as ImageIcon, Images as ImagesIcon, Wrench, Palette } from 'lucide-react'
 import { useStore } from '../store'
 import { DEFAULT_TAB, registerTab, subscribeTabs, tabsFor, tabsRevision, type PanelTab } from '../panelTabs'
 import { faceMat } from '../model'
@@ -14,6 +14,11 @@ import { MaterialsPanel } from './MaterialsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 import { openSideTab, setPanel } from '../useLayout'
+import { byId } from '../commands'
+import { getBindingLabel, useKeymapVersion } from '../keymap'
+
+/** Tooltip text with the live shortcut of the first bound command among `ids` (rebinds show up; no suffix when unbound). */
+const keyTip = (text: string, ...ids: string[]) => { const k = ids.map(getBindingLabel).find(Boolean); return k ? `${text}  ·  ${k}` : text }
 
 /** The right panel: the selected tab's content, full height, beside the vertical icon rail on the outer edge. */
 export function Sidebar({ children }: { children?: ReactNode }) {
@@ -214,7 +219,16 @@ export function Timeline() {
   const compact = useStore(s => clampTimeline(s.ui.timelineH) <= TIMELINE_MIN + 8)
   const clipIdx = useStore(s => s.clip)
   const selFaces = useStore(s => s.selFaces)
-  const clip = m.clips[Math.min(clipIdx, m.clips.length - 1)]
+  const ci = Math.min(clipIdx, m.clips.length - 1)
+  const clip = m.clips[ci]
+  const autoKey = useStore(s => s.autoKey)
+  const onion = useStore(s => s.onion)
+  const onionSteps = useStore(s => s.onionSteps)
+  const ik = useStore(s => s.ik)
+  const ikDepth = useStore(s => s.ikDepth)
+  const maximized = useStore(s => s.maximized)
+  useKeymapVersion() // tooltips below show the live (rebindable) shortcuts
+  useStore(s => s.workspace)
   const bones = selBones.size ? [...selBones] : m.bones.map((_, i) => i)
   const keySet = new Set<number>()
   bones.forEach(b => keyFrames(clip, b).forEach(f => keySet.add(f)))
@@ -229,28 +243,77 @@ export function Timeline() {
   return (
     <div className={`timeline ${mode === 'animate' ? 'active' : ''} ${compact ? 'compact' : ''}`} data-testid="timeline" data-key-scope="timeline">
       <TimelineHandle />
-      <div className="tl-controls">
-        <button className="icon-btn" data-testid="frame-start" onClick={() => set({ frame: 0 })} data-tip="First frame"><ChevronFirst size={15} /></button>
-        <button className="icon-btn" data-testid="key-prev" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
-        <select className="clip-pick" data-testid="clip-select" value={Math.min(clipIdx, m.clips.length - 1)} onChange={e => st.setClip(+e.target.value)} title="Animation clip">
+      <div className="tl-controls transport" data-testid="transport">
+        <select className="clip-pick" data-testid="clip-select" value={ci} onChange={e => st.setClip(+e.target.value)} title="Animation clip (the full list is in the Clips tab on the right)">
           {m.clips.map((c, i) => <option key={i} value={i}>{c.name}</option>)}
         </select>
-        <button className="icon-btn play" onClick={() => { if (mode !== 'animate') set({ mode: 'animate' }); set({ playing: !playing }) }} data-tip="Play / pause  ·  Space" data-testid="play">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
+        <ClipMenu ci={ci} />
+        <span className="tl-sep" />
+        <button className="icon-btn" data-testid="frame-start" onClick={() => set({ frame: 0 })} data-tip="First frame"><ChevronFirst size={15} /></button>
+        <button className="icon-btn" data-testid="key-prev" onClick={() => jump(-1)} data-tip="Previous key"><SkipBack size={15} /></button>
+        <button className="icon-btn play" onClick={() => byId['anim.play'].run()} data-tip={keyTip('Play / pause', 'anim.play', 'tool.off')} data-testid="play">{playing ? <Pause size={16} /> : <Play size={16} />}</button>
         <button className="icon-btn" data-testid="key-next" onClick={() => jump(1)} data-tip="Next key"><SkipForward size={15} /></button>
         <button className="icon-btn" data-testid="frame-end" onClick={() => set({ frame: n - 1 })} data-tip="Last frame"><ChevronLast size={15} /></button>
-        <button className="icon-btn" data-testid="frame-next-10" onClick={() => set({ frame: Math.min(n - 1, useStore.getState().frame + 10) })} data-tip="Forward 10 frames">+10</button>
-        <div className="frame-box"><FrameInput frame={frame} max={n - 1} onSet={f => set({ frame: f })} /><span>/{n - 1}</span></div>
-        <button className="icon-btn" onClick={() => st.setKey()} data-tip="Insert key for selection  ·  I"><KeyRound size={15} /></button>
-        <button className="icon-btn" onClick={() => st.deleteKey()} data-tip="Delete key  ·  Alt+I"><Trash2 size={15} /></button>
-        <button className={`icon-btn rec ${useStore.getState().autoKey ? 'on' : ''}`} data-testid="autokey-tl" onClick={() => set({ autoKey: !useStore.getState().autoKey })} data-tip="Auto-key (record)">●</button>
-        <label className="mini">Frames <input type="number" min={2} max={10000} value={clip.frames} onChange={e => st.edit(mm => (mm.clips[clipIdx].frames = Math.max(2, Math.min(10000, parseInt(e.target.value) || 2))), 'Clip length')} /></label>
-        <label className="mini">FPS <input type="number" min={1} max={240} value={clip.fps} onChange={e => st.edit(mm => (mm.clips[clipIdx].fps = Math.max(1, Math.min(240, parseInt(e.target.value) || 24))), 'Clip fps')} /></label>
-        <label className="mini">Loop <input type="checkbox" checked={clip.loop} onChange={e => st.edit(mm => (mm.clips[clipIdx].loop = e.target.checked), 'Clip loop')} /></label>
-        <label className="mini">Interp <select value={clip.interp} onChange={e => st.edit(mm => (mm.clips[clipIdx].interp = e.target.value as 'linear' | 'step'), 'Interpolation')}><option value="linear">Linear</option><option value="step">Step</option></select></label>
+        <div className="frame-box" title="Current frame: type a number, ↑ / ↓ step"><FrameInput frame={frame} max={n - 1} onSet={f => set({ frame: f })} /><span>/{n - 1}</span></div>
+        <span className="tl-sep" />
+        <button className="tl-tog" data-testid="tl-key" onClick={() => byId['anim.insertKey'].run()} data-tip={keyTip('Insert key on the selection', 'anim.insertKey', 'edit.inset')}>Key</button>
+        <button className={`tl-tog rec ${autoKey ? 'on' : ''}`} aria-pressed={autoKey} data-testid="auto-key" onClick={() => byId['anim.autokey'].run()} data-tip={keyTip('Auto-key: every pose change writes a key (red border while on)', 'anim.autokey')}><span className="dot" />Auto-key</button>
+        <button className={`tl-tog ${clip.loop ? 'on' : ''}`} aria-pressed={clip.loop} data-testid="tl-loop" onClick={() => st.edit(mm => (mm.clips[ci].loop = !clip.loop), 'Clip loop')} data-tip="Loop playback (exported with the clip)">Loop</button>
+        <span className="tl-sep" />
+        <button className={`tl-tog ${onion ? 'on' : ''}`} aria-pressed={onion} data-testid="onion" onClick={() => byId['view.onion'].run()} data-tip={keyTip('Onion skin: ghosts of the frames around the playhead', 'view.onion')}>Onion</button>
+        {onion && <input className="tl-num" type="number" min={1} max={3} value={onionSteps} data-testid="onion-steps" title="Onion skin: frames before / after"
+          onKeyDown={e => e.stopPropagation()} onChange={e => set({ onionSteps: Math.max(1, Math.min(3, parseInt(e.target.value) || 1)) })} />}
+        <button className={`tl-tog ${ik ? 'on' : ''}`} aria-pressed={ik} data-testid="ik" onClick={() => byId['anim.ik'].run()} data-tip={keyTip('IK: drag the tip joint to pose its parent chain', 'anim.ik')}>IK</button>
+        {ik && <input className="tl-num" type="number" min={1} max={4} value={ikDepth} data-testid="ik-depth" title="IK chain depth (joints above the tip)"
+          onKeyDown={e => e.stopPropagation()} onChange={e => set({ ikDepth: Math.max(1, Math.min(4, parseInt(e.target.value) || 1)) })} />}
+        <span className="tl-spacer" />
+        <button className={`tl-tog ${maximized === null ? 'on' : ''}`} aria-pressed={maximized === null} data-testid="tl-quad"
+          onClick={() => set({ maximized: maximized === null ? Math.max(0, useStore.getState().panes.findIndex(q => q.type === 'persp')) : null })}
+          data-tip={maximized === null ? keyTip('Back to one perspective view', 'view.max') : keyTip('Four views (top / perspective / front / right)', 'view.max')}>Quad</button>
       </div>
       {!compact && <DopeSheet n={n} />}
     </div>
   )
+}
+
+/** "⋯" beside the clip picker: the active clip's length, fps and interpolation, and New / Duplicate / Delete,
+ * in a small popover (the timeline strip itself stays one uncluttered row). */
+function ClipMenu({ ci }: { ci: number }) {
+  const m = useStore(s => s.model)
+  useStore(s => s.version)
+  const [at, setAt] = useState<{ left: number; bottom: number } | null>(null)
+  const btn = useRef<HTMLButtonElement | null>(null)
+  const pop = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!at) return
+    const down = (e: PointerEvent) => { if (!pop.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setAt(null) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setAt(null) }
+    window.addEventListener('pointerdown', down, true); window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('pointerdown', down, true); window.removeEventListener('keydown', key) }
+  }, [at])
+  const st = useStore.getState()
+  const clip = m.clips[ci]
+  const open = () => {
+    if (at) { setAt(null); return }
+    const r = btn.current!.getBoundingClientRect()
+    setAt({ left: Math.max(4, Math.min(r.left, window.innerWidth - 244)), bottom: window.innerHeight - r.top + 4 })
+  }
+  return <>
+    <button ref={btn} className={`icon-btn ${at ? 'on' : ''}`} data-testid="clip-menu" aria-expanded={!!at} onClick={open} data-tip="Clip options" title="Clip: length, FPS, interpolation · New / Duplicate / Delete">⋯</button>
+    {at && clip && (
+      <div ref={pop} className="clip-pop" data-testid="clip-pop" style={{ left: at.left, bottom: at.bottom }} onKeyDown={e => e.stopPropagation()}>
+        <div className="label">{clip.name}</div>
+        <label className="mini">Frames <input type="number" min={2} max={10000} value={clip.frames} data-testid="clip-frames" onChange={e => st.edit(mm => (mm.clips[ci].frames = Math.max(2, Math.min(10000, parseInt(e.target.value) || 2))), 'Clip length')} /></label>
+        <label className="mini">FPS <input type="number" min={1} max={240} value={clip.fps} data-testid="clip-fps" onChange={e => st.edit(mm => (mm.clips[ci].fps = Math.max(1, Math.min(240, parseInt(e.target.value) || 24))), 'Clip fps')} /></label>
+        <label className="mini">Interp <select value={clip.interp} data-testid="clip-interp" onChange={e => st.edit(mm => (mm.clips[ci].interp = e.target.value as 'linear' | 'step'), 'Interpolation')}><option value="linear">Linear</option><option value="step">Step</option></select></label>
+        <div className="btn-row">
+          <button data-testid="clip-pop-new" onClick={() => { st.addClip(); setAt(null) }}>New</button>
+          <button data-testid="clip-pop-dup" onClick={() => { st.addClip(true); setAt(null) }}>Duplicate</button>
+          <button data-testid="clip-pop-del" disabled={m.clips.length < 2} onClick={() => { st.deleteClip(ci); setAt(null) }}>Delete</button>
+        </div>
+      </div>
+    )}
+  </>
 }
 
 /** Grip on the timeline's top edge: drag to resize (compact strip … most of the window), double-click toggles compact. */

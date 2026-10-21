@@ -35,6 +35,7 @@ await frame()
 check('moving a joint key moves only that channel', await S(() => { const k = window.__polyform.getState().model.clips[0].keys[0]; return !k[6] && !!k[8] }) && await S(() => !!window.__polyform.getState().model.clips[0].keys[1]?.[6]))
 
 // clips panel
+await p.keyboard.press('Control+BracketLeft'); await frame() // Animate starts without its tool panel; Ctrl+[ brings it back
 await p.click('[data-testid="tab-animate"]')
 check('Animate tab shows the clips panel with Walk', await p.locator('[data-testid="clips-panel"]').isVisible() && /Walk/.test(await p.textContent('[data-testid="clip-row-0"]')))
 await p.click('[data-testid="clip-add"]'); await frame()

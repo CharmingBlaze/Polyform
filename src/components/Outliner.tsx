@@ -22,6 +22,8 @@ export function Outliner({ tab }: { tab: ListTab }) {
   const selBones = useStore(s => s.selBones)
   const clip = useStore(s => s.clip)
   const mode = useStore(s => s.mode)
+  // Animate: joint rows carry a key dot for the active clip (filled on a key frame); only then does the row follow the playhead
+  const keyFrame = useStore(s => (s.mode === 'animate' ? s.frame : -1))
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [editing, setEditing] = useState<string | null>(null)
   const [q, setQ] = useState('')
@@ -61,13 +63,22 @@ export function Outliner({ tab }: { tab: ListTab }) {
   const keepJoint = new Set<number>()
   m.bones.forEach((b, i) => { if (match(b.name)) for (let j = i; j >= 0; j = m.bones[j].parent) keepJoint.add(j) })
   const counts = m.vbone.reduce<Record<number, number>>((a, b) => { if (b >= 0) a[b] = (a[b] || 0) + 1; return a }, {})
+  const keyClip = m.clips[Math.min(clip, m.clips.length - 1)]
+  const keyDot = (i: number) => {
+    const k = keyClip?.keys[i]
+    if (!k || !Object.keys(k).length) return null
+    const on = !!k[keyFrame]
+    return <span className={`key-dot ${on ? 'on' : ''}`} data-testid={`joint-keydot-${i}`} data-on={on} title={on ? `Key on frame ${keyFrame}` : `Keyed in ${keyClip.name}`} />
+  }
   const jointRow = (i: number, depth: number): ReactNode => !keepJoint.has(i) ? null : (
     <div key={i}>
       <div className={`row ${selBones.has(i) ? 'on' : ''}`} style={{ paddingLeft: 8 + depth * 14 }} data-testid={`ol-joint-${i}`}
         onClick={e => { const s = new Set(e.shiftKey ? selBones : []); s.add(i); useStore.setState({ selBones: s, selectMode: mode === 'model' && st.selectMode !== 'joint' ? st.selectMode : 'joint' }) }}>
         <Bone size={13} className="dim" />
         {rename(`j${i}`, m.bones[i].name, v => st.edit(mm => (mm.bones[i].name = v), 'Rename joint'))}
-        <span className="meta" data-testid={`joint-count-${i}`} title="Points bound to this joint">{counts[i] || 0} pts</span>
+        {mode === 'animate'
+          ? keyDot(i)
+          : <span className="meta" data-testid={`joint-count-${i}`} title="Points bound to this joint">{counts[i] || 0} pts</span>}
       </div>
       {m.bones.map((b, c) => (b.parent === i ? jointRow(c, depth + 1) : null))}
     </div>
