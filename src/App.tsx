@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Viewport } from './components/Viewport'
 import { Header, ToolRail, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
 import { SideIcons, Sidebar, Timeline } from './components/Panels'
@@ -12,6 +12,9 @@ import { EmptyScene } from './components/Workspace'
 import { installShortcuts, openKeymapDialog } from './keymap'
 import { KeymapDialog } from './components/KeymapDialog'
 import { CommandPalette } from './components/CommandPalette'
+import { SettingsDialog } from './components/SettingsDialog'
+import { openSettings } from './settings'
+import { applyUIScale, resolveScale } from './uiscale'
 import { importFile, restoreAutosave, startAutosave } from './io'
 import { useStore } from './store'
 import { addPrimitive } from './model'
@@ -37,6 +40,13 @@ export default function App() {
   const showTimeline = useStore(s => !s.ui.timelineHidden) && animate
   // auto-key records every pose change: a red border round the views says so (--autokey, themeable)
   const recording = useStore(s => s.autoKey) && animate
+  // UI scale: the pref (or Auto, from the window size) applied to the document before paint, again on every resize
+  const uiPref = useStore(s => s.ui.uiScale)
+  useLayoutEffect(() => {
+    const on = () => applyUIScale(resolveScale(uiPref, innerWidth, innerHeight, devicePixelRatio))
+    on(); window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [uiPref])
   const sides = useSides()
   useEffect(() => sceneManager.invalidate(), [maximized, layout, uvSpace, uvSplit, uvSwap, uvMax, showTimeline, timelineH, sides.leftW, sides.rightW, paintSpace, paintView.split, paintView.swap, paintView.max])
   // UV workspace: [3D preview | divider | UV editor], or mirrored with Swap; the UV editor gets ~2/3 by default
@@ -67,6 +77,7 @@ export default function App() {
   }, [])
   useEffect(() => installShortcuts(() => setPalette(true)), [])
   useEffect(() => { window.addEventListener('open-keymap', openKeymapDialog); return () => window.removeEventListener('open-keymap', openKeymapDialog) }, [])
+  useEffect(() => { window.addEventListener('open-settings', openSettings); return () => window.removeEventListener('open-settings', openSettings) }, [])
   useEffect(() => {
     if (booted) return
     booted = true
@@ -109,6 +120,7 @@ export default function App() {
       <StatusBar />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <KeymapDialog />
+      <SettingsDialog />
       <HelpPopover />
       <PropertiesDialog />
       <DialogHost />

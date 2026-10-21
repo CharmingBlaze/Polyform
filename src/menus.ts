@@ -76,6 +76,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
     { id: 'file.export', label: 'Export', sub: [
       cmd('file.glb', 'glTF binary (.glb)', { enabled: hasGeo() }), cmd('file.gltf', 'glTF embedded (.gltf)', { enabled: hasGeo() }), cmd('file.obj', 'Wavefront (.obj)', { enabled: s.model.faces.length > 0 })] },
     ...(byId['file.properties'] ? ['sep' as const, cmd('file.properties', 'Properties…')] : []),
+    cmd('app.settings', 'Settings…'),
     'sep',
     cmd('file.exit', 'Exit'),
   ]

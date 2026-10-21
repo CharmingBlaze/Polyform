@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { answer, useDialog } from '../dialog'
+import { useZoom } from '../uiscale'
 
 /**
  * Modal window: dim backdrop, title bar you can drag (mouse, pen or touch), Esc cancels, Enter confirms
@@ -11,6 +12,8 @@ export function ModalFrame({ title, onCancel, onConfirm, children, footer, testi
 }) {
   const [off, setOff] = useState({ x: 0, y: 0 })
   const box = useRef<HTMLDivElement>(null)
+  // off is kept in viewport px (pointer space); the translate is in the dialog's own, UI-scaled px
+  const z = useZoom(box)
   const cb = useRef({ onCancel, onConfirm }); cb.current = { onCancel, onConfirm }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -40,7 +43,7 @@ export function ModalFrame({ title, onCancel, onConfirm, children, footer, testi
   }
   return (
     <div className="modal-bg" data-modal-open="true">
-      <div className="modal" ref={box} role="dialog" aria-modal="true" aria-label={title} data-testid={testid} style={{ width, transform: `translate(${off.x}px, ${off.y}px)` }}>
+      <div className="modal" ref={box} role="dialog" aria-modal="true" aria-label={title} data-testid={testid} style={{ width, transform: `translate(${off.x / z}px, ${off.y / z}px)` }}>
         <div className="modal-title" data-testid={`${testid}-title`} onPointerDown={drag}><b>{title}</b><span className="grow" /><button className="icon-btn" aria-label="Close" data-testid={`${testid}-close`} onClick={onCancel}><X size={14} /></button></div>
         <div className="modal-body">{children}</div>
         <div className="modal-foot">{footer}</div>

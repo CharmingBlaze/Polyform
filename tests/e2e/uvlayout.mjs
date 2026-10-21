@@ -17,11 +17,11 @@ for (const [W, H] of [[1280, 720], [1366, 768], [1920, 1080]]) {
     const r = sel => { const e = document.querySelector(sel); return e ? e.getBoundingClientRect().toJSON() : null }
     const tb = document.querySelector('.uv-pane .uv-toolbar'), tools = document.querySelector('[data-testid="uv-tools"]')
     const clipped = [...tb.children].filter(c => c.getBoundingClientRect().right > tb.getBoundingClientRect().right + 0.5).map(c => c.dataset.testid || c.className)
-    return { sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, work: r('.work'), uv: r('[data-testid="uv-pane"]'), views: r('[data-testid="views"]'), tb: r('.uv-pane .uv-toolbar'), clipped, canvas: r('[data-testid="uv-canvas"]'), wrap: r('.uv-pane .uv-canvas'), toolsW: tools ? [tools.scrollWidth, tools.clientWidth] : null, rail: document.querySelector('[data-testid="tool-rail"]').dataset.collapsed }
+    return { sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, work: r('.work'), uv: r('[data-testid="uv-pane"]'), views: r('[data-testid="views"]'), tb: r('.uv-pane .uv-toolbar'), clipped, canvas: r('[data-testid="uv-canvas"]'), wrap: r('.uv-pane .uv-canvas'), toolsW: tools ? [tools.scrollWidth, tools.clientWidth] : null, rail: document.querySelector('[data-testid="tool-rail"]').dataset.collapsed, scale: +getComputedStyle(document.documentElement).getPropertyValue('--ui-scale') || 1 }
   })
   check(`${tag}: no page overflow`, m.sw <= W && m.sh <= H, JSON.stringify([m.sw, m.sh]))
   check(`${tag}: UV editor takes ~2/3 of the work area`, m.uv.width / m.work.width > 0.62 && m.uv.width / m.work.width < 0.72, (m.uv.width / m.work.width).toFixed(3))
-  check(`${tag}: one slim toolbar row, nothing cut off`, m.tb.height <= 36 && m.clipped.length === 0, JSON.stringify([m.tb.height, m.clipped]))
+  check(`${tag}: one slim toolbar row, nothing cut off`, m.tb.height <= 36 * m.scale && m.clipped.length === 0, JSON.stringify([m.tb.height, m.clipped]))
   check(`${tag}: the canvas fills its area`, Math.abs(m.canvas.width - m.wrap.width) < 1 && Math.abs(m.canvas.height - m.wrap.height) < 1 && m.wrap.height > H * 0.6, JSON.stringify([m.canvas, m.wrap]))
   check(`${tag}: UV Tools panel in the sidebar, no sideways overflow`, m.toolsW && m.toolsW[0] <= m.toolsW[1] + 1, JSON.stringify(m.toolsW))
   check(`${tag}: tool rail as icons`, m.rail === 'true')

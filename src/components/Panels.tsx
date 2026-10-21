@@ -14,6 +14,7 @@ import { MaterialsPanel } from './MaterialsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 import { openSideTab, setPanel } from '../useLayout'
+import { zoomOf } from '../uiscale'
 import { byId } from '../commands'
 import { getBindingLabel, useKeymapVersion } from '../keymap'
 
@@ -295,8 +296,9 @@ function ClipMenu({ ci }: { ci: number }) {
   const clip = m.clips[ci]
   const open = () => {
     if (at) { setAt(null); return }
-    const r = btn.current!.getBoundingClientRect()
-    setAt({ left: Math.max(4, Math.min(r.left, window.innerWidth - 244)), bottom: window.innerHeight - r.top + 4 })
+    // the popover is the button's sibling, so it shares its UI-scale zoom: place it in those px
+    const z = zoomOf(btn.current), r = btn.current!.getBoundingClientRect()
+    setAt({ left: Math.max(4, Math.min(r.left / z, window.innerWidth / z - 244)), bottom: (window.innerHeight - r.top) / z + 4 })
   }
   return <>
     <button ref={btn} className={`icon-btn ${at ? 'on' : ''}`} data-testid="clip-menu" aria-expanded={!!at} onClick={open} data-tip="Clip options" title="Clip: length, FPS, interpolation · New / Duplicate / Delete">⋯</button>

@@ -59,7 +59,7 @@ input:focus { border-color: var(--accent); }
 kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); background: #0f1116; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
 .grow { flex: 1; }
 
-.app { display: grid; grid-template-rows: 40px 1fr 24px; height: 100%; }
+.app { display: grid; grid-template-rows: 40px 1fr 24px; height: 100%; container: app / inline-size; }
 .header { display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; letter-spacing: .2px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
 .logo { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; font-size: 18px; }
@@ -213,10 +213,10 @@ kbd { font-family: ui-monospace, monospace; font-size: 11px; color: var(--dim); 
 
 /* Ctrl+K command palette (cmdk in a Radix dialog: the overlay and the panel are siblings) */
 .palette-bg { position: fixed; inset: 0; background: rgba(5,6,10,.55); backdrop-filter: blur(3px); z-index: 50; }
-.palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); width: min(600px, calc(100vw - 32px)); max-height: 64vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line2); border-radius: 2px; box-shadow: 0 20px 60px rgba(0,0,0,.6); overflow: hidden; z-index: 51; }
+.palette { position: fixed; top: calc(12vh / var(--ui-scale)); left: 50%; transform: translateX(-50%); width: min(600px, calc(100vw / var(--ui-scale) - 32px)); max-height: calc(64vh / var(--ui-scale)); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line2); border-radius: 2px; box-shadow: 0 20px 60px rgba(0,0,0,.6); overflow: hidden; z-index: 51; }
 .palette [cmdk-root] { display: flex; flex-direction: column; min-height: 0; }
 .palette input { border: none; border-radius: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 14px 16px; font-size: 15px; outline: none; border-radius: 0; width: 100%; }
-.palette-list { overflow-y: auto; padding: 6px; max-height: calc(64vh - 52px); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) var(--panel); }
+.palette-list { overflow-y: auto; padding: 6px; max-height: calc(64vh / var(--ui-scale) - 52px); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) var(--panel); }
 .palette-list::-webkit-scrollbar { width: 8px; }
 .palette-list::-webkit-scrollbar-track { background: var(--panel); }
 .palette-list::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 0; }
@@ -370,7 +370,7 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .status .counts span { color: inherit; }
 .help-btn { width: 24px; height: 22px; padding: 0; border: none; background: transparent; color: var(--dim); }
 .help-btn.on, .help-btn:hover { color: var(--text); }
-.help-pop { position: fixed; right: 12px; bottom: 34px; width: 380px; max-height: min(70vh, 560px); z-index: 70; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.help-pop { position: fixed; right: 12px; bottom: 34px; width: 380px; max-height: min(70vh / var(--ui-scale), 560px); z-index: 70; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
 .help-head { display: flex; align-items: center; padding: 10px 12px 6px; }
 .help-body { overflow: auto; padding: 0 14px 12px; font-size: 12.5px; }
 .help-tip { color: var(--text); margin: 4px 0 8px; line-height: 1.45; }
@@ -423,7 +423,7 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 .tab-body { overflow-x: hidden; }
 .sidebar .uv-toolbar { flex-wrap: wrap; }
 .tl-controls { overflow-x: auto; }
-@media (max-width: 1366px) {
+@container app (max-width: 1366px) {
   .header { gap: 8px; padding: 0 8px; }
   .seg button { padding: 4px 10px; }
   .tl-controls { gap: 4px; padding: 0 8px; }
@@ -431,7 +431,7 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
   .tl-controls .frame-box { min-width: 52px; margin: 0 2px; }
   .status { gap: 10px; }
 }
-@media (max-width: 1180px) {
+@container app (max-width: 1180px) {
   .brand { font-size: 0; gap: 0; }
   .brand .logo { font-size: 15px; }
   .header .primary .lbl { display: none; }
@@ -439,7 +439,8 @@ aside .muted code { font-size: 11px; background: #0f1116; padding: 1px 5px; bord
 
 /* ---- modal windows (dialogs, File → Properties) ---- */
 .modal-bg { position: fixed; inset: 0; z-index: 90; background: rgba(5,6,10,.45); display: flex; align-items: center; justify-content: center; }
-.modal { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+/* viewport units are not UI-scaled by the root zoom: divide them (see the UI scale block) */
+.modal { max-width: calc(100vw / var(--ui-scale) - 24px); max-height: calc(100vh / var(--ui-scale) - 24px); display: flex; flex-direction: column; background: var(--panel2); border: 1px solid var(--line2); border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.55); }
 .modal-title { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; cursor: move; user-select: none; touch-action: none; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .modal-body { padding: 12px 14px; overflow: auto; font-size: 12.5px; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px 12px; }
@@ -465,7 +466,7 @@ button.danger { color: #ff9a9a; }
 .mi-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 @media (pointer: coarse) { .mi { min-height: 36px; } .mb-title { min-height: 36px; } }
 /* make room for the menus on laptops: logo only */
-@media (max-width: 1500px) { .brand-name { display: none; } }
+@container app (max-width: 1500px) { .brand-name { display: none; } }
 
 /* ---- File → Properties ---- */
 .pp { display: grid; grid-template-columns: 1fr 150px; gap: 16px; }
@@ -483,7 +484,7 @@ button.danger { color: #ff9a9a; }
 .pp-stats div { display: flex; justify-content: space-between; gap: 8px; }
 .pp-stats dt { color: var(--dim); }
 .pp-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
-@media (max-width: 600px) { .pp { grid-template-columns: 1fr; } }
+@container app (max-width: 600px) { .pp { grid-template-columns: 1fr; } }
 
 /* ---- UV numeric bar + action tabs ---- */
 .uv-numbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 6px; background: #000c; border-radius: 4px; font-size: 11.5px; max-width: 100%; }
@@ -538,18 +539,29 @@ button.danger { color: #ff9a9a; }
 .mode-seg button, .gizmo-seg button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; }
 .gizmo-seg button { padding: 4px 7px; }
 .mode-seg button svg { flex: none; }
-@media (max-width: 1366px) {
+/* Animate / Rig's five-mode switch needs this a little above 1366 */
+@container app (max-width: 1420px) {
   .header { gap: 6px; }
   .ws-tabs button { padding: 4px 8px; }
   .mode-seg button { padding: 4px 7px; gap: 4px; }
 }
 /* Rig / Animate add Joints: labels go a little earlier */
-@media (max-width: 1320px) { .mode-seg.n5 .lbl { display: none; } .mode-seg.n5 button { padding: 4px 7px; } }
-@media (max-width: 1240px) {
+@container app (max-width: 1320px) { .mode-seg.n5 .lbl { display: none; } .mode-seg.n5 button { padding: 4px 7px; } }
+@container app (max-width: 1260px) {
   .header { gap: 4px; }
   .mode-seg .lbl { display: none; }
   .mode-seg button, .gizmo-seg button { padding: 4px 6px; }
   .ws-tabs button { padding: 4px 7px; }
+}
+
+/* Under 1000 layout px (a small window, or a big UI scale on a laptop): tighter menu titles and tabs, so the header
+   still fits on one row without scrolling */
+@container app (max-width: 1000px) {
+  .header { gap: 2px; padding: 0 6px; }
+  .mb-title { padding: 5px 5px; }
+  .ws-tabs button { padding: 4px 5px; }
+  .mode-seg button, .gizmo-seg button { padding: 4px 4px; }
+  .hdr-group { gap: 2px; }
 }
 
 /* ---- more room for the views: thin headers, hover-only corner buttons, 1px pane gaps ---- */
@@ -685,7 +697,7 @@ button.danger { color: #ff9a9a; }
 .km-top { display: flex; gap: 10px; align-items: center; }
 .km-top input { flex: 1; min-width: 0; }
 .km-top label, .km-preset { display: flex; gap: 6px; align-items: center; color: var(--dim); white-space: nowrap; }
-.km-list { overflow-y: auto; max-height: min(60vh, 560px); border: 1px solid var(--line); background: var(--bg); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) var(--panel); }
+.km-list { overflow-y: auto; max-height: min(60vh / var(--ui-scale), 560px); border: 1px solid var(--line); background: var(--bg); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line2) var(--panel); }
 .km-list::-webkit-scrollbar { width: 8px; }
 .km-list::-webkit-scrollbar-track { background: var(--panel); }
 .km-list::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 0; }
@@ -904,3 +916,39 @@ button.danger { color: #ff9a9a; }
 .mrow .mcell.x { color: var(--x); } .mrow .mcell.y { color: var(--y); } .mrow .mcell.z { color: var(--z); }
 .mrow .mweld { color: var(--dim); }
 .mrow .mweld.on { color: var(--accent); background: rgba(109,139,255,.14); }
+
+/* ---- UI scale (src/uiscale.ts): the root is zoomed by --ui-scale; the work area is zoomed back so the 3D views,
+   UV / paint canvases and the timeline sheet stay 1:1 (sharp canvases, pointer maths in plain viewport px), and the
+   chrome drawn over them is zoomed up again. Only outermost overlays are listed, so nothing is zoomed twice. ---- */
+:root { --ui-scale: 1; }
+.center { zoom: calc(1 / var(--ui-scale)); }
+.center .vp-title, .center .vp-corner, .center .empty-scene .card,
+.center .uv-toolbar, .center .uv-topleft, .center .uv-zoom, .center .uv-menu, .center .uv-more-pop,
+.center .paint-zoom, .center .tl-controls { zoom: var(--ui-scale); }
+.timeline { grid-template-rows: 8px calc(36px * var(--ui-scale)) minmax(0, 1fr); }
+.timeline.compact { grid-template-rows: 8px 1fr; }
+
+/* ---- File › Settings ---- */
+.modal[data-testid="settings"] { border-radius: 2px; background: var(--panel); }
+.modal[data-testid="settings"] button { border-radius: 2px; }
+.modal[data-testid="settings"] .modal-body { padding: 0; overflow: auto; }
+.set-win { display: grid; grid-template-columns: 132px minmax(0, 1fr); min-height: 180px; }
+.set-nav { display: flex; flex-direction: column; gap: 1px; padding: 8px 6px; border-right: 1px solid var(--line); background: var(--bg); }
+.set-nav button { text-align: left; height: var(--ctl-h); padding: 0 10px; border: none; background: transparent; color: var(--text-2); font-size: var(--fs-sm); }
+.set-nav button.on { background: var(--panel2); color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.set-main { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.set-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.set-head p { margin: 2px 0 0; color: var(--dim); font-size: var(--fs-sm); }
+.set-box { border: 1px solid var(--line); background: var(--panel2); }
+.set-cap { padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--dim); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em; }
+.set-row { display: grid; grid-template-columns: minmax(0, 132px) minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 10px; }
+.set-row label { display: flex; flex-direction: column; gap: 1px; color: var(--text); font-size: var(--fs-md); }
+.set-row label small { color: var(--dim); font-size: var(--fs-xs); }
+.set-seg { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 2px; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 2px; }
+.set-seg button { height: calc(var(--ctl-h) - 6px); padding: 0 4px; min-width: 0; justify-content: center; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; border: none; background: transparent; color: var(--text-2); }
+.set-seg button:hover:not(.on) { background: var(--panel2); color: var(--text); border: none; }
+.set-seg button.on { background: var(--panel2); color: var(--text); box-shadow: 0 0 0 1px var(--line2), inset 0 -2px 0 var(--accent); }
+.set-hint { padding: 0 10px 8px; color: var(--dim); font-size: var(--fs-xs); }
+.set-live { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: var(--fs-xs); }
+.set-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--y); }
+.modal[data-testid="settings"] .modal-foot { align-items: center; border-top: 1px solid var(--line); padding: 8px 14px; }

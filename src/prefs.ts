@@ -1,3 +1,5 @@
+import { isUIScale, layoutWidth, type UIScale } from './uiscale'
+
 /** Per-browser UI settings (layout sizes, pen options), kept in localStorage — not part of the project file. */
 export interface UIPrefs {
   /** Animate timeline + dope sheet height in px */
@@ -35,6 +37,8 @@ export interface UIPrefs {
   sideTabs: Record<string, string>
   /** Materials tab: height of the list above the editor (px) */
   matListH: number
+  /** UI scale: 'auto' (from the window size, see autoScale) or a fixed factor */
+  uiScale: UIScale
   /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
   uvUnwrap: UnwrapPrefs
 }
@@ -70,12 +74,13 @@ export const LEFT_W = 220
 export const LEFT_NARROW_W = 144
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: LEFT_W, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: LEFT_W, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132, uiScale: 'auto' }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars; 3 = the right column has a real
  * minimum (RIGHT_MIN): the 140 px "slim rail column" of v2 truncated every tab, so saved v2 widths below it are reset;
- * 4 = the tool panel defaults to LEFT_W (mode tabs on one row): saved narrower widths move up to it */
-const PREFS_V = 4
+ * 4 = the tool panel defaults to LEFT_W (mode tabs on one row): saved narrower widths move up to it;
+ * 5 = UI scale (uiScale, 'auto' for everyone who had none) */
+const PREFS_V = 5
 
 export function loadPrefs(): UIPrefs {
   try {
@@ -86,8 +91,8 @@ export function loadPrefs(): UIPrefs {
     const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
     const tri = (v: unknown) => (typeof v === 'boolean' ? v : null)
     const ver = (p as { v?: unknown }).v
-    const v1 = ver !== 2 && ver !== 3 && ver !== PREFS_V
-    const preV4 = ver !== PREFS_V
+    const v1 = ver !== 2 && ver !== 3 && ver !== 4 && ver !== PREFS_V
+    const preV4 = typeof ver !== 'number' || ver < 4
     return {
       timelineH: num(p.timelineH, DEFAULT_PREFS.timelineH),
       timelineLastH: num(p.timelineLastH, DEFAULT_PREFS.timelineLastH),
@@ -128,6 +133,7 @@ export function loadPrefs(): UIPrefs {
           follow: q.follow === 'even' ? 'even' as const : 'length_average' as const, lmMargin: rng(q.lmMargin, 0, 0.25, d.lmMargin), sharpAngle: rng(q.sharpAngle, 1, 179, d.sharpAngle),
         }
       })(),
+      uiScale: isUIScale(p.uiScale) ? p.uiScale : 'auto',
       matListH: typeof p.matListH === 'number' && Number.isFinite(p.matListH) ? Math.max(60, Math.min(600, p.matListH)) : 132,
       sideTabs: Object.fromEntries(Object.entries(p.sideTabs && typeof p.sideTabs === 'object' ? p.sideTabs : {}).filter(([k, v]) => (PANEL_KEYS as readonly string[]).includes(k) && typeof v === 'string' && /^[\w-]{1,32}$/.test(v))) as Record<string, string>,
       uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
@@ -155,7 +161,7 @@ export const RAIL_W = 34
 export const RIGHT_MIN = 240
 /** Sidebar widths: the tool rail 128…280 px, the right column RIGHT_MIN…520 px (icon rail included) but never more
  * than a third of the window (and never below RIGHT_MIN: a narrow window folds the column to its rail instead). */
-export function clampSide(w: number, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
+export function clampSide(w: number, side: 'left' | 'right', winW = layoutWidth()) {
   const [lo, hi] = side === 'left' ? [128, 280] : [RIGHT_MIN, Math.max(RIGHT_MIN, Math.min(520, winW * 0.32))]
   return Math.round(Math.max(lo, Math.min(hi, w)))
 }

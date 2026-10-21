@@ -164,6 +164,7 @@ export const commands: Command[] = [
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,
   { id: 'app.palette', label: 'Command palette', group: 'Help', keys: 'Ctrl+K', run: () => window.dispatchEvent(new Event('open-palette')) },
+  { id: 'app.settings', label: 'Settings (UI scale…)', group: 'File', keys: 'Ctrl+,', run: () => window.dispatchEvent(new Event('open-settings')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
   { id: 'help.shortcuts', label: 'Help: hints and keyboard shortcuts', group: 'Help', keys: 'F1', run: () => S().set({ helpOpen: !S().helpOpen }) },
   { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => {

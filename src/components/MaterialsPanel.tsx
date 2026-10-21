@@ -5,6 +5,7 @@ import { faceMat, MAP_SLOTS, type AlphaMode, type Material } from '../model'
 import { textures } from '../textures'
 import { matPreview } from '../matpreview'
 import * as MT from '../materials'
+import { zoomOf } from '../uiscale'
 
 /** Images in the library (each lives on a material): id → the first material's name, for the image pickers. */
 function imageChoices(ms: Material[]) {
@@ -112,9 +113,11 @@ export function MaterialsPanel() {
         onDoubleClick={() => st.setUI({ matListH: 132 })}
         onPointerDown={e => {
           e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId)
-          const y0 = e.clientY, h0 = (document.querySelector('[data-testid="mat-list"]') as HTMLElement | null)?.getBoundingClientRect().height ?? listH
-          const move = (ev: PointerEvent) => setListH(Math.max(60, Math.min(600, h0 + ev.clientY - y0)))
-          const up = (ev: PointerEvent) => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); st.setUI({ matListH: Math.max(60, Math.min(600, h0 + ev.clientY - y0)) }); setListH(null) }
+          // pointer moves and rects are viewport px; the list height is the panel's own (UI-scaled) px
+          const z = zoomOf(e.currentTarget), y0 = e.clientY, lr = (document.querySelector('[data-testid="mat-list"]') as HTMLElement | null)?.getBoundingClientRect()
+          const h0 = lr ? lr.height / z : listH, h = (ev: PointerEvent) => Math.max(60, Math.min(600, h0 + (ev.clientY - y0) / z))
+          const move = (ev: PointerEvent) => setListH(h(ev))
+          const up = (ev: PointerEvent) => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); st.setUI({ matListH: h(ev) }); setListH(null) }
           window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
         }} />
       {mt && <div className="mat-editor" data-testid="mat-editor">

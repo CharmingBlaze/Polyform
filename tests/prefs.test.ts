@@ -60,6 +60,17 @@ describe('side panels per workspace', () => {
     // once saved as v4, a width the user dragged narrower is theirs
     expect(withPrefs({ v: 4, leftW: 150 }).leftW).toBe(150)
   })
+  it('v5: UI scale defaults to Auto, keeps a valid choice, drops junk; v4 widths and choices survive the bump', () => {
+    expect(DEFAULT_PREFS.uiScale).toBe('auto')
+    expect(withPrefs({ v: 4 }).uiScale).toBe('auto')
+    expect(withPrefs({ v: 5, uiScale: 1.25 }).uiScale).toBe(1.25)
+    expect(withPrefs({ v: 5, uiScale: 3 }).uiScale).toBe('auto')
+    expect(withPrefs({ v: 5, uiScale: '1.5' }).uiScale).toBe('auto')
+    const p = withPrefs({ v: 4, leftW: 150, rightW: 320 })
+    expect(p.leftW).toBe(150)
+    expect(p.rightW).toBe(320)
+    expect(withPrefs({ v: 5, leftW: 150 }).leftW).toBe(150)
+  })
   it('keeps v2 choices (widths too) and sanitizes junk', () => {
     const p = withPrefs({ v: 2, rightW: 320, panels: { rig: { left: true, right: 'x' }, uv: {} } })
     expect(p.rightW).toBe(320)

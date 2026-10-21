@@ -15,6 +15,7 @@ import { paintStatusHint } from '../painthint'
 import { WS_TABS, WS_TIPS } from '../wsconfig'
 import { ClipsPanel } from './ClipsPanel'
 import { MenuBar } from './MenuBar'
+import { uiScale } from '../uiscale'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -437,7 +438,9 @@ export function Popup() {
   const [at, setAt] = useState(lastClient)
   useEffect(() => {
     if (!p) return
-    setAt({ x: Math.min(lastClient.x, window.innerWidth - 240), y: Math.min(lastClient.y, window.innerHeight - 40 - p.items.length * 30) })
+    // pointer coords are viewport px; the popup sits in the UI-scaled document, so place it in those px
+    const z = uiScale(), x = lastClient.x / z, y = lastClient.y / z
+    setAt({ x: Math.min(x, window.innerWidth / z - 240), y: Math.min(y, window.innerHeight / z - 40 - p.items.length * 30) })
     const close = () => useStore.getState().set({ popup: null })
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault(); e.stopImmediatePropagation()

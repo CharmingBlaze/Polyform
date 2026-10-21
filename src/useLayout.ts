@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
+import { layoutWidth, zoomOf } from './uiscale'
 import { clampSide, DEFAULT_PREFS, ICON_W, LEFT_NARROW_W, NARROW_W, RAIL_W, type UIPrefs } from './prefs'
 
-/** Window width, live. */
+/** Window width in layout px (CSS px ÷ UI scale), live: follows resizing and scale changes. */
 export function useWinW() {
-  const [w, setW] = useState(() => window.innerWidth)
+  const [w, setW] = useState(layoutWidth)
   useEffect(() => {
-    const on = () => setW(window.innerWidth)
-    window.addEventListener('resize', on)
-    return () => window.removeEventListener('resize', on)
+    const on = () => setW(layoutWidth())
+    window.addEventListener('resize', on); window.addEventListener('ui-scale', on)
+    return () => { window.removeEventListener('resize', on); window.removeEventListener('ui-scale', on) }
   }, [])
   return w
 }
@@ -18,7 +19,7 @@ type St = { uvSpace: boolean; workspace: string; mode: string; ui: UIPrefs }
 export const panelKey = (s: { uvSpace: boolean; workspace: string; mode: string }) => (s.uvSpace ? 'uv' : s.mode === 'animate' ? 'animate' : s.workspace === 'animate' ? 'model' : s.workspace)
 /** Collapsed to icons: the workspace's explicit choice, else automatically on narrow windows. Animate starts without
  * its tool panel (the transport above the timeline holds the animation controls); Ctrl+[ brings it back. */
-export function panelCollapsed(s: St, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
+export function panelCollapsed(s: St, side: 'left' | 'right', winW = layoutWidth()) {
   const k = panelKey(s)
   return s.ui.panels[k]?.[side] ?? (k === 'animate' && side === 'left' ? true : winW < NARROW_W)
 }
@@ -50,7 +51,7 @@ export const ANIM_RIGHT_W = DEFAULT_PREFS.rightW
 export const baseRightW = (ui: UIPrefs, _uvSpace?: boolean, _animate = false) => ui.rightW
 
 /** The tool panel's open width: the saved one, except that the default opens slimmer (2×2 mode tabs) on narrow windows. */
-export const baseLeftW = (ui: UIPrefs, winW = typeof window !== 'undefined' ? window.innerWidth : 1440) => (winW < NARROW_W && ui.leftW === DEFAULT_PREFS.leftW ? LEFT_NARROW_W : ui.leftW)
+export const baseLeftW = (ui: UIPrefs, winW = layoutWidth()) => (winW < NARROW_W && ui.leftW === DEFAULT_PREFS.leftW ? LEFT_NARROW_W : ui.leftW)
 
 /** Effective sidebar state: collapsed to icons (explicit, or automatically on narrow windows) and pixel widths. */
 export function useSides() {
@@ -78,9 +79,10 @@ export function sideHandle(side: 'left' | 'right', collapsed: boolean) {
       if (e.button !== 0 || collapsed) return
       const el = e.currentTarget
       el.setPointerCapture(e.pointerId)
-      const x0 = e.clientX, w0 = clampSide(side === 'left' ? baseLeftW(useStore.getState().ui) : baseRightW(useStore.getState().ui, useStore.getState().uvSpace, panelKey(useStore.getState()) === 'animate'), side)
+      // pointer moves are viewport px; the widths are the panel's own (zoomed) px
+      const z = zoomOf(el), x0 = e.clientX, w0 = clampSide(side === 'left' ? baseLeftW(useStore.getState().ui) : baseRightW(useStore.getState().ui, useStore.getState().uvSpace, panelKey(useStore.getState()) === 'animate'), side)
       const move = (ev: PointerEvent) => {
-        const w = clampSide(w0 + (side === 'left' ? ev.clientX - x0 : x0 - ev.clientX), side)
+        const w = clampSide(w0 + (side === 'left' ? ev.clientX - x0 : x0 - ev.clientX) / z, side)
         useStore.getState().setUI(side === 'left' ? { leftW: w } : { rightW: w })
       }
       const up = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up) }

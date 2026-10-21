@@ -15,6 +15,7 @@ import { useStore, type FillScope, type PaintMode, type PaintTarget } from '../s
 import { textures } from '../textures'
 import { CmdBtn } from './CmdBtn'
 import { SegmentedControl } from './SegmentedControl'
+import { zoomOf } from '../uiscale'
 
 const IMAGE_ONLY = new Set<PaintMode>(['shade', 'marquee', 'lasso', 'wand', 'move', 'line', 'rect', 'ellipse'])
 const SELECTS = new Set<PaintMode>(['marquee', 'lasso', 'wand'])
@@ -298,14 +299,14 @@ export function LayersPanel() {
             <div key={L.id} className={`paint-layer ${L.active ? 'on' : ''}`} onClick={() => activatePaintLayer(shown, L.id)}
               onPointerDown={e => {
                 if ((e.target as HTMLElement).closest('input,button')) return
-                const y0 = e.clientY, stack = layers.findIndex(x => x.id === L.id), row = e.currentTarget
+                const y0 = e.clientY, stack = layers.findIndex(x => x.id === L.id), row = e.currentTarget, z = zoomOf(row)
                 row.setPointerCapture(e.pointerId)
-                const move = (ev: PointerEvent) => { row.style.translate = `0 ${ev.clientY - y0}px` }
+                const move = (ev: PointerEvent) => { row.style.translate = `0 ${(ev.clientY - y0) / z}px` }
                 const up = (ev: PointerEvent) => {
                   row.style.translate = ''
                   row.removeEventListener('pointermove', move); row.removeEventListener('pointerup', up)
                   const view = layers.length - 1 - stack
-                  const next = Math.max(0, Math.min(layers.length - 1, view + Math.round((ev.clientY - y0) / 28)))
+                  const next = Math.max(0, Math.min(layers.length - 1, view + Math.round((ev.clientY - y0) / z / 28)))
                   placePaintLayer(shown, L.id, layers.length - 1 - next)
                 }
                 row.addEventListener('pointermove', move); row.addEventListener('pointerup', up)

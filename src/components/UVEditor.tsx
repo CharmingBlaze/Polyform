@@ -21,6 +21,7 @@ import { runUnwrap } from '../uvunwrap'
 import { liveCharts, liveSolve } from '../lscm'
 import * as BL from '../uvblender'
 import { NewImageDialog, ResizeImageDialog } from './ImageDialogs'
+import { useZoom } from '../uiscale'
 import { input, notePen, notePointer, palmRejected, penErases, wheelIntent } from '../input'
 
 type Xf = 'move' | 'rotate' | 'scale'
@@ -37,6 +38,8 @@ function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuIte
   const el = useRef<HTMLDivElement>(null)
   const [act, setAct] = useState(-1)
   const [pos, setPos] = useState({ x, y })
+  // pos is viewport px; the menu's own px are those ÷ its UI-scale zoom
+  const z = useZoom(el)
   useEffect(() => {
     const r = el.current!.getBoundingClientRect()
     setPos({ x: Math.max(2, Math.min(x, innerWidth - r.width - 2)), y: Math.max(2, Math.min(y, innerHeight - r.height - 2)) })
@@ -54,7 +57,7 @@ function UVMenu({ x, y, items, close }: { x: number; y: number; items: UVMenuIte
     else if (e.key === 'Enter' && act >= 0) { e.preventDefault(); run(items[act]) }
   }
   return (
-    <div ref={el} className="mb-panel uv-menu" role="menu" tabIndex={-1} data-menu-open="true" data-testid="uv-menu" style={{ left: pos.x, top: pos.y, maxHeight: innerHeight - 4 }} onKeyDown={key} onContextMenu={e => e.preventDefault()}>
+    <div ref={el} className="mb-panel uv-menu" role="menu" tabIndex={-1} data-menu-open="true" data-testid="uv-menu" style={{ left: pos.x / z, top: pos.y / z, maxHeight: (innerHeight - 4) / z }} onKeyDown={key} onContextMenu={e => e.preventDefault()}>
       {items.map((it, i) => it === 'sep' ? <div key={i} className="mi-sep" /> : (
         <div key={it.id} role="menuitem" title={it.tip} aria-disabled={it.enabled === false || undefined} data-testid={`uvm-${it.id}`} className={`mi ${act === i ? 'active' : ''} ${it.enabled === false ? 'disabled' : ''}`}
           onPointerEnter={() => setAct(i)} onPointerLeave={() => setAct(-1)} onClick={() => run(it)}>
@@ -86,13 +89,14 @@ const uvLocal = () => { const s = useStore.getState(); return s.ui.uvSync === 'u
 /** the ⋯ popover of the UV number bar (image and overlay at narrow widths): Esc / outside press closes */
 function UVMorePop({ x, y, close, children }: { x: number; y: number; close: () => void; children: React.ReactNode }) {
   const el = useRef<HTMLDivElement>(null)
+  const z = useZoom(el)
   useEffect(() => {
     const off = (e: PointerEvent) => { if (!el.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('[data-testid="uv-more"]')) close() }
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     window.addEventListener('pointerdown', off, true); window.addEventListener('keydown', key)
     return () => { window.removeEventListener('pointerdown', off, true); window.removeEventListener('keydown', key) }
   }, [close])
-  return <div ref={el} className="mb-panel uv-more-pop" data-testid="uv-more-pop" data-menu-open="true" style={{ right: Math.max(2, innerWidth - x), top: y }}>{children}</div>
+  return <div ref={el} className="mb-panel uv-more-pop" data-testid="uv-more-pop" data-menu-open="true" style={{ right: Math.max(2, innerWidth - x) / z, top: y / z }}>{children}</div>
 }
 
 /** A compact numeric field: Enter / blur applies, Esc reverts, wheel nudges (Shift = finer). "—" when not applicable. */

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { Check, ChevronRight } from 'lucide-react'
 import { useStore } from '../store'
 import { buildMenus, firstIndex, isItem, lastIndex, nextIndex, nextMenu, usable, type MenuEntry, type MenuItem } from '../menus'
+import { zoomOf } from '../uiscale'
 
 const TITLES = ['File', 'Edit', 'View', 'Select', 'Create', 'Help']
 export const menuTestId = (id: string) => `mi-${id.replace(/\./g, '-')}`
@@ -13,7 +14,9 @@ function Float({ anchor, side, testid, children, scrollTo }: { anchor: HTMLEleme
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || !anchor) return
-    const r = anchor.getBoundingClientRect(), w = el.offsetWidth, W = window.innerWidth, H = window.innerHeight
+    // everything in the panel's own px: viewport rects and the window size ÷ its effective (UI-scale) zoom
+    const z = zoomOf(el), b = anchor.getBoundingClientRect(), r = { left: b.left / z, right: b.right / z, top: b.top / z, bottom: b.bottom / z }
+    const w = el.offsetWidth, W = window.innerWidth / z, H = window.innerHeight / z
     let left: number, top: number
     if (side === 'below') { left = r.left; top = r.bottom + 3 } else { left = r.right - 2; top = r.top - 5; if (left + w > W - 4) left = r.left - w + 2 }
     left = Math.max(4, Math.min(W - w - 4, left))
