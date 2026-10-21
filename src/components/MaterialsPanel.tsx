@@ -66,8 +66,8 @@ export function MaterialsPanel() {
   const set = (k: string, v: unknown, label: string) => edit(label, mm => (MT.setField as (a: Material, b: string, c: unknown) => void)(mm.materials[cur], k, v))
   const imgs = imageChoices(m.materials)
   const slider = (key: 'metalness' | 'roughness' | 'opacity' | 'alphaCutoff' | 'emissiveStrength' | 'normalScale' | 'occlusionStrength', label: string, val: number, max = 1, step = 0.01) => (
-    <label className="mat-slider" title={`${label} (drag: one undo step)`}>
-      <span>{label}</span>
+    <label className="mat-slider prow" title={`${label} (drag: one undo step)`}>
+      <span className="lbl">{label}</span>
       <input type="range" min={0} max={max} step={step} value={val} data-testid={`mat-${key}`}
         onChange={e => drag(key, label, x => MT.setField(x, key, +e.target.value))} onPointerUp={end} onKeyUp={end} onBlur={end} />
       <output>{val.toFixed(2)}</output>
@@ -85,12 +85,13 @@ export function MaterialsPanel() {
         <button className="icon-btn" data-testid="mat-select" title="Select the faces using this material"
           onClick={() => { const fs = MT.facesUsing(m, cur); if (selectMode === 'object' || selectMode === 'joint') st.setSelectMode('face'); st.setSelection({ faces: fs }) }}><MousePointerSquareDashed size={14} /></button>
         <span className="grow" />
-        <span className="dim small">{m.materials.length}</span>
+        <span className="mat-count" title={`${m.materials.length} material${m.materials.length === 1 ? '' : 's'}`}>{m.materials.length}</span>
       </div>
       <label className="ol-filter mat-filter"><Search size={13} /><input placeholder="Filter materials" value={q} data-testid="mat-filter" onChange={e => setQ(e.target.value)} />
         <span className="ol-help" title="Click makes a material active · double-click renames · the counts are faces using it · Paint paints into the active material's images"><HelpCircle size={13} /></span>
       </label>
-      <div className="mat-list" data-testid="mat-list" style={{ flexBasis: listH }}>
+      {/* at most listH tall (drag the split): a short list takes only its rows, so no dead gap above the editor */}
+      <div className="mat-list" data-testid="mat-list" style={dragH == null ? { maxHeight: listH } : { height: dragH, maxHeight: 'none' }}>
         {m.materials.map((x, i) => {
           if (q && !x.name.toLowerCase().includes(q.toLowerCase())) return null
           const url = matPreview(x)
@@ -111,19 +112,22 @@ export function MaterialsPanel() {
         onDoubleClick={() => st.setUI({ matListH: 132 })}
         onPointerDown={e => {
           e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId)
-          const y0 = e.clientY, h0 = listH
+          const y0 = e.clientY, h0 = (document.querySelector('[data-testid="mat-list"]') as HTMLElement | null)?.getBoundingClientRect().height ?? listH
           const move = (ev: PointerEvent) => setListH(Math.max(60, Math.min(600, h0 + ev.clientY - y0)))
-          const up = (ev: PointerEvent) => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); st.setUI({ matListH: Math.max(60, Math.min(600, h0 + ev.clientY - y0)) }) }
+          const up = (ev: PointerEvent) => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); st.setUI({ matListH: Math.max(60, Math.min(600, h0 + ev.clientY - y0)) }); setListH(null) }
           window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
         }} />
       {mt && <div className="mat-editor" data-testid="mat-editor">
-        <div className="mat-presets">
-          {(Object.keys(MT.PRESETS) as MT.Preset[]).map(p => <button key={p} className="mini-toggle" data-testid={`mat-preset-${p}`} title={MT.PRESETS[p].tip} onClick={() => edit(`Preset: ${MT.PRESETS[p].label}`, mm => MT.applyPreset(mm.materials[cur], p))}>{MT.PRESETS[p].label}</button>)}
+        <div className="mat-presets seg-grid" role="group" aria-label="Material type presets">
+          {(Object.keys(MT.PRESETS) as MT.Preset[]).map(p => <button key={p} data-testid={`mat-preset-${p}`} title={MT.PRESETS[p].tip} onClick={() => edit(`Preset: ${MT.PRESETS[p].label}`, mm => MT.applyPreset(mm.materials[cur], p))}>{MT.PRESETS[p].label}</button>)}
         </div>
-        <div className="mat-line">
+        <label className="mat-line prow">
           <span className="lbl">Base</span>
-          <input type="color" value={mt.color} data-testid="mat-color" title="Base colour" onChange={e => drag('color', 'Base colour', x => MT.setField(x, 'color', e.target.value))} onBlur={end} />
-        </div>
+          <span className="ctl color-ctl">
+            <input type="color" value={mt.color} data-testid="mat-color" title="Base colour" onChange={e => drag('color', 'Base colour', x => MT.setField(x, 'color', e.target.value))} onBlur={end} />
+            <code className="hex">{mt.color.toUpperCase()}</code>
+          </span>
+        </label>
         {slider('metalness', 'Metallic', mt.metalness)}
         {slider('roughness', 'Roughness', mt.roughness)}
         <button className="mat-opts-toggle" data-testid="mat-options" aria-expanded={opts} title="Emission, opacity, flags and image maps (base, metal/rough, normal, occlusion, emissive)" onClick={() => setOpts(!opts)}>
@@ -176,8 +180,8 @@ export function MaterialsPanel() {
         {mt.normalTex && slider('normalScale', 'Bump', mt.normalScale ?? 1, 2)}
         {mt.occlusionTex && slider('occlusionStrength', 'AO str', mt.occlusionStrength ?? 1)}
         </div>}
-        <button className="primary mat-assign" data-testid="mat-assign" disabled={!selFaces.size} title={`Give the selected ${faceTarget} this material`} onClick={() => st.assignMaterial(cur)}>
-          <PaintBucket size={14} /> Assign to selected {faceTarget}
+        <button className="mat-assign" data-testid="mat-assign" disabled={!selFaces.size} title={`Give the selected ${faceTarget} this material`} onClick={() => st.assignMaterial(cur)}>
+          <PaintBucket size={13} /> <span>Assign to {faceTarget}</span>
         </button>
       </div>}
     </div>

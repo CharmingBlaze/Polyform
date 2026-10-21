@@ -9,7 +9,7 @@ export const PRESETS = {
   metal: { label: 'Metal', tip: 'Metallic 1, roughness 0.25' },
   emissive: { label: 'Emissive', tip: 'Glows in its base colour (strength 2)' },
   glass: { label: 'Glass', tip: 'Glass-ish: 35 % opacity (Blend), smooth, double-sided' },
-  unlit: { label: 'Unlit px', tip: 'Unlit (KHR_materials_unlit) with crisp pixel filtering: what you paint is what you see' },
+  unlit: { label: 'Unlit', tip: 'Unlit (KHR_materials_unlit): flat colour / image, no lighting, crisp pixel filtering. What you paint is what you see' },
 } as const
 export type Preset = keyof typeof PRESETS
 

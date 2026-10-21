@@ -46,13 +46,13 @@ const r = await p.locator('[data-testid="side-handle"]').boundingBox()
 const side0 = (await p.locator('.right-col').boundingBox()).width
 await p.mouse.move(r.x + 3, r.y + 200); await p.mouse.down(); await p.mouse.move(r.x - 57, r.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
 const side1 = (await p.locator('.right-col').boundingBox()).width
-check('the right column starts slimmer than the tool rail; dragging its edge widens it', side0 < rail0 && side1 > side0 + 30, `${side0} → ${side1} (rail ${rail0})`)
+check('the right column opens at its default (256 px, never under the 240 px minimum); dragging its edge widens it', Math.abs(side0 - 256) < 2 && side1 > side0 + 30, `${side0} → ${side1} (rail ${rail0})`)
 let side2 = 0
 {
   const r2 = await p.locator('[data-testid="side-handle"]').boundingBox()
   await p.mouse.move(r2.x + 3, r2.y + 200); await p.mouse.down(); await p.mouse.move(r2.x + 300, r2.y + 200, { steps: 5 }); await p.mouse.up(); await frame()
   side2 = (await p.locator('.right-col').boundingBox()).width
-  check('…and narrowing is clamped (≥ 140)', side2 >= 140 && side2 < side1, `${side1} → ${side2}`)
+  check('…and narrowing is clamped at the 240 px minimum', Math.abs(side2 - 240) < 2 && side2 < side1, `${side1} → ${side2}`)
 }
 await p.reload(); await boot()
 await p.locator('[data-testid="dialog-restore"]').click({ timeout: 4000 }).catch(() => {}) // rolling backup: answer the restore prompt

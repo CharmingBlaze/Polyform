@@ -64,10 +64,11 @@ export const clampView3D = (f: number) => Math.max(0.15, Math.min(0.85, f))
 
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 140, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: 144, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132 }
 const KEY = 'polyform.ui.v1'
-/** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars */
-const PREFS_V = 2
+/** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars; 3 = the right column has a real
+ * minimum (RIGHT_MIN): the 140 px "slim rail column" of v2 truncated every tab, so saved v2 widths below it are reset */
+const PREFS_V = 3
 
 export function loadPrefs(): UIPrefs {
   try {
@@ -77,15 +78,16 @@ export function loadPrefs(): UIPrefs {
     const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
     const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d)
     const tri = (v: unknown) => (typeof v === 'boolean' ? v : null)
-    const v1 = (p as { v?: unknown }).v !== PREFS_V
+    const ver = (p as { v?: unknown }).v
+    const v1 = ver !== 2 && ver !== PREFS_V
     return {
       timelineH: num(p.timelineH, DEFAULT_PREFS.timelineH),
       timelineLastH: num(p.timelineLastH, DEFAULT_PREFS.timelineLastH),
       timelineHidden: p.timelineHidden === true,
       // v1 saved the old default widths with everything else: those move to the new, narrower defaults
       leftW: v1 && p.leftW === 168 ? DEFAULT_PREFS.leftW : num(p.leftW, DEFAULT_PREFS.leftW),
-      // 256 was the default before the icon rail; the slim rail column replaces it
-      rightW: (v1 && p.rightW === 320) || p.rightW === 256 ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
+      // the old 320 default and anything narrower than the minimum (the v2 140 px default) move to the default width
+      rightW: (v1 && p.rightW === 320) || num(p.rightW, DEFAULT_PREFS.rightW) < RIGHT_MIN ? DEFAULT_PREFS.rightW : num(p.rightW, DEFAULT_PREFS.rightW),
       panels: (() => {
         const q = (p.panels && typeof p.panels === 'object' ? p.panels : null) as Record<string, Record<string, unknown>> | null
         const old = p as Record<string, unknown>
@@ -138,8 +140,13 @@ export const NARROW_W = 1180
 export const ICON_W = 44
 /** the right panel's icon rail (32 px buttons + the column border) */
 export const RAIL_W = 34
-/** Sidebar widths: the tool rail 128…280 px, the right column 140…520 px (icon rail included) but never more than a third of the window. */
+/** The right column's narrowest open width (icon rail included): every tab (Materials' three-column type grid,
+ * Leva-style label / control / value rows, the header icon row) fits without truncating. Narrower than this, the
+ * column folds to its icon rail instead of squeezing. */
+export const RIGHT_MIN = 240
+/** Sidebar widths: the tool rail 128…280 px, the right column RIGHT_MIN…520 px (icon rail included) but never more
+ * than a third of the window (and never below RIGHT_MIN: a narrow window folds the column to its rail instead). */
 export function clampSide(w: number, side: 'left' | 'right', winW = typeof window !== 'undefined' ? window.innerWidth : 1440) {
-  const [lo, hi] = side === 'left' ? [128, 280] : [140, Math.max(140, Math.min(520, winW * 0.32))]
+  const [lo, hi] = side === 'left' ? [128, 280] : [RIGHT_MIN, Math.max(RIGHT_MIN, Math.min(520, winW * 0.32))]
   return Math.round(Math.max(lo, Math.min(hi, w)))
 }

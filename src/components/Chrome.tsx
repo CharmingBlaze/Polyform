@@ -188,8 +188,14 @@ export function ToolRail() {
           <CmdBtn cmd="anim.key" label="Insert key" testid="key" />
           <CmdBtn cmd="anim.unkey" label="Delete key" />
           {/* Auto-key, IK and onion skin live in the transport above the timeline */}
-          <CmdBtn cmd="anim.copy" label="Copy keys" />
-          <CmdBtn cmd="anim.paste" label="Paste keys" />
+          {/* pose clipboard under its own header: Copy | Paste on one row, Paste mirrored under them (the shortcuts come
+              from the keymap: in the tooltips, and as chips once the panel is wide) */}
+          <h4>Pose</h4>
+          <div className="pose-btns" data-testid="pose-btns">
+            <CmdBtn cmd="anim.copy" label="Copy" tip="Copy pose: the selected joints (or all) as they are at the playhead, even between keys" />
+            <CmdBtn cmd="anim.paste" label="Paste" tip="Paste pose: the copied pose or keys at the playhead" />
+            <CmdBtn cmd="anim.pasteMirror" label="Paste mirrored" tip="Paste mirrored: the copied pose with left / right swapped across X" />
+          </div>
           <ClipsPanel />
         </>}
         {tab === 'Export' && <>

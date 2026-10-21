@@ -73,9 +73,16 @@ await p.click('[data-testid="mat-row-1"]'); await frame()
 check('click a material makes it active', (await S(() => window.__polyform.getState().activeMat)) === 1)
 const h0 = await p.locator('[data-testid="mat-list"]').evaluate(e => e.getBoundingClientRect().height)
 const sb = await p.locator('[data-testid="mat-split"]').boundingBox()
-await p.mouse.move(sb.x + sb.width / 2, sb.y + 2); await p.mouse.down(); await p.mouse.move(sb.x + sb.width / 2, sb.y + 62, { steps: 4 }); await p.mouse.up(); await frame()
+// the list is at most matListH tall and shrinks to its rows (no dead gap above the editor): the drag shows the new
+// height live, then the saved height becomes the list's limit
+await p.mouse.move(sb.x + sb.width / 2, sb.y + 2); await p.mouse.down(); await p.mouse.move(sb.x + sb.width / 2, sb.y + 62, { steps: 4 })
+const hDrag = await p.locator('[data-testid="mat-list"]').evaluate(e => e.getBoundingClientRect().height)
+await p.mouse.up(); await frame()
 const h1 = await p.locator('[data-testid="mat-list"]').evaluate(e => e.getBoundingClientRect().height)
-check('dragging the split grows the list (saved in prefs)', h1 > h0 + 40 && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).matListH)) > h0 + 40, `${h0} → ${h1}`)
+const lim = await p.locator('[data-testid="mat-list"]').evaluate(e => parseFloat(e.style.maxHeight))
+const rowsH = await p.locator('[data-testid="mat-list"]').evaluate(e => e.scrollHeight)
+check('dragging the split grows the list (saved in prefs as its limit)', hDrag > h0 + 40 && lim > h0 + 40 && (await S(() => JSON.parse(localStorage.getItem('polyform.ui.v1')).matListH)) > h0 + 40, `${h0} → ${hDrag} (limit ${lim})`)
+check('…and a short list takes only its rows: no empty gap under them', h1 <= rowsH + 1 && h1 <= lim + 1, `${h1} rows ${rowsH} limit ${lim}`)
 await p.fill('[data-testid="mat-filter"]', 'red'); await frame()
 check('the filter narrows the material list', !(await visible('[data-testid="mat-row-0"]')) && await visible('[data-testid="mat-row-1"]'))
 await p.fill('[data-testid="mat-filter"]', '')
@@ -126,7 +133,7 @@ await p.click('[data-testid="ol-expand-1"]')
 await p.screenshot({ path: '/workspace/shot-outliner.png' })
 await p.locator('.right-col').screenshot({ path: '/workspace/shot-outliner-tabs.png' })
 
-// every rail tab in every workspace fits the slimmest column (140 px): no horizontal scrollbar, no clipped controls
+// every rail tab in every workspace fits the narrowest column (240 px, RIGHT_MIN; asking for less clamps to it): no horizontal scrollbar, no clipped controls
 // (the Animate key inspector is being reworked for slim widths by the Animate panel work; it is checked there)
 {
   await S(() => { const s = window.__polyform.getState(); s.setUI({ rightW: 140 }); const T = window.__polyformTextures; s.addImages([{ id: T.create(64, 64, '#ff0000'), name: 'a_rather_long_texture_name_albedo.png' }, { id: T.create(32, 32, '#00ff00'), name: 'b.png' }]) })
@@ -145,12 +152,13 @@ await p.locator('.right-col').screenshot({ path: '/workspace/shot-outliner-tabs.
       })).map(x => `${ws}/${id}: ${x}`))
     }
   }
-  check('every rail tab fits 140 px without horizontal scroll or clipped controls', !bad.length, JSON.stringify(bad.slice(0, 8)))
-  // at 1366 px the right column defaults narrower than the left panel, and folds to the rail in every workspace
+  check('asking for 140 px clamps to the 240 px minimum, and every rail tab fits it without horizontal scroll or clipped controls', Math.round(await S(() => document.querySelector('.right-col').getBoundingClientRect().width)) === 240 && !bad.length, JSON.stringify(bad.slice(0, 8)))
+  // at 1366 px the right column never opens below its 240 px minimum, and folds to the rail in every workspace
   await p.setViewportSize({ width: 1366, height: 768 }); await S(() => window.__polyform.getState().setUI({ rightW: 140 })); await frame()
   const folds = []
   for (const ws of ['model', 'uv', 'paint', 'rig', 'animate', 'export']) {
     await S(w => window.__polyform.getState().setWorkspace(w), ws); await p.waitForTimeout(300)
+    await p.waitForFunction(() => !document.querySelector('.main.anim'), null, { timeout: 3000 }).catch(() => {}); await p.waitForTimeout(150)
     const w = await S(() => [document.querySelector('.right-col').getBoundingClientRect().width, window.__polyform.getState().ui.leftW])
     await p.click('.side-rail .rail-btn.on')
     await p.waitForFunction(() => document.querySelector('.right-col').getBoundingClientRect().width < 40, null, { timeout: 3000 }).catch(() => {})
@@ -159,7 +167,7 @@ await p.locator('.right-col').screenshot({ path: '/workspace/shot-outliner-tabs.
     await p.waitForFunction(() => document.querySelector('.right-col').getBoundingClientRect().width > 100, null, { timeout: 3000 }).catch(() => {})
     folds.push([ws, Math.round(w[0]), Math.round(w[1]), Math.round(folded)])
   }
-  check('1366 px: the right column is narrower than the left panel (its open width) in every workspace but UV (its tool rail folds to icons; UV Tools need 3 columns) and Animate (no tool panel; 200 px for the joint tree)', folds.every(f => f[0] === 'uv' ? f[1] <= 256 : f[0] === 'animate' ? f[1] <= 200 : f[1] < f[2]), JSON.stringify(folds))
+  check('1366 px: asking for 140 px opens the right column at its 240 px minimum in every workspace (never a squeezed column)', folds.every(f => f[1] === 240), JSON.stringify(folds))
   check('…and clicking the active icon folds it to the rail in every workspace', folds.every(f => f[3] < 40), JSON.stringify(folds))
   await S(() => window.__polyform.getState().setWorkspace('paint')); await S(() => window.__polyform.getState().setSideTab('uv')); await frame()
   check('Paint › Images has no reference images (they live in the Refs tab)', !(await p.locator('.side-body [data-testid="refs-panel"]').count()))

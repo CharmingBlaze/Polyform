@@ -77,7 +77,7 @@ await p.screenshot({ path: '/workspace/shot-objectmode.png' })
 // ---- side panels ----
 const sides = () => S(() => { const m = document.querySelector('.main'); return { l: m.dataset.left, r: m.dataset.right, rail: Math.round(document.querySelector('.rail').getBoundingClientRect().width), right: Math.round(document.querySelector('.right-col').getBoundingClientRect().width) } })
 let sd = await sides()
-check('1280: both panels open, narrower defaults (rail 144, slim side 140)', sd.l === 'open' && sd.r === 'open' && sd.rail === 144 && sd.right === 140, JSON.stringify(sd))
+check('1280: both panels open, default widths (rail 144, side column 256: wide enough for every tab)', sd.l === 'open' && sd.r === 'open' && sd.rail === 144 && sd.right === 256, JSON.stringify(sd))
 check('the tool-panel chevron and the side rail are visible without hovering', +(await p.locator('[data-testid="rail-collapse"]').evaluate(e => getComputedStyle(e).opacity)) > 0.4 && await p.locator('[data-testid="side-rail"]').isVisible())
 await p.mouse.move(640, 360)
 await p.keyboard.press('Control+BracketLeft'); await slide()

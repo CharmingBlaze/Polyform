@@ -772,3 +772,119 @@ button.danger { color: #ff9a9a; }
 .status .uv-st-hint kbd { border-radius: 2px; padding: 0 4px; }
 .status .uv-st-echo { color: var(--gold); }
 .status .uv-st-note { color: #c5ccdb; }
+
+/* ==== Side panels: one spacing / type scale, header and tab style for the tool panel (left) and the right column ====
+   Every value below comes from these tokens, so a theme can retune both panels at once. Text colours meet WCAG AA
+   (4.5:1) on --panel and --panel2: --dim 5.3–5.7:1, --text-2 6.4–6.9:1. */
+:root {
+  --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 8px; --sp-5: 12px;
+  --fs-xs: 10.5px; --fs-sm: 11.5px; --fs-md: 12.5px;
+  --text-2: #9aa2b3;
+  --ctl-h: 24px; --tab-h: 26px; --foot-h: 28px;
+  --side-pad: var(--sp-4);
+  --lbl-w: 64px; --val-w: 34px;
+}
+/* section headers (tool panel h4, Materials sub-heads, the Options disclosure) */
+.tool-list h4, .mat-sub, .side-head {
+  margin: var(--sp-5) var(--sp-2) var(--sp-2); font-size: var(--fs-xs); font-weight: 600; line-height: 14px;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--text-2);
+}
+.tool-list h4:first-child { margin-top: var(--sp-3); }
+/* shortcut hints: full-strength --dim (the old 70 % opacity was 3.4:1, under AA) */
+.tool-btn kbd { opacity: 1; color: var(--dim); font-size: var(--fs-xs); }
+
+/* ---- tool panel (left) ---- */
+.rail:not(.collapsed) { overflow: hidden; container-type: inline-size; container-name: toolpanel; }
+/* mode tabs: the right rail's tab look (dim icon-less buttons on the --bg strip, the active one lifted to --panel
+   with an accent edge), as one segmented control: one row when the panel is wide enough, else an even 2×2 grid */
+.rail .tabs:not(.n1) {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; padding: 0;
+  background: var(--line); border-bottom: 1px solid var(--line);
+}
+@container toolpanel (min-width: 232px) { .rail .tabs:not(.n1) { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rail .tabs:not(.n1) button {
+  height: var(--tab-h); padding: 0 var(--sp-2); border: none; border-radius: 0; justify-content: center;
+  background: var(--bg); color: var(--dim); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rail .tabs:not(.n1) button:hover:not(.on) { background: var(--panel2); color: var(--text); border: none; }
+.rail .tabs:not(.n1) button.on { background: var(--panel); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.rail .tabs:not(.n1) button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.rail .tabs.n1 { padding: var(--sp-4) var(--side-pad) var(--sp-1); }
+.rail .tabs.n1 button, .rail .tabs.n1 button.on { font-size: var(--fs-xs); color: var(--text-2); letter-spacing: .06em; font-weight: 600; }
+.rail .tool-list { flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--sp-3) var(--sp-4); }
+/* the collapse chevron docks in a footer bar instead of floating over the list */
+.rail > .collapse-btn {
+  order: 3; position: static; flex: none; align-self: stretch; width: auto; height: var(--foot-h); margin: 0;
+  padding: 0 var(--side-pad); justify-content: flex-end; border: none; border-top: 1px solid var(--line); border-radius: 0;
+  background: var(--panel); color: var(--dim); opacity: 1;
+}
+.rail > .collapse-btn:hover:not(:disabled) { color: var(--text); background: var(--panel2); border-color: var(--line); }
+.rail > .side-handle { order: 4; }
+
+/* ---- right column ---- */
+/* Materials header row: even 24 px icon buttons, the count as a badge inside the row */
+.mat-bar { gap: var(--sp-1); padding: var(--sp-3) var(--side-pad) var(--sp-2); min-width: 0; }
+.mat-bar .icon-btn { width: var(--ctl-h); height: var(--ctl-h); flex: none; border-radius: 4px; }
+.mat-bar .icon-btn:hover:not(:disabled) { background: var(--panel2); }
+.mat-count { flex: none; min-width: 18px; height: 16px; padding: 0 var(--sp-2); border-radius: 2px; background: var(--line2); color: var(--text); font-size: var(--fs-xs); line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.mat-filter { margin: var(--sp-1) var(--side-pad) var(--sp-2); height: var(--ctl-h); padding: 0 var(--sp-3); }
+.mat-filter input { font-size: var(--fs-sm); }
+.mat-list { flex: 0 1 auto; min-height: 0; padding: var(--sp-1) var(--sp-3); }
+.mat-row .name { font-size: var(--fs-md); }
+.mat-editor { flex: 1 1 0; gap: var(--sp-2); padding: var(--sp-3) var(--side-pad) var(--sp-4); font-size: var(--fs-sm); }
+/* material type presets: an even segmented grid (3 across; 5 when the column is wide) */
+.seg-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.seg-grid > button { height: var(--ctl-h); min-width: 0; padding: 0 var(--sp-1); justify-content: center; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg-grid > button:hover:not(:disabled) { background: var(--panel2); color: var(--text); border-color: var(--line2); }
+.seg-grid > button:active { background: rgba(109,139,255,.18); color: #c9d4ff; }
+.mat-editor { container-type: inline-size; container-name: mated; }
+@container mated (min-width: 300px) { .seg-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+/* Leva-style rows: label left, control in the middle, value right-aligned in a fixed column */
+.mat-editor .mat-line, .mat-editor .mat-slider {
+  display: grid; grid-template-columns: var(--lbl-w) minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  min-height: var(--ctl-h); flex-wrap: nowrap;
+}
+.mat-editor .mat-line .lbl, .mat-editor .mat-slider > .lbl { width: auto; color: var(--dim); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mat-editor .mat-slider output { width: var(--val-w); text-align: right; color: var(--text); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.mat-editor .mat-line > select:last-child, .mat-editor .mat-line > .ctl:last-child { grid-column: 2 / -1; }
+.mat-editor .mat-line select { height: 22px; font-size: var(--fs-sm); }
+.mat-editor .mat-line .num { width: 52px; height: 22px; }
+.mat-editor .mat-line input[type=color] { width: 28px; height: 20px; padding: 0 1px; justify-self: start; border: 1px solid var(--line); border-radius: 3px; background: none; cursor: pointer; }
+.color-ctl { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.color-ctl .hex { font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.mat-editor .mat-line.toggles { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); }
+.mat-opts { gap: var(--sp-2); }
+.mat-opts-toggle { margin: var(--sp-2) 0 0; padding: var(--sp-1) 0; height: auto; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); }
+.mat-opts-toggle .dim { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.mat-sub { margin: var(--sp-3) 0 var(--sp-1); }
+/* Assign: an ordinary full-width, one-line button (the accent only on hover); it stays in reach when the editor scrolls */
+.mat-editor .mat-assign {
+  position: sticky; bottom: 0; width: 100%; height: 28px; margin-top: var(--sp-3); padding: 0 var(--sp-4); justify-content: center; gap: var(--sp-3);
+  font-size: var(--fs-md); font-weight: 500; white-space: nowrap; background: var(--panel2); border: 1px solid var(--line2); border-radius: 4px; color: var(--text);
+}
+.mat-editor .mat-assign span { overflow: hidden; text-overflow: ellipsis; }
+.mat-editor .mat-assign:hover:not(:disabled) { background: rgba(109,139,255,.16); border-color: rgba(109,139,255,.55); }
+.mat-opts-toggle:hover:not(:disabled), .mat-opts-toggle:focus { background: none; border: none; color: var(--text); }
+/* the sticky Assign stays opaque when disabled, so the rows scrolling under it never show through */
+.mat-editor .mat-assign { box-shadow: 0 calc(-1 * var(--sp-3)) 0 var(--panel); }
+.mat-editor .mat-assign:disabled { opacity: 1; color: var(--dim); background: var(--panel2); border-color: var(--line); }
+/* Animate tab: the pose clipboard as a tidy 2-row block (Copy | Paste, then Paste mirrored); one per row with its
+   shortcut chip once the panel is wide enough for them */
+.pose-btns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1); }
+.pose-btns > .tool-btn { min-width: 0; justify-content: center; padding-left: var(--sp-1); padding-right: var(--sp-1); white-space: nowrap; font-size: var(--fs-sm); }
+.pose-btns > .tool-btn > span { overflow: hidden; text-overflow: ellipsis; }
+.pose-btns > .tool-btn kbd { display: none; }
+.pose-btns > .tool-btn:last-child { grid-column: 1 / -1; }
+@container (min-width: 220px) {
+  .pose-btns { grid-template-columns: minmax(0, 1fr); }
+  .pose-btns > .tool-btn { justify-content: space-between; padding-left: 6px; padding-right: 6px; }
+  .pose-btns > .tool-btn kbd { display: inline; }
+}
+/* Modify › Constraints: one-line buttons on an even grid: X | Y | Z, then Snap | Grid, then Pivot | X-Mirror */
+.axis-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-1); }
+.axis-row .axis-btn { grid-column: span 3; width: auto; min-width: 0; padding: 0 var(--sp-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); }
+.axis-row .axis-btn.x, .axis-row .axis-btn.y, .axis-row .axis-btn.z { grid-column: span 2; }
+/* the narrowest tool panel (under 140 px): one pose button per row rather than clipped labels */
+@container (max-width: 127px) { .pose-btns { grid-template-columns: minmax(0, 1fr); } }
+.pose-btns > .tool-btn { background: var(--panel2); border-color: var(--line); }
+.pose-btns > .tool-btn:hover:not(:disabled) { border-color: var(--line2); }

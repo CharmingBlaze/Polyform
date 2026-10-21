@@ -42,12 +42,12 @@ export function toggleFocus() {
   s.setUI({ panels: { ...s.ui.panels, [k]: { left: on, right: on } } })
 }
 
-/** The UV editor folds the tool rail to icons and its UV Tools need three columns, so at the default width the right
- * column takes that room there (256 px); everywhere else the default is the slim rail column (140 px). */
-export const UV_RIGHT_W = 256
-/** Animate has no tool panel, so its right column (joint tree with key dots, clips, key inspector) gets a little more */
-export const ANIM_RIGHT_W = 200
-export const baseRightW = (ui: UIPrefs, uvSpace: boolean, animate = false) => (ui.rightW !== DEFAULT_PREFS.rightW ? ui.rightW : uvSpace ? UV_RIGHT_W : animate ? ANIM_RIGHT_W : ui.rightW)
+/** One right-column width for every workspace (the saved one, default 256): the per-workspace overrides that used to
+ * widen UV (256) and Animate (200) from a 140 px default are gone now the default itself fits every tab. */
+export const UV_RIGHT_W = DEFAULT_PREFS.rightW
+export const ANIM_RIGHT_W = DEFAULT_PREFS.rightW
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const baseRightW = (ui: UIPrefs, _uvSpace?: boolean, _animate = false) => ui.rightW
 
 /** Effective sidebar state: collapsed to icons (explicit, or automatically on narrow windows) and pixel widths. */
 export function useSides() {
