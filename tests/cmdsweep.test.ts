@@ -294,6 +294,27 @@ describe('operator contract', () => {
     FIXTURES.find(f => f.id === 'cube/object-animate')!.setup()
     expect(canRunCommand('op.mul.extrude')).toEqual({ ok: false, reason: 'Switch to Model mode to edit geometry' })
   })
+  it('MOD-3: Adjust Last (F9), Repeat Last (Shift+R) and N carry canRun; the panel reads PARAMS through paramsOf', async () => {
+    const { useLastOp } = await import('../src/modal')
+    const { schemaFor } = await import('../src/oppanel/lastop')
+    FIXTURES.find(f => f.id === 'empty')!.setup()
+    useStore.setState({ lastOp: null }); useLastOp.setState({ lastOp: null })
+    expect(canRunCommand('edit.adjustLast')).toEqual({ ok: false, reason: 'Adjust Last Operation: run a tool first' })
+    expect(canRunCommand('edit.repeatLast')).toEqual({ ok: false, reason: 'Repeat Last: nothing to repeat yet' })
+    expect(canRunCommand('edit.numeric')).toEqual({ ok: false, reason: 'Numeric: select something first' })
+    FIXTURES.find(f => f.id === 'cube/face')!.setup()
+    S().runOp('mul.extrude')
+    expect(canRunCommand('edit.adjustLast').ok).toBe(true)
+    expect(canRunCommand('edit.repeatLast').ok).toBe(true)
+    expect(canRunCommand('edit.numeric').ok).toBe(true)
+    S().commit(); S().doUndo()
+    expect(canRunCommand('edit.adjustLast').ok).toBe(false) // the op is gone: nothing to adjust
+    expect(paramsOf('edit.adjustLast')).toBeNull()
+    expect(schemaFor('op.mul.bevel')).toBe(BEVEL_PARAMS) // the Bevel modal's panel = Backend's PARAMS
+    expect(schemaFor('op.mul.extrude')).toBe(paramsOf('op.mul.extrude'))
+    expect(schemaFor('xf.grab').map(p => p.name)).toEqual(['tx', 'ty', 'tz'])
+    useStore.setState({ lastOp: null })
+  })
   it('menus and the palette grey out with the canRun reason', () => {
     FIXTURES.find(f => f.id === 'empty')!.setup()
     const find = (es: MenuEntry[], id: string): MenuItem | undefined => {

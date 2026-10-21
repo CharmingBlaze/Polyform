@@ -20,6 +20,7 @@ import { snapPoint, type SnapHit, type SnapOpts } from '../snap'
 import { refreshKnifeTheme, setKnifeOverlay, type HoverKind } from '../knifeOverlay'
 import { canEven, clampFactor, loopCut, orientedRing, previewLines, ringNormals, setSmoothness, slideCut, type CutRec, type Ring, type SlideOpts } from '../loopcut'
 import { beginModal, endModal, isModalRunning, MOUSE, setModal, transformStatus, updateModal, type ModalHint, type ModalValue } from '../modal'
+import { noteTransformCommitted } from '../oppanel/lastop'
 import { emptyNum, flipsWinding, lockedScale, nextAxisLock, numApply, numKey, numText, numTyping, numValue, precisionStep, scaleFactor, snapFactor, type NumInput } from '../modal/numinput'
 import { modalRequestOf, type ModalRequest } from '../modal/transform'
 import { bevelEdgesOfSelection } from '../bevel'
@@ -563,7 +564,7 @@ export function Viewport({ pane }: { pane: number }) {
     st.set({ modalInfo: null })
     if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
     else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
-    else if (d.started) { if (ok) { if (d.req?.mergeUndo) st.amendCommit(); else st.commit() } else st.cancelEdit() }
+    else if (d.started) { if (ok) { if (d.req?.mergeUndo) st.amendCommit(); else { st.commit(); if (d.src === 'modal') noteTransformCommitted() } } else st.cancelEdit() }
     gizmoDirty = true
     sceneManager.rebuild()
     d.req?.onEnd?.(!!opts, opts)

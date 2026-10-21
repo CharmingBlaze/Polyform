@@ -21,4 +21,6 @@ if (import.meta.env.DEV) {
   import('./ik').then(m => ((window as unknown as Record<string, unknown>).__polyformIK = m))
   import('./transform').then(m => ((window as unknown as Record<string, unknown>).__polyformXf = m))
   import('./anim').then(m => ((window as unknown as Record<string, unknown>).__polyformAnim = m))
+  // the RailDock tool-options slot (setDockTool / clearDockTool), for the oppanel e2e's dummy tool
+  import('./oppanel/dockslot').then(m => ((window as unknown as Record<string, unknown>).__polyformDock = m))
 }

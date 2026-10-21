@@ -5,7 +5,9 @@
  * - `canRun(state) => { ok, reason? }`: can it do something right now? `ok: false` greys it out with `reason` as the
  *   tooltip. A command without `canRun` is always enabled (and still reports its own toast when it can't act).
  * - `PARAMS`: the option box schema (same shape as bevel's BEVEL_PARAMS). A command without `PARAMS` has no option box.
- * - Repeat Last is not here: the modal layer's last-op record (`{ id, opts }`, id = command id) runs the command again.
+ * - Repeat Last is not here: Shift+R (`edit.repeatLast`) replays the merged last-op record, `currentOp()` in
+ *   src/oppanel/lastop.ts: the newer of the store's `lastOp` (ops.ts operators, re-run with their params) and the modal
+ *   layer's `getLastOp()` (`{ id, opts }`, id = command id: G / R / S via repeatTransform, Shift+D as duplicate + move).
  *
  * Pure types and rules only (no store / commands import at runtime), so ops.ts, commands.ts and the UI can share it.
  */

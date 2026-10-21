@@ -1,0 +1,7 @@
+/* N (selection numeric) inside ModalFrame: rows reuse ObjectTransform's .ot-row / .ot-num */
+.numsel { display: flex; flex-direction: column; gap: 4px; }
+.numsel .ot-row { grid-template-columns: 78px repeat(3, minmax(0, 1fr)); }
+.numsel .ot-lbl, .numsel .ot-num { font-size: max(11px, 1em); }
+/* number fields: the shared .ot-num rule (tabular-nums) right-aligned; X / Y / Z headings use the .num.x/.y/.z axis colours */
+.numsel .ot-num { text-align: right; }
+.numsel-axes .num { justify-content: flex-end; padding-right: 5px; font-size: max(11px, 1em); }

@@ -151,6 +151,45 @@ Wheel / PageUp / PageDown = Segments, C = Clamp Overlap, V = Vertices, digits = 
 precision. The last-op record is `endModal('op.mul.bevel', { confirmed, opts: bevelOptsFromParams(params) })`. Esc /
 RMB leaves the mesh untouched. Plain B is still the classic face bevel (`mul.bevelFaces`).
 
+## MOD-3: tool options in the dock (`src/oppanel/dockslot.ts`, `import { … } from '../oppanel'`)
+
+The RailDock (bottom of the left panel, `Panels.tsx`) normally shows Adjust Last Operation. A tool that wants
+MilkShape-style tool options while it is active can take that slot:
+
+* `setDockTool(id, title, render): () => void` puts `title` in the dock's pinned title row and `render()` in its body,
+  instead of Adjust Last Operation. It returns a clear function for that registration. One tool at a time: a new
+  `setDockTool` replaces the previous one.
+* `clearDockTool(id)` gives the slot back to Last Op. Clearing an id that does not hold the slot, or calling an old
+  clear function after another tool took the slot, does nothing, so a late cleanup cannot remove the next tool's options.
+* `useDockTool()` returns the tool holding the slot (`{ id, title, render }`) or `null`. `getDockTool()` /
+  `subscribeDockTool(fn)` are the non-React forms.
+
+The dock stays collapsible (collapsed state is shared with Last Op). The F9 popover always shows Adjust Last Operation.
+`render` is called on each dock render, so read live tool state inside it, through a store hook in a component.
+Test id: `op-panel[data-tool="<id>"]`. The e2e hook is `window.__polyformDock` (dev only).
+
+Example for the Knife (`mesh.knife`); the tool owner wires it to its own enter and exit:
+
+```tsx
+import { setDockTool } from '../oppanel'
+
+function KnifeOptions() {
+  const k = useKnife()                       // the knife's own state (cut-through, angle snap …)
+  return <>
+    <label className="opp-row opp-check"><span className="opp-label" aria-hidden />
+      <span className="opp-checkcell"><input type="checkbox" checked={k.cutThrough} onChange={e => k.set({ cutThrough: e.target.checked })} /><span>Cut Through</span></span></label>
+  </>
+}
+
+// on knife enter (same place as beginModal('mesh.knife', …))
+const clearKnifeOptions = setDockTool('mesh.knife', 'Knife (tool options)', () => <KnifeOptions />)
+// on confirm / cancel (next to endModal('mesh.knife', …))
+clearKnifeOptions()                          // or clearDockTool('mesh.knife')
+```
+
+Rows that use the panel classes (`opp-row`, `opp-label`, `opp-check` …) get the same grid and label stacking as
+the operator fields.
+
 ## Not in MOD-1
 
 Loop Cut, Knife, Bevel and Inset still write `modalInfo` directly; their owners port them to this API (the gizmo

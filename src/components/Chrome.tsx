@@ -6,9 +6,11 @@ import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands, openPivotMenu } from '../commands'
 import { bindingLabels, getBindingLabel, useKeymapVersion } from '../keymap'
-import { OPS, opById } from '../ops'
+import { OPS } from '../ops'
 import { MirrorRotateSection } from './MirrorRotate'
-import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type Vec3 } from '../model'
+import { NumericHost } from './SelectionNumeric'
+import { RailDock } from './Panels'
+import { PRIMITIVES, SEG_KEY, triCount, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
 import { WorkspaceTabs, shownWorkspace } from './Workspace'
@@ -195,6 +197,7 @@ export function ToolRail() {
           </p>
         </>}
       </div>
+      <RailDock />
     </aside>
   )
 }
@@ -259,41 +262,8 @@ export function DrawPanel() {
   )
 }
 
-export function NumericPanel() {
-  const open = useStore(s => s.numericOpen)
-  const lo = useStore(s => s.lastOp)
-  const version = useStore(s => s.version)
-  const set = useStore(s => s.set)
-  const op = lo ? opById[lo.id] : undefined
-  const live = !!lo && lo.rev === version
-  // only while a tool's values are live: no empty "No active tool" card taking sidebar space
-  if (!open || !op || !live) return null
-  return (
-    <div className="numeric" data-testid="numeric">
-      <div className="numeric-head"><b>Numeric</b> <span className="muted">{op.label}</span><span className="grow" /><button className="icon-btn" onClick={() => set({ numericOpen: false })}><X size={14} /></button></div>
-      {op.params.map(p => <ParamField key={p.key} def={p} value={lo!.params[p.key]} onChange={v => useStore.getState().updateOp({ [p.key]: v })} />)}
-      {!op.params.length && <p className="muted">No parameters.</p>}
-      {lo!.note && <p className="muted">{lo!.note}</p>}
-    </div>
-  )
-}
-
-function ParamField({ def, value, onChange }: { def: ParamDef; value: number; onChange: (v: number) => void }) {
-  const [txt, setTxt] = useState(String(value))
-  useEffect(() => setTxt(String(+value.toFixed(4))), [value])
-  if (def.kind === 'bool') return <label className="pf"><span>{def.label}</span><input type="checkbox" data-testid={`param-${def.key}`} checked={!!value} onChange={e => onChange(e.target.checked ? 1 : 0)} /></label>
-  if (def.kind === 'axis' || def.kind === 'enum') {
-    const opts = def.options ?? ['X', 'Y', 'Z']
-    return <label className="pf"><span>{def.label}</span><select data-testid={`param-${def.key}`} value={value} onChange={e => onChange(+e.target.value)}>{opts.map((o, i) => <option key={o} value={i}>{o}</option>)}</select></label>
-  }
-  const commit = () => { const v = parseFloat(txt); if (Number.isFinite(v)) onChange(v); else setTxt(String(value)) }
-  return (
-    <label className="pf"><span>{def.label}</span>
-      <input type="number" data-testid={`param-${def.key}`} value={txt} step={def.step} min={def.min} max={def.max}
-        onChange={e => { setTxt(e.target.value); const v = parseFloat(e.target.value); if (Number.isFinite(v)) onChange(v) }} onBlur={commit} onKeyDown={e => e.key === 'Enter' && commit()} />
-    </label>
-  )
-}
+/** N: a draggable popup with the selection's position / rotation / scale / dimensions (SelectionNumeric.tsx); op options are in F9 (MOD-3). */
+export const NumericPanel = NumericHost
 
 
 /** Bottom bar: counts, selection, a short hint for the active tool (the full one in ? / F1). */

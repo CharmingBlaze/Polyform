@@ -12,6 +12,7 @@ import { DopeSheet } from './DopeSheet'
 import { RefsPanel } from './RefsPanel'
 import { setHost } from '../portalhost'
 import { MaterialsPanel } from './MaterialsPanel'
+import { OperatorPanel } from './OperatorPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 import { openSideTab, setPanel } from '../useLayout'
@@ -23,6 +24,14 @@ import { getBindingLabel, useKeymapVersion } from '../keymap'
 const keyTip = (text: string, ...ids: string[]) => { const k = ids.map(getBindingLabel).find(Boolean); return k ? `${text}  ·  ${k}` : text }
 
 /** The right panel: the selected tab's content, full height, beside the vertical icon rail on the outer edge. */
+/**
+ * MOD-3 slot: the bottom of the LEFT tool panel, under the tab content (MilkShape's tool options). The Operator panel
+ * (Adjust Last Operation, F9) is pinned here and collapses (state saved); the tab content scrolls above it.
+ */
+export function RailDock() {
+  return <div className="rail-dock" data-testid="rail-dock"><OperatorPanel /></div>
+}
+
 export function Sidebar({ children }: { children?: ReactNode }) {
   const tabs = useRailTabs()
   const cur = useCurrentTab(tabs)

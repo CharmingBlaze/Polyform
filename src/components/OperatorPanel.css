@@ -1,0 +1,53 @@
+/* MOD-3 Operator panel (docked) + F9 popover. Text never below 11px (the --fs-xs token is 10.5px). */
+.opp { font-size: max(11px, 1em); color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; margin: var(--sp-2, 6px) 0; overflow: hidden; }
+.opp[data-flash] { outline: 2px solid var(--accent); outline-offset: -1px; }
+.opp-head { display: flex; align-items: flex-start; gap: 6px; width: 100%; padding: 5px 8px; background: none; border: 0; border-bottom: 1px solid var(--line); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.opp-titles { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+/* small title on top, the op name on its own line: it wraps, it never truncates */
+.opp-kicker { color: var(--dim); font-size: max(11px, 0.9em); text-transform: uppercase; letter-spacing: .4px; }
+.opp-name { font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.opp[data-modal] .opp-kicker { color: var(--accent); }
+.opp-caret { color: var(--dim); width: 1em; }
+.opp-body { padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 2px; }
+.opp-folder > summary { cursor: pointer; color: var(--text-2, var(--dim)); padding: 3px 0; user-select: none; }
+.opp-folder + .opp-folder { border-top: 1px solid var(--line); }
+.opp-body { container-type: inline-size; }
+/* label | value | aux (unit, or a slider's number box): one grid for every row so the value column lines up */
+.opp-row { display: grid; grid-template-columns: minmax(52px, 36%) minmax(0, 1fr) 36px; align-items: center; column-gap: 4px; min-height: 22px; }
+.opp-row select { grid-column: 2 / 4; }
+/* a label that doesn't fit beside its field goes above it (useStackLabels), never truncated */
+.opp-row[data-stack] { grid-template-columns: minmax(0, 1fr) 36px; }
+.opp-row[data-stack] .opp-label { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+.opp-row[data-stack] select, .opp-row[data-stack] .opp-checkcell { grid-column: 1 / -1; }
+.opp-range { width: 100%; margin: 0; accent-color: var(--accent); }
+.opp-slider .opp-num { padding: 1px 2px; text-align: right; }
+.opp-checkcell { grid-column: 2 / 4; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.opp-checkcell input { margin: 0; }
+@container (max-width: 170px) {
+  /* narrow left panel: the label on its own line, the controls take the full width under it */
+  .opp-row { grid-template-columns: minmax(0, 1fr) 36px; }
+  .opp-row .opp-label { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+  .opp-row select, .opp-checkcell { grid-column: 1 / -1; }
+  .opp-check .opp-label { display: none; }
+}
+.opp-label { color: var(--dim); white-space: nowrap; overflow: hidden; min-width: 0; }
+.opp-checkcell > span { white-space: normal; overflow-wrap: anywhere; }
+.opp input, .opp select { font: inherit; font-size: max(11px, 1em); min-width: 0; }
+.opp select, .opp-num { width: 100%; box-sizing: border-box; background: var(--panel); color: var(--text); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 4px; height: 22px; }
+.opp-unit { color: var(--dim); }
+.opp :disabled { opacity: 0.6; }
+.opp-ro { font-variant-numeric: tabular-nums; }
+.opp-note { color: var(--dim); margin: 4px 0 0; }
+.opp-pop { position: fixed; z-index: 60; width: 260px; margin: 0; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+.opp-pop .opp-head { cursor: default; }
+
+/* MOD-3 slot (Panels.tsx RailDock): pinned at the bottom of the left tool panel, above its collapse footer; the tab
+   content (.tool-list) scrolls above it, the dock scrolls on its own when it would take more than ~55% */
+.rail:has(> .rail-dock) { overflow: hidden; }
+.rail-dock { order: 2; flex: none; max-height: 55%; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--line); background: var(--panel); }
+/* the title row (small title + op name) stays pinned at the top of the dock; only the fields under it scroll */
+.rail-dock .opp { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+.rail-dock .opp-head { flex: none; border-bottom: 1px solid var(--line2); } /* divider under the pinned title row */
+.rail-dock .opp-body { min-height: 0; overflow-y: auto; }
+.rail-dock:empty { display: none; }
+.rail-dock .opp { margin: 6px; }

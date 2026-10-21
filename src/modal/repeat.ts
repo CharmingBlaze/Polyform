@@ -14,8 +14,11 @@ const XF_IDS = new Set(['xf.grab', 'xf.rotateModal', 'xf.scaleModal'])
  * selection, as one undo step, without a modal. Returns false when the id is not a transform or nothing is selected.
  *
  *   const last = getLastOp(); if (last) repeatTransform(last.id, last.opts)
+ *
+ * `inStep: true` adds the transform to the undo step that is already open (Shift+R after Shift+D: the copy and its
+ * move are one step) instead of starting its own; it still commits.
  */
-export function repeatTransform(id: string, opts: Record<string, unknown>): boolean {
+export function repeatTransform(id: string, opts: Record<string, unknown>, { inStep = false }: { inStep?: boolean } = {}): boolean {
   if (!XF_IDS.has(id)) return false
   const st = useStore.getState()
   const T = collectTargets(st, opts.space === 'local' ? 'local' : 'global')
@@ -31,7 +34,7 @@ export function repeatTransform(id: string, opts: Record<string, unknown>): bool
     const sc = vec(opts.scale); if (!sc) return false
     x.s.set(sc[0], sc[1], sc[2])
   }
-  st.checkpoint(id === 'xf.grab' ? 'Move' : id === 'xf.rotateModal' ? 'Rotate' : 'Scale')
+  if (!inStep) st.checkpoint(id === 'xf.grab' ? 'Move' : id === 'xf.rotateModal' ? 'Rotate' : 'Scale')
   applyXf(T, x)
   if (id === 'xf.scaleModal' && flipsWinding([x.s.x, x.s.y, x.s.z]) && T.verts.size) {
     const m = useStore.getState().model

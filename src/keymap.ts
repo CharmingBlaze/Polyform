@@ -176,7 +176,7 @@ export const PRESETS: Preset[] = [
     'sel.vertex': { global: ['1'] }, 'sel.edge': { global: ['2'] }, 'sel.face': { global: ['3'] }, 'sel.joint': { global: ['4'] },
     'sel.vertex.add': { global: ['Shift+1'] }, 'sel.edge.add': { global: ['Shift+2'] }, 'sel.face.add': { global: ['Shift+3'] },
     'view.max': { global: ['Ctrl+Space'] },
-    'view.toolPanel': { global: ['T'] }, 'view.sidePanel': { global: ['N'] }, 'edit.numeric': { global: ['F9'] },
+    'view.toolPanel': { global: ['T'] }, 'view.sidePanel': { global: ['N'] }, 'edit.numeric': { global: [] }, // F9 = edit.adjustLast (default), Blender's Adjust Last Operation
     'anim.prev': { global: ['ArrowLeft'] }, 'anim.next': { global: ['ArrowRight'] },
     'view.frame': { global: ['.'] },
     // B is box select in Blender: no instant face bevel there (spec §4.3). Ctrl+B / Ctrl+Shift+B are the defaults'

@@ -78,8 +78,8 @@ for (const [ws, want] of Object.entries(SIDES)) {
 }
 await p.click('[data-testid="ws-model"]'); await frame()
 check('Model: References are a rail tab', await p.locator('[data-testid="side-refs"]').count() === 1)
-await S(() => window.__polyform.getState().set({ numericOpen: true, lastOp: null })); await frame()
-check('no Numeric card without an active tool', (await p.locator('[data-testid="numeric"]').count()) === 0)
+await S(() => { const st = window.__polyform.getState(); st.selectNone(); st.set({ numericOpen: true, lastOp: null }) }); await frame()
+check('no Numeric card without a selection (N shows the selection\'s values)', (await p.locator('[data-testid="numeric"]').count()) === 0)
 await S(() => window.__polyform.getState().set({ numericOpen: false }))
 
 // header: menu bar, workspace tabs, undo/redo, gizmo, Export; layout / Global-Local / open / save / palette / numeric / help live in the menus
@@ -97,9 +97,14 @@ await S(() => window.__polyform.getState().set({ layout: '4', gizmoSpace: 'globa
 await p.click('[data-testid="mb-edit"]'); await p.click('[data-testid="mi-edit-palette"]'); await frame()
 check('Ctrl K palette opens from Edit > Command Palette', await p.locator('.palette input').isVisible())
 await p.keyboard.press('Escape'); await frame()
+// N edits the selection's values (MOD-3), so Edit › Numeric needs a selection; greyed out without one
+await p.click('[data-testid="mb-edit"]'); await frame()
+check('Edit › Numeric is greyed out with nothing selected', await p.locator('[data-testid="mi-edit-numeric"]').getAttribute('aria-disabled') === 'true')
+await p.keyboard.press('Escape'); await frame()
+await S(() => { let st = window.__polyform.getState(); if (!st.model.verts.length) st.addPrimitive('box'); st = window.__polyform.getState(); st.setSelectMode('vertex'); st.selectAll() }); await frame()
 await p.click('[data-testid="mb-edit"]'); await p.click('[data-testid="mi-edit-numeric"]'); await frame()
 check('Numeric panel toggles from Edit', await S(() => window.__polyform.getState().numericOpen))
-await S(() => window.__polyform.getState().set({ numericOpen: false })); await frame()
+await S(() => { const st = window.__polyform.getState(); st.set({ numericOpen: false }); st.selectNone() }); await frame()
 
 // hint + status: one quiet line each; ? popover keeps the long strings
 const oneLine = sel => p.locator(sel).evaluate(el => el.scrollHeight <= el.clientHeight + 1 && el.getBoundingClientRect().height <= 32)

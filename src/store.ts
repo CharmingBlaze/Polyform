@@ -815,7 +815,7 @@ export const useStore = create<State>((set, get) => ({
     set({ mode: 'model' })
     get().runOp(`add.${k}`, {})
     if (get().selectMode === 'vertex') set({ selectMode: 'face', subModes: ['face'], lastEdit: 'face' })
-    set({ numericOpen: true })
+    // (no longer opens N: the new primitive's options are in the Operator panel / F9; N is the selection popup)
   },
   armDraw: k => {
     const s = get()

@@ -28,9 +28,9 @@ describe('keymap (team/user decision of 2026-10-19)', () => {
     expect(by()['W']).toBe('view.contextMenu')
     for (const id of ['tool.move', 'tool.rotate', 'tool.scale']) expect(commands.find(c => c.id === id)!.keys).toBeUndefined()
   })
-  it('G / R / S start modal move / rotate / scale; Shift+R is unused', () => {
+  it('G / R / S start modal move / rotate / scale; Shift+R repeats the last operation, F9 adjusts it (MOD-3)', () => {
     expect(by()['G']).toBe('xf.grab'); expect(by()['R']).toBe('xf.rotateModal'); expect(by()['S']).toBe('xf.scaleModal')
-    expect(by()['Shift+R']).toBeUndefined()
+    expect(by()['Shift+R']).toBe('edit.repeatLast'); expect(by()['F9']).toBe('edit.adjustLast')
   })
   it('unchanged bindings', () => {
     const b = by()

@@ -19,6 +19,8 @@ import { all, checkCanRun, no, OK, opCanRun, paramsFromDefs, rules as R, type Ca
 import { mirrorCommands } from './mirrorCmds'
 import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
 import { copyModel, cutModel, duplicateMove, pasteModel } from './modelClip'
+// MOD-3: start recording which last operation is newest from app start (the panel may mount later)
+import { currentOp } from './oppanel/lastop'
 
 /** Where a command shows up in the right-click menus (src/ctxmenu/menus.ts appends it to that section). */
 export interface MenuPlacement { ctx: string | string[]; section?: string; label?: string; opt?: string }
@@ -47,6 +49,15 @@ const bevelModal = (opId: string) => () => {
   const s = S()
   if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('modal-tool', { detail: BEVEL_MODAL[opId] }))
+}
+/** MOD-3 contract rows: F9 needs an adjustable last op; Shift+R a repeatable one (its own guards on this selection) */
+const canAdjustLast: CanRun = () => { const c = currentOp(); return c && c.live && c.schema.length ? OK : no('Adjust Last Operation: run a tool first') }
+const canRepeatLast: CanRun = s => {
+  const c = currentOp()
+  if (c && c.kind === 'modal' && c.id === 'op.mul.duplicate') return canDuplicateMove(s) // Shift+D: duplicate + move again
+  if (!c || c.kind === 'modal') return no(c ? `Repeat Last: ${c.label} can't be repeated` : 'Repeat Last: nothing to repeat yet')
+  if (c.kind === 'op') { const op = OPS.find(o => o.id === c.opId); return op ? checkCanRun({ canRun: opCanRun(op) }, s) : OK }
+  return s.activeVerts().length || s.selFaces.size ? OK : no(`Repeat ${c.label}: select something first`)
 }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint'
@@ -237,11 +248,17 @@ export const commands: Command[] = [
   { id: 'app.settings', label: 'Settings (UI scale…)', group: 'File', keys: 'Ctrl+,', run: () => window.dispatchEvent(new Event('open-settings')) },
   { id: 'help.keymap', label: 'Keyboard shortcuts (rebind keys)', group: 'Help', run: () => window.dispatchEvent(new Event('open-keymap')) },
   { id: 'help.shortcuts', label: 'Help: hints and keyboard shortcuts', group: 'Help', keys: 'F1', run: () => S().set({ helpOpen: !S().helpOpen }) },
-  { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', run: () => {
-    const s = S(), live = !!s.lastOp && s.lastOp.rev === s.version
-    if (!s.numericOpen && !live) s.notify('Numeric: run a tool (Create, Multiply, Construct…) and its values show up here')
+  // N = the selection's position / rotation / scale / dimensions (SelectionNumeric.tsx); op options are F9 (MOD-3)
+  { id: 'edit.numeric', label: 'Numeric panel', group: 'Edit', keys: 'N', canRun: s => (s.numericOpen || (s.selectMode === 'object' ? selectedObjects().length > 0 : s.activeVerts().length > 0) ? OK : no('Numeric: select something first')), run: () => {
+    const s = S(), any = s.selectMode === 'object' ? selectedObjects().length > 0 : s.activeVerts().length > 0
+    if (!s.numericOpen && !any) s.notify('Numeric: select something to type its position, rotation, scale or size (tool options: F9)')
+    void import('./components/SelectionNumeric').then(m => m.ensureNumericHost())
     s.set({ numericOpen: !s.numericOpen })
   } },
+  // MOD-3 (src/oppanel): one last operation (lastop.ts) for the Operator panel, F9 and Shift+R. actions.ts needs the
+  // scene (repeatTransform), so it loads on first use and node tests never pull it in.
+  { id: 'edit.adjustLast', label: 'Adjust Last Operation', group: 'Edit', keys: 'F9', canRun: canAdjustLast, run: () => void import('./oppanel/actions').then(a => a.adjustLast()) },
+  { id: 'edit.repeatLast', label: 'Repeat Last', group: 'Edit', keys: 'Shift+R', canRun: canRepeatLast, run: () => void import('./oppanel/actions').then(a => a.repeatLast()) },
   { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', canRun: all(R.modelMode, R.anySelection), run: () => S().deleteSelection() },
   { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', canRun: all(R.modelMode, R.anySelection), run: () => S().deleteSelection() },
   // Model clipboard (modelClip.ts): Ctrl+C / X / V everywhere but Animate and the Timeline (keymap.ts scopes the pose
