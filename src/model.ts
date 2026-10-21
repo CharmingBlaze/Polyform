@@ -1191,23 +1191,42 @@ export function subdivideFaces(m: Model, faces: number[]): number[] {
     const n = f.v.length
     const mids = f.v.map((a, i) => getMid(a, f.v[(i + 1) % n]))
     const muvs = f.uv.map((a, i) => muv(a, f.uv[(i + 1) % n]))
-    const polys: { v: number[]; uv: Vec2[] }[] = []
+    const polys: { v: number[]; uv: Vec2[]; vc?: string[] }[] = []
+    // per child: which original edge each child corner's edge is half of (-1 = interior), which original corner it is (-1 = new point)
+    let edgeOf: number[][], cornerOf: number[][]
+    // vertex colours per corner: a midpoint takes its edge's start corner, the centre the first corner (exact for flat faces)
+    const vc = f.vc
     if (n === 3) {
       const [a, b, c] = f.v, [ua, ub, uc] = f.uv, [ab, bc, ca] = mids, [uab, ubc, uca] = muvs
       polys.push({ v: [ab, bc, ca], uv: [uab, ubc, uca] }, { v: [a, ab, ca], uv: [ua, uab, uca] }, { v: [ab, b, bc], uv: [uab, ub, ubc] }, { v: [ca, bc, c], uv: [uca, ubc, uc] })
+      if (vc) { const [ca0, cb, cc] = vc; [[ca0, cb, cc], [ca0, ca0, cc], [ca0, cb, cb], [cc, cb, cc]].forEach((x, i) => { polys[i].vc = x }) }
+      edgeOf = [[-1, -1, -1], [0, -1, 2], [0, 1, -1], [-1, 1, 2]]
+      cornerOf = [[-1, -1, -1], [0, -1, -1], [-1, 1, -1], [-1, -1, 2]]
     } else {
       const c = faceCenter(m.verts, f)
       const ci = m.verts.length
       m.verts.push([c.x, c.y, c.z]); m.vbone.push(m.vbone[f.v[0]]); pushSkinOf(m, f.v[0])
       const cu: Vec2 = [f.uv.reduce((s, u) => s + u[0], 0) / n, f.uv.reduce((s, u) => s + u[1], 0) / n]
+      edgeOf = []; cornerOf = []
       for (let i = 0; i < n; i++) {
+        edgeOf.push([i, -1, -1, (i + n - 1) % n]); cornerOf.push([i, -1, -1, -1])
         const p = (i + n - 1) % n
-        polys.push({ v: [f.v[i], mids[i], ci, mids[p]], uv: [f.uv[i], muvs[i], cu, muvs[p]] })
+        polys.push({ v: [f.v[i], mids[i], ci, mids[p]], uv: [f.uv[i], muvs[i], cu, muvs[p]], ...(vc ? { vc: [vc[i], vc[i], vc[0], vc[p]] } : {}) })
       }
     }
-    m.faces[fi] = { ...f, ...polys[0], g: f.g }
+    // seams / hard edges follow their (half) edges, pins their corner, onto every child
+    const marks = (child: number) => {
+      const r: Pick<Face, 'seam' | 'sharp' | 'pin'> = {}
+      const pick = (src: number[] | undefined, map: number[]) => { if (!src?.length) return undefined; const on = new Set(src); const c = map.flatMap((o, k) => (o >= 0 && on.has(o) ? [k] : [])); return c.length ? c : undefined }
+      const seam = pick(f.seam, edgeOf[child]), sharp = pick(f.sharp, edgeOf[child]), pin = pick(f.pin, cornerOf[child])
+      if (seam) r.seam = seam; if (sharp) r.sharp = sharp; if (pin) r.pin = pin
+      return r
+    }
+    const base: Face = { ...f }
+    delete base.seam; delete base.sharp; delete base.pin
+    m.faces[fi] = { ...base, ...polys[0], ...marks(0), g: f.g }
     out.push(fi)
-    for (const nf of polys.slice(1)) { out.push(m.faces.length); m.faces.push({ ...nf, g: f.g }) }
+    polys.slice(1).forEach((nf, k) => { out.push(m.faces.length); m.faces.push({ ...nf, ...marks(k + 1), g: f.g, ...(f.mat !== undefined ? { mat: f.mat } : {}) }) })
   }
   // unselected neighbours get the new midpoints in their corner lists, so no T-junctions (cracks) remain
   const done = new Set(out)
@@ -1215,13 +1234,20 @@ export function subdivideFaces(m: Model, faces: number[]): number[] {
     if (done.has(fi)) return
     const n = f.v.length
     if (!f.v.some((a, i) => mid.has(edgeKey(a, f.v[(i + 1) % n])))) return
-    const v: number[] = [], uv: Vec2[] = []
+    const v: number[] = [], uv: Vec2[] = [], vc: string[] = [], at: number[] = [], split: boolean[] = []
     f.v.forEach((a, i) => {
-      v.push(a); uv.push(f.uv[i])
+      at.push(v.length); v.push(a); uv.push(f.uv[i]); if (f.vc) vc.push(f.vc[i])
       const b = f.v[(i + 1) % n], mi = mid.get(edgeKey(a, b))
-      if (mi !== undefined) { v.push(mi); uv.push(muv(f.uv[i], f.uv[(i + 1) % n])) }
+      split.push(mi !== undefined)
+      if (mi !== undefined) { v.push(mi); uv.push(muv(f.uv[i], f.uv[(i + 1) % n])); if (f.vc) vc.push(f.vc[i]) }
     })
-    m.faces[fi] = { ...f, v, uv }
+    // corner indices shift past the inserted midpoints; a split seam / hard edge covers both halves
+    const edges = (src?: number[]) => src?.flatMap(c => (split[c] ? [at[c], at[c] + 1] : [at[c]]))
+    const nf: Face = { ...f, v, uv, ...(f.vc ? { vc } : {}) }
+    if (f.seam) nf.seam = edges(f.seam)
+    if (f.sharp) nf.sharp = edges(f.sharp)
+    if (f.pin) nf.pin = f.pin.map(c => at[c])
+    m.faces[fi] = nf
   })
   return out
 }

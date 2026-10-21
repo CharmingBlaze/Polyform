@@ -115,7 +115,7 @@ export function MenuBar({ onPalette }: { onPalette: () => void }) {
     const on = level === 'top' ? active === i || sub === i : subActive === i
     const disabled = it.enabled === false
     return (
-      <div key={it.id} data-idx={i} data-testid={menuTestId(it.id)}
+      <div key={it.id} data-idx={i} data-testid={menuTestId(it.id)} title={disabled ? it.reason : undefined}
         role={it.radio ? 'menuitemradio' : it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem'}
         aria-checked={it.checked} aria-disabled={disabled || undefined} aria-haspopup={it.sub ? 'menu' : undefined} aria-expanded={it.sub ? sub === i : undefined}
         className={`mi${on ? ' active' : ''}${disabled ? ' disabled' : ''}`}

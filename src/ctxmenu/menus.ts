@@ -175,8 +175,10 @@ export function cmdItem(id: string, x: Extra = {}): CtxItem | null {
   const c = byId[id]
   if (!c) return null
   const opId = id.startsWith('op.') ? id.slice(3) : undefined
-  // Backend's canRunCommand (when on main) first, then the menu's own checks
-  const why = contractWhy(id) || (x.why ? x.why() : WHY[id] ? WHY[id]() : opId ? opWhy(opId) : c.when && !c.when() ? 'Not available here' : null)
+  // Backend's canRunCommand first; a command with its own canRun is decided by it alone (no second rule set),
+  // the menu's own checks only cover commands without one (undo / redo, toggles, timeline-only items)
+  const own = contractWhy(id)
+  const why = own !== undefined && c.canRun ? own : own || (x.why ? x.why() : WHY[id] ? WHY[id]() : opId ? opWhy(opId) : c.when && !c.when() ? 'Not available here' : null)
   let opt = x.opt ?? (opId && optParams(opId) ? opId : undefined)
   // with paramsOf on main, □ only where it returns params
   if (opt && contractHasParams(id, `op.${opt}`) === false) opt = undefined

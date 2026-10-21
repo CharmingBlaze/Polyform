@@ -15,13 +15,15 @@ import { ask } from './dialog'
 import { scaleFrames } from './anim'
 import { copyTimelineKeys, duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
+import { all, checkCanRun, no, OK, opCanRun, paramsFromDefs, rules as R, type CanRun, type CanRunResult, type OperatorContract, type OpParam } from './opcontract'
 import { mirrorCommands } from './mirrorCmds'
 import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
 import { copyModel, cutModel, duplicateMove, pasteModel } from './modelClip'
 
 /** Where a command shows up in the right-click menus (src/ctxmenu/menus.ts appends it to that section). */
 export interface MenuPlacement { ctx: string | string[]; section?: string; label?: string; opt?: string }
-export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean; menus?: MenuPlacement[] }
+/** A registered command. `canRun` / `PARAMS` are the optional operator contract (opcontract.ts): absent = enabled, no option box. */
+export interface Command extends OperatorContract<never> { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean; menus?: MenuPlacement[] }
 
 const S = () => useStore.getState()
 /** Advanced paint modes: switch to the Paint tab and open Options so the control is on screen. */
@@ -60,6 +62,18 @@ async function scaleKeysPrompt() {
   }, 'Scale keys')
 }
 const modalXf = (t: 'move' | 'rotate' | 'scale') => () => { S().set({ tool: t }); startModal(t) }
+/** Model-mode mesh tools (extrude, knife, loop cut, bevel, merge…): Model mode, not the Joint tool, a mesh to work on. */
+const meshTool = (...more: CanRun[]): CanRun => all(s => (s.mode !== 'model' ? no('Switch to Model mode') : OK), R.notJointMode, R.hasMesh, ...more)
+/** Shift+D (modelClip.ts duplicateMove): Model mode; objects in Object mode, else any points / edges / faces */
+const canDuplicateMove: CanRun = s => (s.mode !== 'model' ? no('Switch to Model mode to duplicate') : s.selectMode === 'joint' ? no('Duplicate: select objects or geometry')
+  : s.selectMode === 'object' ? (s.selFaces.size ? OK : no('Duplicate: select objects first')) : s.activeVerts().length || s.activeFaces().length ? OK : no('Duplicate: select something first'))
+/** Model clipboard copy / cut (modelClip.ts): Model mode, objects (Object mode) or faces selected */
+const clipSource = (what: string): CanRun => s => (s.mode !== 'model' ? no(`Switch to Model mode to ${what.toLowerCase()}`) : s.selectMode === 'joint' ? no(`${what}: select objects first`)
+  : s.activeFaces().length ? OK : no(s.selectMode === 'object' ? `${what}: select objects first` : `${what}: select faces first`))
+const animOnly: CanRun = s => (s.mode === 'animate' || s.workspace === 'animate' ? OK : no('Switch to Animate'))
+/** setKey / deleteKey act on the selected joints or objects, else every joint */
+const keyTargets: CanRun = s => (s.selBones.size || s.selFaces.size || s.model.bones.length ? OK : no('Nothing to key: select joints or objects'))
+const pointsOrJoints: CanRun = s => (s.selectMode === 'joint' || s.mode === 'animate' ? (s.selBones.size ? OK : no('Select a joint first')) : s.activeVerts().length ? OK : no('Select something first'))
 
 /** The objects (groups) touched by the selection: selected faces, or faces using the selected points. */
 export function selectedObjects(): number[] {
@@ -103,13 +117,14 @@ export const commands: Command[] = [
   { id: 'xf.grab', label: 'Grab / move (modal)', group: 'Transform', keys: 'G', run: modalXf('move') },
   { id: 'xf.rotateModal', label: 'Rotate (modal)', group: 'Transform', keys: 'R', run: modalXf('rotate') },
   { id: 'xf.scaleModal', label: 'Scale (modal)', group: 'Transform', keys: 'S', run: modalXf('scale') },
-  { id: 'edit.extrude', label: 'Extrude (Joint tool: grow child joint)', group: 'Multiply', keys: 'E', run: () => {
+  { id: 'edit.extrude', label: 'Extrude (Joint tool: grow child joint)', group: 'Multiply', keys: 'E',
+    canRun: s => (s.tool === 'joint' ? R.jointSelected(s) : meshTool(s => (s.activeFaces().length || s.activeVerts().length ? OK : no('Select something to extrude')))(s)), run: () => {
     const s = S()
     if (s.tool === 'joint') return s.growJoint()
     if (s.mode !== 'model') return s.notify('Switch to Model mode to extrude')
     if (s.extrude()) startModal('extrude')
   } },
-  { id: 'edit.extrudeMenu', label: 'Extrude menu (region / individual / edges / points)', group: 'Multiply', keys: 'Alt+E', run: () => {
+  { id: 'edit.extrudeMenu', label: 'Extrude menu (region / individual / edges / points)', group: 'Multiply', keys: 'Alt+E', canRun: meshTool(), run: () => {
     const s = S()
     if (s.mode !== 'model' || s.tool === 'joint') return s.notify('Switch to Model mode to extrude')
     const go = (kind: 'region' | 'individual' | 'edges' | 'verts') => () => { S().set({ popup: null }); if (S().extrude(kind)) startModal('extrude') }
@@ -121,10 +136,10 @@ export const commands: Command[] = [
     ] } })
   } },
   { id: 'edit.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
-  { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', run: () => S().loopCut() },
-  { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', run: () => {
+  { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', canRun: meshTool(), run: () => S().loopCut() },
+  { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', canRun: meshTool(R.points('Merge', 2)), run: () => {
     const s = S()
-    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to merge')
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to merge' : 'Switch to Object, Point, Edge or Face mode to merge')
     const verts = s.activeVerts()
     if (verts.length < 2) return s.notify('Select 2 or more points to merge')
     const go = (fn: () => void) => () => { s.set({ popup: null }); fn() }
@@ -135,15 +150,15 @@ export const commands: Command[] = [
       { id: 'distance', label: 'By distance…', run: go(() => S().runOp('con.merge')) },
     ] } })
   } },
-  { id: 'edit.bridge', label: 'Bridge edge loops', group: 'Construct', run: () => {
+  { id: 'edit.bridge', label: 'Bridge edge loops', group: 'Construct', canRun: meshTool(R.edgesOrFaces('Bridge')), run: () => {
     const s = S()
     if (s.mode !== 'model') return s.notify('Switch to Model mode to bridge')
     s.runOp('con.bridge')
   } },
   // the classic interactive face bevel (mouse = width, scroll = segments); unbound since Ctrl+B is Blender's bevel
-  { id: 'edit.bevel', label: 'Bevel faces (classic, interactive)', group: 'Multiply', run: () => {
+  { id: 'edit.bevel', label: 'Bevel faces (classic, interactive)', group: 'Multiply', canRun: meshTool(R.edgesOrFaces('Bevel')), run: () => {
     const s = S()
-    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to bevel' : 'Switch to Object, Point, Edge or Face mode to bevel')
     window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'bevel' }))
   } },
   { id: 'edit.inset', label: 'Inset faces (Animate: insert key)', group: 'Multiply', keys: 'I', run: () => {
@@ -156,7 +171,7 @@ export const commands: Command[] = [
   { id: 'tool.point', label: 'Point tool (create vertex)', group: 'Tools', keys: 'Shift+V', run: () => S().set({ tool: 'point', mode: 'model' }) },
   { id: 'paint.brush', label: 'Paint: brush', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'brush' } }) },
   { id: 'paint.erase', label: 'Paint: eraser', group: 'Paint', run: () => S().set({ tool: 'paint', mode: 'model', paint: { ...S().paint, mode: 'erase' } }) },
-  { id: 'paint.weight', label: 'Weight paint', group: 'Setup', run: () => {
+  { id: 'paint.weight', label: 'Weight paint', group: 'Setup', canRun: all(R.hasJoints, R.hasMesh), run: () => {
     const s = S()
     if (!s.model.bones.length) return s.notify('Add joints before weight painting')
     if (!s.selBones.size) s.notify('Select a joint to paint (Outliner or click a bone)')
@@ -198,11 +213,12 @@ export const commands: Command[] = [
   { id: 'sel.grow3', label: 'Grow selection (bracket)', group: 'Selection', keys: ']', run: () => byId['sel.grow'].run() },
   { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: 'Ctrl+-', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.floor(s.paint.size / 1.25) }); else s.shrinkSelection() } },
   { id: 'sel.shrink2', label: 'Shrink selection (bracket)', group: 'Selection', keys: '[', run: () => byId['sel.shrink'].run() },
-  { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', run: () => S().hideSelection() },
-  { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
+  { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', canRun: R.faces('Hide'), run: () => S().hideSelection() },
+  { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', canRun: R.hasMesh, run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
   ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => !HIDDEN_KINDS.has(k)).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
-  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : () => S().runOp(o.id) })),
+  ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: o.id === 'mul.duplicate' ? () => void duplicateMove() : () => S().runOp(o.id) ,
+    canRun: o.id === 'mul.duplicate' ? canDuplicateMove : opCanRun(o), PARAMS: o.PARAMS ?? (o.params.length ? paramsFromDefs(o.params) : undefined) })),
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,
   // W was free in both presets. Tap: list at the mouse; hold: marking menu; W + flick: run a direction (src/ctxmenu/input.ts)
@@ -216,14 +232,14 @@ export const commands: Command[] = [
     if (!s.numericOpen && !live) s.notify('Numeric: run a tool (Create, Multiply, Construct…) and its values show up here')
     s.set({ numericOpen: !s.numericOpen })
   } },
-  { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', run: () => S().deleteSelection() },
-  { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', run: () => S().deleteSelection() },
+  { id: 'edit.delete', label: 'Delete selection', group: 'Edit', keys: 'Del', canRun: all(R.modelMode, R.anySelection), run: () => S().deleteSelection() },
+  { id: 'edit.deleteX', label: 'Delete selection', group: 'Edit', keys: 'X', canRun: all(R.modelMode, R.anySelection), run: () => S().deleteSelection() },
   // Model clipboard (modelClip.ts): Ctrl+C / X / V everywhere but Animate and the Timeline (keymap.ts scopes the pose
   // clipboard there) and the UV editor (UV_CLIP_KEYS)
-  { id: 'edit.copy', label: 'Copy (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+C', run: () => { copyModel() } },
-  { id: 'edit.cut', label: 'Cut (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+X', run: () => cutModel() },
-  { id: 'edit.paste', label: 'Paste (in place)', group: 'Edit', keys: 'Ctrl+V', run: () => void pasteModel(false) },
-  { id: 'edit.pasteAtCursor', label: 'Paste at 3D cursor', group: 'Edit', keys: 'Ctrl+Shift+V', run: () => void pasteModel(true) },
+  { id: 'edit.copy', label: 'Copy (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+C', canRun: clipSource('Copy'), run: () => { copyModel() } },
+  { id: 'edit.cut', label: 'Cut (objects, or faces in Edit mode)', group: 'Edit', keys: 'Ctrl+X', canRun: clipSource('Cut'), run: () => cutModel() },
+  { id: 'edit.paste', label: 'Paste (in place)', group: 'Edit', keys: 'Ctrl+V', canRun: s => (s.mode === 'model' ? OK : no('Switch to Model mode to paste')), run: () => void pasteModel(false) },
+  { id: 'edit.pasteAtCursor', label: 'Paste at 3D cursor', group: 'Edit', keys: 'Ctrl+Shift+V', canRun: s => (s.mode === 'model' ? OK : no('Switch to Model mode to paste')), run: () => void pasteModel(true) },
   { id: 'edit.undo', label: 'Undo', group: 'Edit', keys: 'Ctrl+Z', run: () => S().doUndo() },
   { id: 'edit.redo', label: 'Redo', group: 'Edit', keys: 'Ctrl+Shift+Z', run: () => S().doRedo() },
   { id: 'edit.redo2', label: 'Redo', group: 'Edit', keys: 'Ctrl+Y', run: () => S().doRedo() },
@@ -241,24 +257,25 @@ export const commands: Command[] = [
     const c = pts.reduce((a, p) => [a[0] + p[0] / pts.length, a[1] + p[1] / pts.length, a[2] + p[2] / pts.length], [0, 0, 0])
     s.set({ cursor3d: c as [number, number, number] })
   }) },
-  { id: 'joint.bind', label: 'Bind selected verts to active joint', group: 'Setup', keys: 'Ctrl+P', run: () => S().assignToJoint() },
+  { id: 'joint.bind', label: 'Bind selected verts to active joint', group: 'Setup', keys: 'Ctrl+P',
+    canRun: all(R.jointSelected, s => (s.editVerts().length ? OK : no('Select points or faces to bind'))), run: () => S().assignToJoint() },
   { id: 'view.uv', label: 'UV workspace (3D view + UV editor side by side)', group: 'View', run: () => S().setUVSpace(!S().uvSpace) },
-  { id: 'uv.seamMark', label: 'Mark UV seam (selected edges / face outline)', group: 'Map', run: () => S().markSeams(true) },
-  { id: 'uv.seamClear', label: 'Clear UV seam', group: 'Map', run: () => S().markSeams(false) },
-  { id: 'uv.pin', label: 'Pin selected UVs', group: 'Map', run: () => S().pinUVs(true) },
-  { id: 'uv.unpin', label: 'Unpin selected UVs', group: 'Map', run: () => S().pinUVs(false) },
-  { id: 'uv.stitch', label: 'Stitch UVs of the selected faces / edges', group: 'Map', run: () => S().stitchUVs() },
+  { id: 'uv.seamMark', label: 'Mark UV seam (selected edges / face outline)', group: 'Map', canRun: R.edgesOrFaces('Mark seam'), run: () => S().markSeams(true) },
+  { id: 'uv.seamClear', label: 'Clear UV seam', group: 'Map', canRun: R.edgesOrFaces('Clear seam'), run: () => S().markSeams(false) },
+  { id: 'uv.pin', label: 'Pin selected UVs', group: 'Map', canRun: R.points('Pin UVs'), run: () => S().pinUVs(true) },
+  { id: 'uv.unpin', label: 'Unpin selected UVs', group: 'Map', canRun: R.points('Unpin UVs'), run: () => S().pinUVs(false) },
+  { id: 'uv.stitch', label: 'Stitch UVs of the selected faces / edges', group: 'Map', canRun: R.edgesOrFaces('Stitch'), run: () => S().stitchUVs() },
   { id: 'uv.auto', label: 'Auto UV (unwrap selection or everything)', group: 'Map', run: () => { void S().autoUV() } },
   { id: 'uv.paletteSnap', label: 'Snap faces to palette swatch (paint colour)', group: 'Map', run: () => S().snapToPalette() },
-  { id: 'joint.unbind', label: 'Unbind selected points (or the selected joints)', group: 'Setup', keys: 'Alt+P', run: () => S().unbindSelection() },
-  { id: 'joint.selectBound', label: 'Select points bound to the selected joints', group: 'Setup', run: () => S().selectBoundPoints() },
-  { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', run: () => S().autoBindSelection() },
-  { id: 'joint.mirror', label: 'Mirror joints (L/R)', group: 'Setup', run: () => S().mirrorSelectedJoints() },
-  { id: 'joint.children', label: 'Select joint children', group: 'Setup', run: () => S().selectJointChildren() },
+  { id: 'joint.unbind', label: 'Unbind selected points (or the selected joints)', group: 'Setup', keys: 'Alt+P', canRun: all(R.hasJoints, pointsOrJoints), run: () => S().unbindSelection() },
+  { id: 'joint.selectBound', label: 'Select points bound to the selected joints', group: 'Setup', canRun: R.jointSelected, run: () => S().selectBoundPoints() },
+  { id: 'joint.autobind', label: 'Auto bind (nearest bone)', group: 'Setup', canRun: all(R.hasJoints, R.hasMesh), run: () => S().autoBindSelection() },
+  { id: 'joint.mirror', label: 'Mirror joints (L/R)', group: 'Setup', canRun: R.jointSelected, run: () => S().mirrorSelectedJoints() },
+  { id: 'joint.children', label: 'Select joint children', group: 'Setup', canRun: R.jointSelected, run: () => S().selectJointChildren() },
   { id: 'anim.mode', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Ctrl+Tab', run: () => { const s = S(); s.setMode(s.mode === 'model' ? 'animate' : 'model') } },
   { id: 'anim.mode2', label: 'Toggle Model / Animate mode', group: 'Animate', keys: 'Shift+Tab', run: () => byId['anim.mode'].run() },
-  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', run: () => S().setKey() },
-  { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', run: () => S().deleteKey() },
+  { id: 'anim.key', label: 'Insert key for selection', group: 'Animate', canRun: keyTargets, run: () => S().setKey() },
+  { id: 'anim.unkey', label: 'Delete key', group: 'Animate', keys: 'Alt+I', canRun: keyTargets, run: () => S().deleteKey() },
   // S over the Timeline (keymap scope panel:timeline): spread or squeeze the keys around the playhead
   { id: 'anim.scaleKeys', label: 'Scale key timing around the playhead', group: 'Animate', run: () => void scaleKeysPrompt() },
   { id: 'anim.autokey', label: 'Toggle auto-key (record)', group: 'Animate', run: () => S().set({ autoKey: !S().autoKey }) },
@@ -272,8 +289,8 @@ export const commands: Command[] = [
   // Animation clipboard (Animate mode, or anywhere over the Timeline; Ctrl+C / V / Shift+V scoped in keymap.ts). Over the Timeline Ctrl+C copies the selected
   // keys when there are any; the dope sheet's Ctrl+C / V / Shift+V / D are these same rebindable commands.
   { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', run: () => { if (!animKeysHere()) return; if (overTimeline() && copyTimelineKeys()) return; S().copyPose() } },
-  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', run: () => { if (animKeysHere()) S().pasteKeys(false) } },
-  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', run: () => { if (animKeysHere()) S().pasteKeys(true) } },
+  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', canRun: all(animOnly, s => (s.keyClipboard ? OK : no('Nothing copied'))), run: () => { if (animKeysHere()) S().pasteKeys(false) } },
+  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', canRun: all(animOnly, s => (s.keyClipboard ? OK : no('Nothing copied'))), run: () => { if (animKeysHere()) S().pasteKeys(true) } },
   // Ctrl+D in Animate and over the Timeline (scoped in keymap.ts); mesh Duplicate keeps Ctrl+D everywhere else
   { id: 'anim.duplicateKeys', label: 'Duplicate keys (selected keys, or the keys on the playhead)', group: 'Animate', run: () => { if (animKeysHere()) duplicateTimelineKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },
@@ -298,10 +315,10 @@ export const commands: Command[] = [
   { id: 'view.frameAll', label: 'Frame all', group: 'View', keys: 'Home', run: () => window.dispatchEvent(new CustomEvent('frame-selection', { detail: 'all' })) },
   { id: 'view.max', label: 'Maximize / restore view', group: 'View', keys: 'Shift+Space', run: () => S().set({ maximized: S().maximized !== null ? null : 1 }) },
   { id: 'view.skeleton', label: 'Toggle skeleton', group: 'View', run: () => S().set({ showSkeleton: !S().showSkeleton }) },
-  { id: 'shade.smooth', label: 'Smooth shading', group: 'View', run: () => S().setShading(30) },
-  { id: 'shade.flat', label: 'Flat shading', group: 'View', run: () => S().setShading(0) },
-  { id: 'shade.sharp', label: 'Mark hard edge', group: 'View', run: () => S().markSharp(true) },
-  { id: 'shade.sharpClear', label: 'Clear hard edge', group: 'View', run: () => S().markSharp(false) },
+  { id: 'shade.smooth', label: 'Smooth shading', group: 'View', canRun: R.hasMesh, run: () => S().setShading(30) },
+  { id: 'shade.flat', label: 'Flat shading', group: 'View', canRun: R.hasMesh, run: () => S().setShading(0) },
+  { id: 'shade.sharp', label: 'Mark hard edge', group: 'View', canRun: R.edgesOrFaces('Mark hard edge'), run: () => S().markSharp(true) },
+  { id: 'shade.sharpClear', label: 'Clear hard edge', group: 'View', canRun: R.edgesOrFaces('Clear hard edge'), run: () => S().markSharp(false) },
   { id: 'view.refs', label: 'Toggle reference images', group: 'View', run: () => S().set({ showRefs: !S().showRefs }) },
   { id: 'edit.xmirror', label: 'Toggle X-mirror editing', group: 'Edit', keys: 'Alt+X', run: () => { const s = S(); const on = !s.xMirror; s.set({ xMirror: on, xMirrorMap: on ? xPairs(s.model) : null }); s.notify(on ? 'X-mirror on: edits on one side update the other' : 'X-mirror off') } },
   { id: 'edit.snapCycle', label: 'Cycle snap target (Grid / Vertex / Increment)', group: 'Edit', keys: 'Shift+`', run: () => {
@@ -312,7 +329,8 @@ export const commands: Command[] = [
     s.notify(`Snap: ${next}`)
   } },
   { id: 'edit.pivotCycle', label: 'Pivot point menu (Median / Bounding Box / 3D Cursor / Individual / Active)', group: 'Edit', keys: 'Ctrl+.', run: () => openPivotMenu() },
-  { id: 'xf.shrinkFatten', label: 'Shrink / Fatten (modal, along normals)', group: 'Transform', keys: 'Alt+S', run: () => {
+  { id: 'xf.shrinkFatten', label: 'Shrink / Fatten (modal, along normals)', group: 'Transform', keys: 'Alt+S',
+    canRun: s => (s.mode !== 'model' || s.selectMode === 'object' || s.selectMode === 'joint' ? no('Shrink/Fatten works on points, edges or faces in Model mode') : OK), run: () => {
     const s = S()
     if (s.mode !== 'model' || s.selectMode === 'object' || s.selectMode === 'joint') return s.notify('Shrink/Fatten works on points, edges or faces in Model mode')
     startShrinkFatten()
@@ -367,7 +385,7 @@ export const commands: Command[] = [
   { id: 'paint.paletteSave', label: 'Save the swatches as a GIMP palette', group: 'Paint', keys: 'Alt+Shift+P', run: () => saveSwatchFile() },
   { id: 'paint.paletteLoad', label: 'Load a GIMP palette into the swatches', group: 'Paint', keys: 'Alt+Shift+U', run: () => openSwatchFile() },
   { id: 'anim.play', label: 'Play / pause', group: 'Animate', run: () => { const s = S(); if (s.mode !== 'animate') s.setMode('animate'); S().set({ playing: !S().playing }) } },
-  { id: 'anim.insertKey', label: 'Insert key on the selected joints, all channels', group: 'Animate', run: () => S().setKey() },
+  { id: 'anim.insertKey', label: 'Insert key on the selected joints, all channels', group: 'Animate', canRun: keyTargets, run: () => S().setKey() },
   { id: 'anim.toggleCurves', label: 'Dope sheet / curves', group: 'Animate', run: () => S().set({ showCurves: !S().showCurves }) },
   { id: 'anim.setSpeed', label: 'Cycle playback speed (0.25×–2×)', group: 'Animate', run: () => {
     const steps = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -377,7 +395,12 @@ export const commands: Command[] = [
   } },
 ]
 
-export const byId = Object.fromEntries(commands.map(c => [c.id, c]))
+export const byId: Record<string, Command> = Object.fromEntries(commands.map(c => [c.id, c]))
+
+/** Can command `id` run now? `{ ok: true }` when it has no canRun or the id is not a registered command. */
+export const canRunCommand = (id: string, s = S()): CanRunResult => checkCanRun(byId[id], s)
+/** Option-box schema of command `id`, or null when it has none (no option box). */
+export const paramsOf = (id: string): readonly OpParam<never>[] | null => byId[id]?.PARAMS ?? null
 
 export function comboOf(e: KeyboardEvent) {
   const parts: string[] = []

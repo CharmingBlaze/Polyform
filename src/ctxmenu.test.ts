@@ -45,7 +45,7 @@ describe('context menu geometry', () => {
   })
 })
 
-import { byId } from './commands'
+import { byId, canRunCommand } from './commands'
 import { RESERVED, buildSections, flatItems, isSep, optParams, tableMenu } from './ctxmenu/menus'
 import { useStore } from './store'
 
@@ -92,7 +92,9 @@ describe('context menu contents', () => {
   it('disabled rows carry a reason', () => {
     useStore.getState().selectNone()
     const v = flatItems(tableMenu('vp.vertex').entries)
-    expect(v.find(i => i.id === 'edit.merge')?.why).toBe('Select 2 or more points')
+    // edit.merge has a canRun (commands.ts), so its reason is the contract's (empty scene here: no mesh yet)
+    expect(v.find(i => i.id === 'edit.merge')?.why).toBe(canRunCommand('edit.merge').reason)
+    expect(v.find(i => i.id === 'edit.merge')?.why).toBeTruthy()
   })
 })
 

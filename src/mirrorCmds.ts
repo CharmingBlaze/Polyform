@@ -14,6 +14,7 @@ import { interaction, overUV } from './interaction'
 import * as MO from './mirrorOps'
 import { capturePose, planPaste, applyPaste, mirrorPartner } from './timeline/pose'
 import type { Vec3 } from './model'
+import { no, OK, type CanRun } from './opcontract'
 
 const S = () => useStore.getState()
 const AX = ['X', 'Y', 'Z'] as const
@@ -154,13 +155,21 @@ export function openMirrorMenu() {
   window.addEventListener('keydown', onKey, true)
 }
 
+/** canRun (opcontract.ts): the same guards and messages as flip / copy / rotate give when run. */
+const selected = (s: ReturnType<typeof S>) => { const o = s.opSel(); return o.verts.length + o.faces.length + o.edges.length + o.bones.length > 0 }
+const canFlip = (axis: MO.Axis): CanRun => s => (s.mode === 'animate'
+  ? (axis !== 0 ? no('Animate: poses flip across X (the rig\'s mirror plane); use Flip X') : s.selBones.size ? OK : no('Flip pose: select joints first'))
+  : selected(s) ? OK : no('Flip: select points, edges or faces first'))
+const canCopy: CanRun = s => (s.mode === 'animate' ? no('Switch to Model mode to copy geometry') : selected(s) ? OK : no('Copy: select points, edges or faces first'))
+const canRotate: CanRun = s => (s.mode === 'animate' ? no('Switch to Model mode to edit geometry') : selected(s) ? OK : no('Rotate: select points, edges or faces first'))
+
 /** The registry entries (commands.ts spreads them in). */
 export const mirrorCommands: Command[] = [
   { id: 'mesh.mirrorMenu', label: 'Mirror menu (then X / Y / Z)', group: 'Modify', keys: 'Ctrl+M', run: openMirrorMenu },
-  ...AX.map((a, i): Command => ({ id: `mesh.flip${a}`, label: `Flip ${a} (mirror the selection in place)`, group: 'Modify', run: () => flip(i as MO.Axis) })),
-  ...AX.map((a, i): Command => ({ id: `mesh.copy${a}`, label: `Copy ${a} (mirrored duplicate)`, group: 'Modify', run: () => copy(i as MO.Axis) })),
-  ...AX.map((a, i): Command => ({ id: `mesh.rotate${a}`, label: `Rotate ${a} +90°`, group: 'Modify', run: () => rotate(i as MO.Axis, 90) })),
-  ...AX.map((a, i): Command => ({ id: `mesh.rotate${a}Neg`, label: `Rotate ${a} −90°`, group: 'Modify', run: () => rotate(i as MO.Axis, -90) })),
+  ...AX.map((a, i): Command => ({ id: `mesh.flip${a}`, label: `Flip ${a} (mirror the selection in place)`, group: 'Modify', canRun: canFlip(i as MO.Axis), PARAMS: MO.FLIP_PARAMS as Command['PARAMS'], run: () => flip(i as MO.Axis) })),
+  ...AX.map((a, i): Command => ({ id: `mesh.copy${a}`, label: `Copy ${a} (mirrored duplicate)`, group: 'Modify', canRun: canCopy, PARAMS: MO.COPY_PARAMS as Command['PARAMS'], run: () => copy(i as MO.Axis) })),
+  ...AX.map((a, i): Command => ({ id: `mesh.rotate${a}`, label: `Rotate ${a} +90°`, group: 'Modify', canRun: canRotate, PARAMS: MO.ROTATE_PARAMS as Command['PARAMS'], run: () => rotate(i as MO.Axis, 90) })),
+  ...AX.map((a, i): Command => ({ id: `mesh.rotate${a}Neg`, label: `Rotate ${a} −90°`, group: 'Modify', canRun: canRotate, PARAMS: MO.ROTATE_PARAMS as Command['PARAMS'], run: () => rotate(i as MO.Axis, -90) })),
   { id: 'view.flipH', label: 'Flip horizontally in view (3D view, UV editor, Paint image)', group: 'View', run: () => void viewOp('flipH') },
   { id: 'view.flipV', label: 'Flip vertically in view (3D view, UV editor, Paint image)', group: 'View', run: () => void viewOp('flipV') },
   { id: 'view.rotateCW', label: 'Rotate 90° clockwise in view (3D view, UV editor, Paint image)', group: 'View', run: () => void viewOp('rotCW') },

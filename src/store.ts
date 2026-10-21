@@ -82,7 +82,7 @@ const clearedNote = (c: { name: string; keys: number }[]) =>
   c.length ? ` · removed ${c.reduce((a, x) => a + x.keys, 0)} object key(s) from ${c.map(x => x.name).join(', ')}: bound objects animate through their joints (undo to keep them)` : ''
 export const getHistory = () => history
 
-interface State {
+export interface State {
   model: Model
   /** bumps on every model change (render + autosave trigger) */
   version: number
@@ -822,7 +822,7 @@ export const useStore = create<State>((set, get) => ({
   },
   deleteSelection: () => {
     const s = get()
-    if (s.mode === 'animate') return
+    if (s.mode === 'animate') return s.notify('Delete removes geometry in Model mode (in Animate: Alt+I deletes keys, Del over the timeline)')
     if (s.selectMode === 'joint') return s.deleteJoints()
     const fs = new Set(s.activeFaces())
     let alsoVerts: number[] = []
@@ -840,7 +840,7 @@ export const useStore = create<State>((set, get) => ({
   },
   extrude: kind => {
     const s = get()
-    if (s.mode !== 'model' || s.selectMode === 'joint') { s.notify('Switch to Model mode to extrude'); return false }
+    if (s.mode !== 'model' || s.selectMode === 'joint') { s.notify(s.mode !== 'model' ? 'Switch to Model mode to extrude' : 'Switch to Object, Point, Edge or Face mode to extrude'); return false }
     const objMode = s.selectMode === 'object'
     const faces = s.activeFaces(), verts = objMode ? [] : s.activeVerts(), edges = objMode ? [] : s.activeEdges()
     const faceMode = objMode || (s.subModes.length === 1 && s.subModes[0] === 'face')
@@ -893,12 +893,12 @@ export const useStore = create<State>((set, get) => ({
   },
   knife: () => {
     const s = get()
-    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to use the knife')
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to use the knife' : 'Switch to Object, Point, Edge or Face mode to use the knife')
     window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'knife' }))
   },
   loopCut: () => {
     const s = get()
-    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to loop cut')
+    if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to loop cut' : 'Switch to Object, Point, Edge or Face mode to loop cut')
     window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'loopcut' }))
   },
   duplicate: () => get().runOp('mul.duplicate'),
@@ -1122,8 +1122,9 @@ export const useStore = create<State>((set, get) => ({
       edges = [...cnt].filter(([, n]) => n === 1).map(([k]) => k)
     } else edges = s.activeEdges().map(([a, b]) => M.edgeKey(a, b))
     if (!edges.length) return s.notify('Select edges (or faces: their outline) to mark seams')
-    let n = 0
-    s.edit(mm => { n = UV.setSeams(mm, edges, on) }, on ? 'Mark seam' : 'Clear seam')
+    const n = UV.setSeams(m, edges, on, true)
+    if (!n) return s.notify(on ? 'Those edges are already seams' : 'No seams on the selection to clear')
+    s.edit(mm => { UV.setSeams(mm, edges, on) }, on ? 'Mark seam' : 'Clear seam')
     s.notify(`${on ? 'Marked' : 'Cleared'} ${n} seam edge${n === 1 ? '' : 's'}`)
   },
   markSharp: on => {
@@ -1136,8 +1137,9 @@ export const useStore = create<State>((set, get) => ({
       edges = [...set]
     } else edges = s.activeEdges().map(([a, b]) => M.edgeKey(a, b))
     if (!edges.length) return s.notify('Select edges (or faces) to mark as hard')
-    let n = 0
-    s.edit(mm => { n = UV.setSharp(mm, edges, on) }, on ? 'Mark hard edge' : 'Clear hard edge')
+    const n = UV.setSharp(m, edges, on, true)
+    if (!n) return s.notify(on ? 'Those edges are already hard' : 'No hard edges on the selection to clear')
+    s.edit(mm => { UV.setSharp(mm, edges, on) }, on ? 'Mark hard edge' : 'Clear hard edge')
     s.notify(`${on ? 'Marked' : 'Cleared'} ${n} hard edge${n === 1 ? '' : 's'}`)
   },
   setShading: smooth => {
@@ -1155,8 +1157,10 @@ export const useStore = create<State>((set, get) => ({
   pinUVs: on => {
     const s = get(), ids = s.uvCorners()
     if (!ids.length) return s.notify('Select UVs to pin')
-    s.edit(m => UV.setPins(m, ids, on), on ? 'Pin UVs' : 'Unpin UVs')
-    s.notify(`${on ? 'Pinned' : 'Unpinned'} ${ids.length} UV corners`)
+    const n = UV.setPins(s.model, ids, on, true)
+    if (!n) return s.notify(on ? 'Those UVs are already pinned' : 'No pinned UVs on the selection')
+    s.edit(m => { UV.setPins(m, ids, on) }, on ? 'Pin UVs' : 'Unpin UVs')
+    s.notify(`${on ? 'Pinned' : 'Unpinned'} ${n} UV corner${n === 1 ? '' : 's'}`)
   },
   stitchUVs: () => {
     const s = get(), m = s.model

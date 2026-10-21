@@ -9,6 +9,7 @@ import { primitiveImageUVs, primitiveUVNote } from './primuv'
 import { BEVEL_PARAMS, bevel, bevelEdgesOfSelection, bevelOptsFromParams } from './bevel'
 import type { Model, ParamDef, Params, PrimitiveKind, Vec3 } from './model'
 import * as MO from './mirrorOps'
+import type { OpParam } from './opcontract'
 
 export interface OpSel { verts: number[]; faces: number[]; edges: [number, number][]; bones: number[]; axis: boolean[]; /** what the selection is: points (edit), whole objects or joints */ mode?: MO.MirrorMode }
 export interface OpResult { verts?: number[]; faces?: number[]; edges?: [number, number][]; bones?: number[]; note?: string }
@@ -21,6 +22,8 @@ export interface OpDef {
   params: ParamDef[]
   needs?: 'faces' | 'verts' | 'edges' | 'verts2' | 'faces2'
   run: (m: Model, s: OpSel, p: Params) => OpResult | void
+  /** option-box schema (opcontract.ts); absent = generated from `params` */
+  PARAMS?: readonly OpParam<never>[]
 }
 
 const N = (key: string, label: string, def: number, min: number, max: number, step: number, int = false): ParamDef => ({ key, label, def, min, max, step, int })
@@ -99,9 +102,9 @@ export const OPS: OpDef[] = [
     run: (m, s, p) => G.alignVerts(m, s.verts, [!!p.x, !!p.y, !!p.z], (['center', 'min', 'max'] as const)[p.to]),
   },
   // ---------- Mirror & Rotate (Ctrl+M): one-shot, around the pivot the commands pass in; params from mirrorOps *_PARAMS
-  { id: 'mesh.flip', label: 'Flip', tab: 'Mirror', params: paramDefs(MO.FLIP_PARAMS), run: (m, s, p) => MO.flipWith(m, s, MO.optsFromParams(MO.FLIP_PARAMS, p)) },
-  { id: 'mesh.copy', label: 'Mirror copy', tab: 'Mirror', params: paramDefs(MO.COPY_PARAMS), run: (m, s, p) => MO.copyWith(m, s, MO.optsFromParams(MO.COPY_PARAMS, p)) },
-  { id: 'mesh.rotate', label: 'Rotate', tab: 'Mirror', params: paramDefs(MO.ROTATE_PARAMS), run: (m, s, p) => MO.rotateWith(m, s, MO.optsFromParams(MO.ROTATE_PARAMS, p)) },
+  { id: 'mesh.flip', label: 'Flip', tab: 'Mirror', params: paramDefs(MO.FLIP_PARAMS), PARAMS: MO.FLIP_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.flipWith(m, s, MO.optsFromParams(MO.FLIP_PARAMS, p)) },
+  { id: 'mesh.copy', label: 'Mirror copy', tab: 'Mirror', params: paramDefs(MO.COPY_PARAMS), PARAMS: MO.COPY_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.copyWith(m, s, MO.optsFromParams(MO.COPY_PARAMS, p)) },
+  { id: 'mesh.rotate', label: 'Rotate', tab: 'Mirror', params: paramDefs(MO.ROTATE_PARAMS), PARAMS: MO.ROTATE_PARAMS as readonly OpParam<never>[], run: (m, s, p) => MO.rotateWith(m, s, MO.optsFromParams(MO.ROTATE_PARAMS, p)) },
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {
@@ -126,10 +129,10 @@ export const OPS: OpDef[] = [
   {
     // Blender's Bevel (Ctrl+B edges / Shift+Ctrl+B vertices): geometry in bevel.ts. Params in redo-panel order (spec §4.3).
     id: 'mul.bevel', label: 'Bevel', tab: 'Multiply',
-    params: BEVEL_OP_PARAMS(0),
+    params: BEVEL_OP_PARAMS(0), PARAMS: BEVEL_PARAMS as readonly OpParam<never>[],
     run: (m, s, p) => runBevel(m, s, p),
   },
-  { id: 'mul.bevelVerts', label: 'Bevel Vertices', tab: 'Multiply', params: BEVEL_OP_PARAMS(1), run: (m, s, p) => runBevel(m, s, p) },
+  { id: 'mul.bevelVerts', label: 'Bevel Vertices', tab: 'Multiply', params: BEVEL_OP_PARAMS(1), PARAMS: BEVEL_PARAMS as readonly OpParam<never>[], run: (m, s, p) => runBevel(m, s, p) },
   {
     id: 'mul.inset', label: 'Inset', tab: 'Multiply', needs: 'faces',
     params: [N('inset', 'Inset', 0.1, -10, 10, 0.02), BOOL('individual', 'Individual', 0)],
@@ -160,7 +163,7 @@ export const OPS: OpDef[] = [
   },
   {
     id: 'con.merge', label: 'Merge points', tab: 'Construct', needs: 'verts', params: [N('dist', 'Distance', 0.001, 0, 10, 0.001)],
-    run: (m, s, p) => { const n = G.mergeByDistance(m, s.verts, p.dist); return { verts: [], note: `Merged ${n} points` } },
+    run: (m, s, p) => { const n = G.mergeByDistance(m, s.verts, p.dist); if (!n) throw new Error(`Merge points: no selected points are within ${p.dist} of each other (raise Distance)`); return { verts: [], note: `Merged ${n} point${n === 1 ? '' : 's'}` } },
   },
   { id: 'con.weld', label: 'Weld', tab: 'Construct', needs: 'verts2', params: [], run: (m, s) => { M.weldVerts(m, s.verts); return { verts: [] } } },
   {
@@ -180,7 +183,7 @@ export const OPS: OpDef[] = [
     id: 'con.turn', label: 'Turn edge', tab: 'Construct', needs: 'edges', params: [],
     run: (m, s) => { let n = 0; s.edges.forEach(([a, b]) => { if (G.turnEdge(m, a, b)) n++ }); return { note: n ? `Turned ${n} edge${n > 1 ? 's' : ''}` : 'Turn edge needs an edge between two triangles' } },
   },
-  { id: 'con.unweld', label: 'Unweld', tab: 'Construct', needs: 'faces', params: [], run: (m, s) => { G.unweldFaces(m, s.faces); return facesSel(s.faces) } },
+  { id: 'con.unweld', label: 'Unweld', tab: 'Construct', needs: 'faces', params: [], run: (m, s) => { const n = G.unweldFaces(m, s.faces); if (!n) throw new Error('Unweld: the selected faces share no points with other faces'); return { ...facesSel(s.faces), note: `Unwelded ${n} point${n === 1 ? '' : 's'}` } } },
   {
     id: 'con.separate', label: 'Separate to group', tab: 'Construct', needs: 'faces', params: [],
     run: (m, s) => { const g = G.separateFaces(m, s.faces, `Group ${m.groups.length + 1}`); const f = m.faces.map((x, i) => (x.g === g ? i : -1)).filter(i => i >= 0); return facesSel(f) },

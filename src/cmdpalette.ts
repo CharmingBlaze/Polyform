@@ -4,6 +4,7 @@
  * used commands first. Pure logic: the palette component only renders this, and nothing here depends on the menus.
  */
 import { defaultFilter } from 'cmdk'
+import { checkCanRun } from './opcontract'
 import { commands, WS_NAME, type Command } from './commands'
 import { history, useStore, type Workspace } from './store'
 import { bindingsOf, currentBindings, defaultKeyMap, isBrowserReserved, type Binding, type Scope } from './keymap'
@@ -24,6 +25,8 @@ export interface PaletteEntry {
   /** the workspace the command belongs to; null = any */
   ws: Workspace | null
   enabled: boolean
+  /** why it is greyed (canRun reason), when it says */
+  reason?: string
   run: () => void
 }
 
@@ -71,7 +74,9 @@ export function paletteEntries(list: readonly Command[] = commands, bindings: re
       const rule = AVAILABLE.find(([re]) => re.test(c.id))
       let enabled = true
       try { enabled = (c.when ? !!c.when() : true) && (rule ? rule[1]() : true) } catch { enabled = true }
-      e = { id: c.id, label: c.label, group: c.group, keys: [], keyScopes: [], ws: workspaceOf(c), enabled, run: c.run }
+      const can = checkCanRun(c, S())
+      e = { id: c.id, label: c.label, group: c.group, keys: [], keyScopes: [], ws: workspaceOf(c), enabled: enabled && can.ok, run: c.run }
+      if (!can.ok && can.reason) e.reason = can.reason
       byKey.set(k, e); out.push(e)
     }
     for (const b of keysOf.get(c.id) ?? []) if (!isReserved(b.keys) && !e.keys.includes(b.keys)) { e.keys.push(b.keys); e.keyScopes.push(b.scope) }

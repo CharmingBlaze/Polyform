@@ -364,50 +364,64 @@ export function seamSet(m: Model): Set<number> {
   return out
 }
 /** Mark (on) or clear seams on the given edge keys, on every face that has them. Returns the number of edges. */
-export function setSeams(m: Model, edges: Iterable<number>, on: boolean): number {
+export function setSeams(m: Model, edges: Iterable<number>, on: boolean, dryRun = false): number {
   const want = new Set(edges)
-  const hit = new Set<number>()
+  // returns how many edges change state (an edge is marked if either face marks it); dryRun only counts
+  const hit = new Set<number>(), was = new Set<number>()
   m.faces.forEach(f => {
     const cur = new Set(f.seam ?? [])
     f.v.forEach((a, c) => {
       const k = edgeKey(a, f.v[(c + 1) % f.v.length])
       if (!want.has(k)) return
       hit.add(k)
+      if (cur.has(c)) was.add(k)
       if (on) cur.add(c); else cur.delete(c)
     })
+    if (dryRun) return
     if (cur.size) f.seam = [...cur].sort((x, y) => x - y); else delete f.seam
   })
-  return hit.size
+  let n = 0
+  hit.forEach(k => { if (was.has(k) !== on) n++ })
+  return n
 }
 
 // ---------- pins ----------
-export function setSharp(m: Model, edges: Iterable<number>, on: boolean): number {
+export function setSharp(m: Model, edges: Iterable<number>, on: boolean, dryRun = false): number {
   const want = new Set(edges)
-  const hit = new Set<number>()
+  // returns how many edges change state (an edge is marked if either face marks it); dryRun only counts
+  const hit = new Set<number>(), was = new Set<number>()
   m.faces.forEach(f => {
     const cur = new Set(f.sharp ?? [])
     f.v.forEach((a, c) => {
       const k = edgeKey(a, f.v[(c + 1) % f.v.length])
       if (!want.has(k)) return
       hit.add(k)
+      if (cur.has(c)) was.add(k)
       if (on) cur.add(c); else cur.delete(c)
     })
+    if (dryRun) return
     if (cur.size) f.sharp = [...cur].sort((x, y) => x - y); else delete f.sharp
   })
-  return hit.size
+  let n = 0
+  hit.forEach(k => { if (was.has(k) !== on) n++ })
+  return n
 }
 
 // ---------- pins ----------
-export function setPins(m: Model, ids: Iterable<number>, on: boolean) {
+/** Pin or unpin UV corners; returns how many corners changed (dryRun only counts). */
+export function setPins(m: Model, ids: Iterable<number>, on: boolean, dryRun = false): number {
   const by = new Map<number, number[]>()
-  for (const id of ids) { const f = cornerFace(id); by.set(f, [...(by.get(f) || []), cornerIdx(id)]) }
+  for (const id of ids) { const f = cornerFace(id); let l = by.get(f); if (!l) by.set(f, (l = [])); l.push(cornerIdx(id)) }
+  let n = 0
   by.forEach((cs, fi) => {
     const f = m.faces[fi]
     if (!f) return
     const cur = new Set(f.pin ?? [])
-    cs.forEach(c => (on ? cur.add(c) : cur.delete(c)))
+    cs.forEach(c => { if (cur.has(c) !== on) { n++; if (on) cur.add(c); else cur.delete(c) } })
+    if (dryRun) return
     if (cur.size) f.pin = [...cur].sort((x, y) => x - y); else delete f.pin
   })
+  return n
 }
 /** Run a UV op on faces but keep pinned corners where they were. */
 export function keepPins(m: Model, faces: number[], fn: () => void) {

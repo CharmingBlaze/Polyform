@@ -399,9 +399,12 @@ export function mirrorCopy(m: Model, faces: number[], axis: Axis, c: Vec3, opts:
     map.set(v, n); created.push(n)
   }
   const out: number[] = []
+  let inPlane = 0
   for (const fi of faces) {
     const f = m.faces[fi]
     if (!f) continue
+    // a face lying in the mirror plane (every point welded onto it) mirrors onto itself: a copy would be a duplicate
+    if (f.v.every(v => map.get(v) === v)) { inPlane++; continue }
     const nf: Face = structuredClone(f)
     nf.v = f.v.map(v => map.get(v)!)
     reverseFace(nf)
@@ -420,7 +423,7 @@ export function mirrorCopy(m: Model, faces: number[], axis: Axis, c: Vec3, opts:
   const oldX = new Map<number, number>()
   map.forEach((nv, v) => { if (nv !== v) oldX.set(nv, worldPoint(m, v, space)[0]) })
   const rebound = rebindCrossed(m, oldX)
-  return { faces: out, verts: created, welded, rebound, map }
+  return { faces: out, verts: created, welded, rebound, map, inPlane }
 }
 
 /**
@@ -457,7 +460,9 @@ export function copySelection(m: Model, sel: MirrorSel, axis: Axis, c: Vec3, opt
   const inFaces = new Set<number>(); fs.forEach(fi => m.faces[fi].v.forEach(v => inFaces.add(v)))
   const loose = [...vs].filter(v => !inFaces.has(v))
   const r = mirrorCopy(m, fs, axis, c, { ...opts, verts: loose })
+  if (fs.length && !r.faces.length && !r.verts.length) throw new Error('Copy: the selection lies in the mirror plane, so its mirror is itself (move the pivot or pick another axis)')
   const notes = [(opts.weld ?? true) && r.welded ? `welded ${r.welded} point${r.welded === 1 ? '' : 's'} on the plane` : '', r.rebound ? `${r.rebound} bound to the L/R partner joint` : ''].filter(Boolean)
+  if (r.inPlane) notes.push(`skipped ${r.inPlane} face${r.inPlane === 1 ? '' : 's'} in the mirror plane`)
   return fs.length ? { faces: r.faces, note: notes.join(' · ') || undefined } : { verts: [...vs].map(v => r.map.get(v)!), note: notes.join(' · ') || undefined }
 }
 

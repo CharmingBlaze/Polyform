@@ -31,7 +31,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   }
   const item = (e: PaletteEntry) => (
     <Command.Item key={e.id} value={e.id} disabled={!e.enabled} onSelect={() => run(e)} className="palette-item" data-testid={`pal-${e.id}`}
-      title={e.enabled ? undefined : 'Not available right now'}>
+      title={e.enabled ? undefined : e.reason ?? 'Not available right now'}>
       <span className="pl">{e.label}</span>
       <span className="pg">{e.group}</span>
       {e.ws && <span className="pw">{wsLabel(e.ws)}</span>}

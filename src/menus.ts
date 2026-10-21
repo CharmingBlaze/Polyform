@@ -2,7 +2,7 @@
  * The menu bar's contents (File, Edit, View, Select, Create, Help) and pure keyboard-navigation helpers.
  * Every entry runs an existing command or store setter; nothing here adds a new tool.
  */
-import { byId, WS_NAME } from './commands'
+import { byId, canRunCommand, WS_NAME } from './commands'
 import { history, useStore, WORKSPACES, type Layout } from './store'
 import { PRIMITIVES, type PrimitiveKind } from './model'
 import { PRIM_GROUPS } from './prims/extra'
@@ -16,6 +16,8 @@ export interface MenuItem {
   keys?: string
   run?: () => void
   enabled?: boolean
+  /** why it is greyed out (the command's canRun reason), for the tooltip */
+  reason?: string
   /** a tick (toggle) or dot (radio choice) */
   checked?: boolean
   radio?: boolean
@@ -49,7 +51,11 @@ const S = () => useStore.getState()
 export function cmd(id: string, label?: string, extra: Partial<MenuItem> = {}): MenuItem {
   const c = byId[id]
   if (!c) return { id, label: label ?? id, enabled: false, ...extra }
-  return { id, label: label ?? c.label, keys: getBindingLabel(id) || undefined, run: c.run, enabled: c.when ? !!c.when() : true, ...extra }
+  // operator contract: canRun greys the entry with a reason; an explicit `enabled` in `extra` still wins
+  const can = canRunCommand(id, S())
+  const item: MenuItem = { id, label: label ?? c.label, keys: getBindingLabel(id) || undefined, run: c.run, enabled: (c.when ? !!c.when() : true) && can.ok, ...extra }
+  if (item.enabled === false && !can.ok && can.reason) item.reason = can.reason
+  return item
 }
 
 const hasSel = () => { const s = S(); return s.selVerts.size + s.selFaces.size + s.selEdges.size + s.selBones.size > 0 }

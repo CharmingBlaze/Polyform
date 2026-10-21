@@ -61,6 +61,17 @@ export function mergeVertsAt(m: Model, verts: number[], at: Vec3): void {
 export function createFace(m: Model, verts: number[]): number {
   const vs = [...new Set(verts)]
   if (vs.length < 3) throw new Error('Select 3 or more points to make a polygon')
+  // a polygon on exactly these points already exists: a second one would be a duplicate (z-fighting, broken export)
+  const key = [...vs].sort((a, b) => a - b).join(',')
+  if (m.faces.some(f => f.v.length === vs.length && [...f.v].sort((a, b) => a - b).join(',') === key)) throw new Error('A polygon on those points already exists')
+  // points that are already closed (edges among them have two polygons, e.g. a whole object, or two faces): a
+  // polygon through them would cut through the solid and leave edges with three polygons
+  const inSel = new Set(vs), uses = new Map<number, number>()
+  for (const f of m.faces) {
+    const n = f.v.length
+    for (let i = 0; i < n; i++) { const a = f.v[i], b = f.v[(i + 1) % n]; if (inSel.has(a) && inSel.has(b)) { const k = edgeKey(a, b); uses.set(k, (uses.get(k) ?? 0) + 1) } }
+  }
+  const usesOf = (a: number, b: number) => uses.get(edgeKey(a, b)) ?? 0
   let order = vs
   if (vs.length > 3) {
     const n = newell(m.verts, vs)
@@ -81,6 +92,10 @@ export function createFace(m: Model, verts: number[]): number {
     if (directed.has(`${b}>${a}`)) { g = m.faces[directed.get(`${b}>${a}`)!].g; break }
   }
   if (flip) order = [order[0], ...order.slice(1).reverse()]
+  // one closed edge is a deliberate fin (a triangle off an edge); two or more means the points are already closed
+  let closedEdges = 0
+  for (let i = 0; i < order.length; i++) if (usesOf(order[i], order[(i + 1) % order.length]) >= 2) closedEdges++
+  if (closedEdges >= 2) throw new Error('Those points are already closed by polygons: select the points around a hole (or loose points) to make a polygon')
   if (g < 0) { const f = m.faces.find(x => x.v.some(v => vs.includes(v))); g = f ? f.g : -1 }
   if (g < 0) { g = m.groups.length; m.groups.push(newGroup(`Polygons ${m.groups.length + 1}`)) }
   // planar UVs from the polygon's own plane, fitted to 0–1
@@ -270,8 +285,12 @@ export function bridgeLoops(m: Model, a: number[], b: number[], closed: boolean,
   }
   // existing face using a[0]->a[1] means our face must run a[1]->a[0]
   const flip = directed.has(`${a[0]}>${a[1]}`) || directed.has(`${best[1]}>${best[0]}`)
+  // never add a quad that already exists (bridging loops that are already joined)
+  const sig = (v: number[]) => [...v].sort((x, y) => x - y).join(',')
+  const have = new Set(m.faces.map(f => sig(f.v)))
+  if (polys.every(p => p.length < 3 || have.has(sig(p)))) throw new Error('Bridge: those loops are already joined')
   for (let p of polys) {
-    if (p.length < 3) continue
+    if (p.length < 3 || have.has(sig(p))) continue
     if (flip) p = [...p].reverse()
     out.push(m.faces.length)
     m.faces.push({ v: p, uv: [[0, 0], [1, 0], [1, 1], [0, 1]].slice(0, p.length) as Vec2[], g })
@@ -283,6 +302,8 @@ export function bridgeLoops(m: Model, a: number[], b: number[], closed: boolean,
 export function bridgeFaces(m: Model, faces: number[]): number[] {
   const loops = boundaryLoops(m, faces)
   if (loops.length !== 2) throw new Error(`Select two separate face regions to bridge (found ${loops.length} boundary loops)`)
+  const inA = new Set(loops[0])
+  if (loops[1].some(v => inA.has(v))) throw new Error('Bridge: the two face regions touch; select regions that share no points')
   const g = m.faces[faces[0]].g
   const set = new Set(faces)
   m.faces = m.faces.filter((_, i) => !set.has(i))
@@ -530,7 +551,11 @@ export function lathe(m: Model, verts: number[], axis: Axis, sides: number, angl
   const loc = order.map(v => toLocal(m.verts[v]))
   const first = loc.find(q => Math.hypot(q[0], q[2]) > 1e-9) ?? [1, 0, 0]
   const phase = Math.atan2(-first[2], first[0])
-  let profile: Vec2[] = loc.map(q => [Math.hypot(q[0], q[2]), q[1]])
+  // points on one circle around the axis (same radius and height) sweep the same ring: keep the first of each,
+  // otherwise a closed shape (a whole box, two faces) laths into stacked duplicate bands
+  const seen = new Set<string>()
+  let profile: Vec2[] = loc.map((q): Vec2 => [Math.hypot(q[0], q[2]), q[1]]).filter(([r, y]) => { const k = `${Math.round(r * 1e6)},${Math.round(y * 1e6)}`; if (seen.has(k)) return false; seen.add(k); return true })
+  if (profile.length < 2) throw new Error('Lathe: the profile points all lie on one circle around the axis; select an open profile')
   if (flip) profile = profile.reverse()
   const ang = THREE.MathUtils.degToRad(Math.min(360, Math.max(1, angleDeg)))
   const polys = lathePolys(profile, Math.max(2, Math.round(sides)), false, ang, phase).map(p => ({ ...p, p: p.p.map(toWorld) }))
@@ -561,12 +586,19 @@ export function arrayFaces(m: Model, faces: number[], count: number, offset: Vec
 }
 
 /** Unweld: give every selected face its own copy of shared points. */
-export function unweldFaces(m: Model, faces: number[]) {
-  const seen = new Set<number>()
-  for (const fi of faces) m.faces[fi].v = m.faces[fi].v.map(v => {
-    if (!seen.has(v)) { seen.add(v); return v }
+export function unweldFaces(m: Model, faces: number[]): number {
+  // a point stays with the first unselected face that uses it (else the first selected one); every other selected
+  // face gets its own copy, so a single selected face is detached from its neighbours too
+  const sel = new Set(faces), owner = new Map<number, number>()
+  m.faces.forEach((f, fi) => { if (!sel.has(fi)) f.v.forEach(v => { if (!owner.has(v)) owner.set(v, fi) }) })
+  for (const fi of sel) m.faces[fi].v.forEach(v => { if (!owner.has(v)) owner.set(v, fi) })
+  let n = 0
+  for (const fi of sel) m.faces[fi].v = m.faces[fi].v.map(v => {
+    if (owner.get(v) === fi) return v
+    n++
     return appendVertCopy(m, v)
   })
+  return n
 }
 
 export { weldVerts, faceCenter }
