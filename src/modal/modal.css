@@ -38,7 +38,7 @@
 .m-sep { width: 1px; height: 14px; background: var(--line2); flex: none; }
 .m-keys { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; }
 .m-k { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
-.m-k kbd { padding: 0 4px; font-size: 10.5px; line-height: 16px; color: var(--text-2, #9aa2b3); }
+.m-k kbd { padding: 0 4px; font-size: max(11px, var(--fs-xs, 1em)); line-height: 16px; color: var(--text-2, #9aa2b3); }
 .m-k kbd + kbd { margin-left: -1px; }
 .m-k.on { color: var(--text); }
 

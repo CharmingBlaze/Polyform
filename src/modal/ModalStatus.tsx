@@ -9,7 +9,11 @@ import { useModalStatus } from './index'
 import { axisChipClass, axisChipText, formatValue, hintKeys, readoutText, shedOrder, type ModalHint } from './status'
 import './modal.css'
 
-/** Hide counts, then p 3, then p 2 hints until `footer` fits (p 1 never hides). */
+/**
+ * Hide counts, then p 3, then p 2 hints until `footer` fits. If the p 1 hints still overflow (very narrow windows),
+ * drop the ones that would be clipped, last first: a hint is shown whole or not at all, never cut off under the
+ * selection count.
+ */
 function shed(footer: HTMLElement) {
   const hints = [...footer.querySelectorAll<HTMLElement>('.m-line .m-k')]
   footer.removeAttribute('data-shed-counts')
@@ -20,6 +24,13 @@ function shed(footer: HTMLElement) {
   footer.setAttribute('data-shed-counts', '')
   const ps = hints.map(h => ({ p: Number(h.dataset.p) as ModalHint['p'] }))
   for (const i of shedOrder(ps)) { if (fits()) break; hints[i].style.display = 'none' }
+  if (fits() || !keys) return
+  const right = keys.getBoundingClientRect().right + 0.5
+  for (let i = hints.length - 1; i >= 0; i--) {
+    if (hints[i].style.display === 'none') continue
+    if (hints[i].getBoundingClientRect().right > right || keys.scrollWidth > keys.clientWidth) hints[i].style.display = 'none'
+    else break
+  }
 }
 
 export function ModalStatus() {

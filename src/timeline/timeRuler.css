@@ -7,18 +7,19 @@
 .tl-tick { position: absolute; bottom: 0; width: 1px; pointer-events: none; }
 .tl-tick.minor { height: 4px; background: var(--line2); }
 .tl-tick.major { height: 8px; background: var(--dim); }
-.tl-tick-label { position: absolute; bottom: 9px; left: 0; transform: translateX(-50%); font-size: 10px; line-height: 1; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tl-tick-label { position: absolute; bottom: 9px; left: 0; transform: translateX(-50%); font-size: max(11px, var(--fs-xs, 1em)); line-height: 1; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tl-tick-label.start { transform: translateX(2px); }
 .tl-tick-label.end { transform: translateX(calc(-100% - 2px)); }
 .tl-ruler-out { position: absolute; top: 0; bottom: 0; background: var(--panel2); opacity: .7; pointer-events: none; }
-.tl-ruler-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--gold); pointer-events: none; }
+/* play-range markers sit in the tick band under the frame numbers (labels are bottom: 9px), so the numbers stay readable */
+.tl-ruler-mark { position: absolute; bottom: 0; height: 9px; width: 2px; margin-left: -1px; background: var(--gold); pointer-events: none; }
 .tl-ruler-mark.in::after, .tl-ruler-mark.out::after { content: ''; position: absolute; top: 0; width: 5px; height: 2px; background: var(--gold); }
 .tl-ruler-mark.in::after { left: 0; }
 .tl-ruler-mark.out::after { right: 0; }
 .tl-ruler-playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: 0; background: var(--accent); pointer-events: none; z-index: 2; }
 .tl-ruler-head { position: absolute; top: 0; left: -4px; width: 9px; height: 6px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 50% 100%); }
 .tl-ruler-lane.scrubbing .tl-ruler-playhead, .tl-ruler-lane.scrubbing .tl-ruler-head { background: var(--accent2); }
-.tl-ruler-range { margin-left: auto; color: var(--gold); font-size: 10px; }
+.tl-ruler-range { margin-left: auto; color: var(--gold); font-size: max(11px, var(--fs-xs, 1em)); }
 .tl-ruler-lane.ranging { cursor: col-resize; }
 .tl-ruler-mark.hot { width: 4px; margin-left: -2px; }
 .tl-ruler-menu { position: fixed; z-index: 60; min-width: 184px; padding: 3px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 8px 24px rgba(0,0,0,.45); display: flex; flex-direction: column; font-size: 11px; }
