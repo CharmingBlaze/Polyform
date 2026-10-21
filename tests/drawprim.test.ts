@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as M from '../src/model'
 import { exportErrors, meshProblems } from './util/meshcheck'
+import { FLAT_KINDS } from '../src/prims/extra'
 
 describe('primitive drawing: fit inside the box', () => {
   const kinds = Object.keys(M.PRIMITIVES) as M.PrimitiveKind[]
@@ -10,7 +11,7 @@ describe('primitive drawing: fit inside the box', () => {
     const r = M.fitPrimitive(m, kind, min, max, M.segOf(kind, M.primitiveDefaults(kind)))
     const lo = [0, 1, 2].map(i => Math.min(...r.verts.map(v => m.verts[v][i])))
     const hi = [0, 1, 2].map(i => Math.max(...r.verts.map(v => m.verts[v][i])))
-    const flat = kind === 'plane' || kind === 'disc'
+    const flat = FLAT_KINDS.has(kind)
     for (let i = 0; i < 3; i++) {
       if (flat && i === 1) { expect(lo[1]).toBeCloseTo(0.8); expect(hi[1]).toBeCloseTo(0.8); continue }
       expect(lo[i]).toBeCloseTo(min[i], 9); expect(hi[i]).toBeCloseTo(max[i], 9)

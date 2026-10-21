@@ -39,6 +39,8 @@ export interface UIPrefs {
   matListH: number
   /** UI scale: 'auto' (from the window size, see autoScale) or a fixed factor */
   uiScale: UIScale
+  /** Create tab: open / folded state per section id (absent = the section's default, see CREATE_OPEN_DEFAULT) */
+  createOpen: Record<string, boolean>
   /** Blender-style unwrap options (Unwrap, Smart UV Project, Lightmap Pack, Follow Active Quads, Live Unwrap…) */
   uvUnwrap: UnwrapPrefs
 }
@@ -74,7 +76,7 @@ export const LEFT_W = 220
 export const LEFT_NARROW_W = 144
 export const TIMELINE_MIN = 60
 export const TIMELINE_DEFAULT = 180
-export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: LEFT_W, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132, uiScale: 'auto' }
+export const DEFAULT_PREFS: UIPrefs = { timelineH: TIMELINE_DEFAULT, timelineLastH: TIMELINE_DEFAULT, timelineHidden: false, leftW: LEFT_W, rightW: 256, panels: defaultPanels(), pressureSize: true, pressureStrength: false, uvSync: 'uv', uvSelOnly: false, uvIsland: false, uvSnap: 1, uvPack: { pad: 2, align: true, rotate: true, keep: false, into: 'image' }, paintUVs: true, uvView3D: UV_VIEW3D_DEFAULT, uvSwap: false, uvToolsGroup: 'unwrap', uvUnwrap: DEFAULT_UNWRAP, sideTabs: {}, matListH: 132, uiScale: 'auto', createOpen: {} }
 const KEY = 'polyform.ui.v1'
 /** stored next to the prefs: 2 = per-workspace panels, narrower default sidebars; 3 = the right column has a real
  * minimum (RIGHT_MIN): the 140 px "slim rail column" of v2 truncated every tab, so saved v2 widths below it are reset;
@@ -136,6 +138,7 @@ export function loadPrefs(): UIPrefs {
       uiScale: isUIScale(p.uiScale) ? p.uiScale : 'auto',
       matListH: typeof p.matListH === 'number' && Number.isFinite(p.matListH) ? Math.max(60, Math.min(600, p.matListH)) : 132,
       sideTabs: Object.fromEntries(Object.entries(p.sideTabs && typeof p.sideTabs === 'object' ? p.sideTabs : {}).filter(([k, v]) => (PANEL_KEYS as readonly string[]).includes(k) && typeof v === 'string' && /^[\w-]{1,32}$/.test(v))) as Record<string, string>,
+      createOpen: Object.fromEntries(Object.entries(p.createOpen && typeof p.createOpen === 'object' ? p.createOpen : {}).filter(([k, v]) => /^[\w-]{1,32}$/.test(k) && typeof v === 'boolean')) as Record<string, boolean>,
       uvToolsGroup: typeof p.uvToolsGroup === 'string' && ['', 'unwrap', 'transform', 'arrange', 'pixels', 'seams'].includes(p.uvToolsGroup) ? p.uvToolsGroup : DEFAULT_PREFS.uvToolsGroup,
     }
   } catch { return { ...DEFAULT_PREFS } }

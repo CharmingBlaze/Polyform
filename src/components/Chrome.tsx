@@ -1,13 +1,13 @@
 import { openPicked } from '../fileActions'
 import { useEffect, useMemo, useState } from 'react'
 import { Undo2, Redo2, Download, X, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
-import { openSideTab, setLeftCollapsed, sideHandle, useSides } from '../useLayout'
+import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
 import { byId, commands } from '../commands'
 import { bindingLabels, useKeymapVersion } from '../keymap'
 import { OPS, opById } from '../ops'
 import { MirrorRotateSection } from './MirrorRotate'
-import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type PrimitiveKind, type Vec3 } from '../model'
+import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type Vec3 } from '../model'
 import { PaintPanel } from './PaintPanel'
 import { CmdBtn } from './CmdBtn'
 import { WorkspaceTabs, shownWorkspace } from './Workspace'
@@ -16,6 +16,7 @@ import { WS_TABS, WS_TIPS } from '../wsconfig'
 import { ClipsPanel } from './ClipsPanel'
 import { MenuBar } from './MenuBar'
 import { uiScale } from '../uiscale'
+import { CreateTab } from './CreatePicker'
 
 export const TABS = ['Create', 'Modify', 'Multiply', 'Construct', 'Map', 'Paint', 'Setup', 'Animate', 'Export'] as const
 const TAB_ID: Record<Tab, string> = { Create: 'create', Modify: 'modify', Multiply: 'multiply', Construct: 'construct', Map: 'uv', Paint: 'paint', Setup: 'rig', Animate: 'animate', Export: 'export' }
@@ -119,22 +120,7 @@ export function ToolRail() {
         {tabs.map(t => <button key={t} className={tab === t ? 'on' : ''} data-testid={`tab-${TAB_ID[t]}`} onClick={() => { setTab(t); useStore.getState().setUVSpace(t === 'Map') }}>{t}</button>)}
       </div>
       <div className="tool-list">
-        {tab === 'Create' && <>
-          <h4>Primitives</h4>
-          {(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => <PrimBtn key={k} kind={k} />)}
-          <h4>Points</h4>
-          <CmdBtn cmd="tool.point" label="Point" active={tool === 'point'} />
-          <CmdBtn cmd="op.con.face" label="Make polygon" />
-          <CmdBtn cmd="tool.joint" label="Joints" active={tool === 'joint'} />
-          <h4>Samples</h4>
-          <CmdBtn cmd="sample.character" label="Character + walk" testid="sample-character" />
-          <CmdBtn cmd="sample.windmill" label="Windmill" testid="sample-windmill" />
-          <h4>Reference</h4>
-          <button className="tool-btn" data-testid="ref-add-rail" title="Add a viewport reference image"
-            onClick={() => { openSideTab('refs'); setTimeout(() => document.querySelector<HTMLElement>('[data-testid="ref-add-btn"]')?.click(), 50) }}>
-            <span>Add reference…</span>
-          </button>
-        </>}
+        {tab === 'Create' && <CreateTab />}
         {tab === 'Modify' && <>
           <h4>Shading</h4>
           <CmdBtn cmd="shade.flat" label="Flat" testid="shade-flat" />
@@ -217,19 +203,6 @@ export function ToolRail() {
 }
 
 /** LightWave's "n" Numeric window: edit the last operation's parameters live. */
-/** Primitive button: click arms box drawing; double-click drops a default one at the origin. */
-function PrimBtn({ kind }: { kind: PrimitiveKind }) {
-  const armed = useStore(s => s.draw?.kind === kind)
-  return (
-    <button className={`tool-btn ${armed ? 'on' : ''}`} data-testid={`prim-${kind}`}
-      title={`${PRIMITIVES[kind].label}: drag a box in any view (Shift equal sides, Ctrl grid) · double-click or Enter drops one at the origin`}
-      onClick={() => useStore.getState().armDraw(kind)}
-      onDoubleClick={() => { const s = useStore.getState(); s.cancelDraw(); s.addPrimitive(kind) }}>
-      <span>{PRIMITIVES[kind].label}</span>
-    </button>
-  )
-}
-
 /** While drawing a primitive: live box size and segments, Enter confirms, Esc cancels. */
 export function DrawPanel() {
   const d = useStore(s => s.draw)

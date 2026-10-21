@@ -4,7 +4,9 @@ import { useStore, WORKSPACES, type EditMode, type PaintMode, type Tool, type Wo
 import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
 import { pairs as xPairs } from './xmirror'
 import { PRIMITIVES, type PrimitiveKind } from './model'
+import { HIDDEN_KINDS } from './prims/extra'
 import { OPS } from './ops'
+import { geometryToOrigin, originToGeometry, originToPoint } from './origin'
 import * as G from './geom'
 import { interaction } from './interaction'
 import { ask } from './dialog'
@@ -52,6 +54,34 @@ async function scaleKeysPrompt() {
   }, 'Scale keys')
 }
 const modalXf = (t: 'move' | 'rotate' | 'scale') => () => { S().set({ tool: t }); startModal(t) }
+
+/** The objects (groups) touched by the selection: selected faces, or faces using the selected points. */
+export function selectedObjects(): number[] {
+  const s = S(), m = s.model, gs = new Set<number>()
+  s.selFaces.forEach(f => { const g = m.faces[f]?.g; if (g !== undefined) gs.add(g) })
+  if (s.selVerts.size) for (const f of m.faces) if (f.v.some(v => s.selVerts.has(v))) gs.add(f.g)
+  return [...gs].filter(g => !!m.groups[g]).sort((a, b) => a - b)
+}
+const hasObjSel = () => selectedObjects().length > 0
+type OriginKind = 'geometry' | 'cursor' | 'geoToOrigin'
+const ORIGIN_LABEL: Record<OriginKind, string> = { geometry: 'Origin to geometry', cursor: 'Origin to 3D cursor', geoToOrigin: 'Geometry to origin' }
+/** The Set Origin popup at the mouse (Ctrl+Shift+Alt+C, and a viewport right-click on a selection). */
+export function openSetOrigin(title = 'Set Origin') {
+  const go = (k: OriginKind) => () => { S().set({ popup: null }); setOrigin(k) }
+  S().set({ popup: { title, items: [
+    { id: 'origin-geometry', label: 'Origin to Geometry', run: go('geometry') },
+    { id: 'origin-cursor', label: 'Origin to 3D Cursor', run: go('cursor') },
+    { id: 'geometry-origin', label: 'Geometry to Origin', run: go('geoToOrigin') },
+  ] } })
+}
+function setOrigin(kind: OriginKind) {
+  const s = S(), gs = selectedObjects()
+  if (!gs.length) return s.notify('Select an object first')
+  if (s.draw?.has) s.confirmDraw()
+  const c = [...s.cursor3d] as [number, number, number]
+  s.edit(m => { if (kind === 'geometry') originToGeometry(m, gs); else if (kind === 'cursor') originToPoint(m, gs, c); else geometryToOrigin(m, gs) }, ORIGIN_LABEL[kind])
+  s.commit()
+}
 
 export const commands: Command[] = [
   tool('select', 'Select tool', 'Q'),
@@ -159,7 +189,7 @@ export const commands: Command[] = [
   { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', run: () => S().hideSelection() },
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },
-  ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
+  ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => !HIDDEN_KINDS.has(k)).map(k => ({ id: `add.${k}`, label: `Add ${PRIMITIVES[k].label}`, group: 'Create', run: () => S().addPrimitive(k) })),
   ...OPS.filter(o => !o.id.startsWith('prim.') && o.tab !== 'Mirror').map(o => ({ id: `op.${o.id}`, label: o.label, group: o.tab, keys: OP_KEYS[o.id], run: () => S().runOp(o.id) })),
   // Mirror & Rotate (mirrorCmds.ts): mesh.flipX/Y/Z, mesh.copyX/Y/Z, mesh.rotateX/Y/Z, view.flipH/V, view.rotateCW/CCW, Ctrl+M
   ...mirrorCommands,
@@ -178,6 +208,11 @@ export const commands: Command[] = [
   { id: 'edit.redo', label: 'Redo', group: 'Edit', keys: 'Ctrl+Shift+Z', run: () => S().doRedo() },
   { id: 'edit.redo2', label: 'Redo', group: 'Edit', keys: 'Ctrl+Y', run: () => S().doRedo() },
   { id: 'joint.addAtCursor', label: 'Add joint at 3D cursor', group: 'Setup', keys: 'Shift+A', run: () => S().addJointAtCursor() },
+  // Set Origin (Blender: Object → Set Origin), on the selected objects, one undo step each
+  { id: 'object.originToGeometry', label: 'Origin to geometry', group: 'Object', when: hasObjSel, run: () => setOrigin('geometry') },
+  { id: 'object.originToCursor', label: 'Origin to 3D cursor', group: 'Object', when: hasObjSel, run: () => setOrigin('cursor') },
+  { id: 'object.geometryToOrigin', label: 'Geometry to origin', group: 'Object', when: hasObjSel, run: () => setOrigin('geoToOrigin') },
+  { id: 'object.setOrigin', label: 'Set Origin menu (origin to geometry / 3D cursor, geometry to origin)', group: 'Object', keys: 'Ctrl+Shift+Alt+C', run: () => openSetOrigin() },
   { id: 'cursor.origin', label: '3D cursor to origin', group: 'View', keys: 'Shift+C', run: () => S().set({ cursor3d: [0, 0, 0] }) },
   { id: 'cursor.selection', label: '3D cursor to selection', group: 'View', run: () => void import('./scene').then(({ sceneManager }) => {
     const s = S(), P = sceneManager.posed

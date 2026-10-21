@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { EXTRA_PRIMITIVES, EXTRA_SEG_KEY, SPHERE_TYPE_PARAMS, extraPolys, spherePolys, type ExtraKind } from './prims/extra'
 
 export type Vec3 = [number, number, number]
 export type Vec2 = [number, number]
@@ -700,7 +701,7 @@ export function prismPolys(profile: Vec2[], width: number): Poly[] {
   return out
 }
 
-export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus' | 'capsule' | 'tube' | 'pyramid' | 'disc' | 'wedge' | 'stairs'
+export type PrimitiveKind = 'box' | 'sphere' | 'geosphere' | 'cylinder' | 'cone' | 'plane' | 'torus' | 'capsule' | 'tube' | 'pyramid' | 'disc' | 'wedge' | 'stairs' | ExtraKind
 export interface ParamDef { key: string; label: string; def: number; min: number; max: number; step: number; int?: boolean; kind?: 'num' | 'bool' | 'axis' | 'enum'; options?: string[] }
 export type Params = Record<string, number>
 
@@ -711,7 +712,7 @@ const SIDES = (d: number, min = 3) => P('sides', 'Sides', d, min, 128, 1, true)
 /** Parameters of every primitive (shown in the Numeric panel right after creation). */
 export const PRIMITIVES: Record<PrimitiveKind, { label: string; params: ParamDef[] }> = {
   box: { label: 'Box', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1), P('seg', 'Segments', 1, 1, 32, 1, true)] },
-  sphere: { label: 'Sphere', params: [SIZE('r', 'Radius', 0.6), SIDES(10), P('rings', 'Rings', 7, 2, 64, 1, true)] },
+  sphere: { label: 'Sphere', params: [SIZE('r', 'Radius', 0.6), SIDES(10), P('rings', 'Rings', 7, 2, 64, 1, true), ...SPHERE_TYPE_PARAMS] },
   geosphere: { label: 'Geosphere', params: [SIZE('r', 'Radius', 0.6), P('detail', 'Detail', 1, 0, 4, 1, true)] },
   cylinder: { label: 'Cylinder', params: [SIZE('r', 'Radius', 0.5), SIZE('h', 'Height', 1), SIDES(10), P('seg', 'Segments', 1, 1, 32, 1, true)] },
   cone: { label: 'Cone', params: [SIZE('r', 'Radius', 0.5), SIZE('h', 'Height', 1), SIDES(10), P('seg', 'Segments', 1, 1, 32, 1, true)] },
@@ -723,7 +724,9 @@ export const PRIMITIVES: Record<PrimitiveKind, { label: string; params: ParamDef
   disc: { label: 'Disc', params: [SIZE('r', 'Radius', 0.6), SIDES(12)] },
   wedge: { label: 'Wedge', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1)] },
   stairs: { label: 'Stairs', params: [SIZE('w', 'Width', 1), SIZE('h', 'Height', 1), SIZE('d', 'Depth', 1.2), P('steps', 'Steps', 4, 1, 64, 1, true)] },
+  ...EXTRA_PRIMITIVES,
 }
+const isExtra = (k: PrimitiveKind): k is ExtraKind => k in EXTRA_PRIMITIVES
 
 export function primitiveDefaults(kind: PrimitiveKind): Params {
   return Object.fromEntries(PRIMITIVES[kind].params.map(p => [p.key, p.def]))
@@ -743,6 +746,8 @@ export function cleanParams(defs: ParamDef[], p: Params): Params {
 
 export function makePolys(kind: PrimitiveKind, params: Params = {}): Poly[] | THREE.BufferGeometry {
   const q = cleanParams(PRIMITIVES[kind].params, { ...primitiveDefaults(kind), ...params })
+  if (isExtra(kind)) return extraPolys(kind, q)
+  if (kind === 'sphere' && q.type) return spherePolys(q.type, q.r, q.detail) ?? makePolys('geosphere', { r: q.r, detail: q.detail })
   switch (kind) {
     case 'box': return boxPolys(q.w, q.h, q.d, q.seg)
     case 'plane': return planePolys(q.w, q.d, q.seg)
@@ -783,7 +788,7 @@ export function makePolys(kind: PrimitiveKind, params: Params = {}): Poly[] | TH
 /** The parameter the mouse wheel / segment field changes while drawing a primitive. */
 export const SEG_KEY: Record<PrimitiveKind, string | null> = {
   box: 'seg', sphere: 'sides', geosphere: 'detail', cylinder: 'sides', cone: 'sides', plane: 'seg', torus: 'sides',
-  capsule: 'sides', tube: 'sides', pyramid: 'sides', disc: 'sides', wedge: null, stairs: 'steps',
+  capsule: 'sides', tube: 'sides', pyramid: 'sides', disc: 'sides', wedge: null, stairs: 'steps', ...EXTRA_SEG_KEY,
 }
 export const segOf = (k: PrimitiveKind, p: Params) => (SEG_KEY[k] ? p[SEG_KEY[k]!] : 1)
 export function clampSeg(k: PrimitiveKind, v: number): number {
@@ -815,7 +820,17 @@ export function fitPrimitive(m: Model, kind: PrimitiveKind, a: Vec3, b: Vec3, se
       return ext < 1e-9 ? (min[i] + max[i]) / 2 : min[i] + ((p[i] - lo[i]) / ext) * (max[i] - min[i])
     }) as Vec3
   }
+  centerNewPivot(m, r.verts)
   return r
+}
+
+/** A just-added primitive (the last group, identity transform) gets its origin at its bounding-box centre. */
+function centerNewPivot(m: Model, verts: number[]) {
+  const g = m.groups[m.groups.length - 1]
+  if (!g || !verts.length) return
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+  for (const v of verts) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], m.verts[v][i]); hi[i] = Math.max(hi[i], m.verts[v][i]) }
+  g.xf.pivot = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
 }
 
 /** Append a primitive to the model as a new group, welding coincident vertices. Returns new vertex & face indices. */
@@ -826,6 +841,7 @@ export function addPrimitive(m: Model, kind: PrimitiveKind, at: Vec3 = [0, 0, 0]
   const r = Array.isArray(src) ? addPolys(m, src, `${label} ${n}`, at) : addGeometry(m, src, `${label} ${n}`, at)
   if (!Array.isArray(src)) src.dispose()
   if (mat > 0 && mat < m.materials.length) m.groups[m.groups.length - 1].mat = mat
+  centerNewPivot(m, r.verts)
   return r
 }
 

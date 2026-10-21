@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { FLAT_KINDS } from '../src/prims/extra'
 import { emptyModel, fitPrimitive, PRIMITIVES, type Model, type PrimitiveKind, type Vec3 } from '../src/model'
 
 /** Signed volume of the faces: positive when every face winds counter-clockwise seen from outside. */
@@ -13,7 +14,7 @@ function signedVolume(m: Model, faces: number[]) {
   }
   return v / 6
 }
-const solids = (Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => k !== 'plane' && k !== 'disc')
+const solids = (Object.keys(PRIMITIVES) as PrimitiveKind[]).filter(k => !FLAT_KINDS.has(k))
 const corners: [string, Vec3, Vec3][] = [
   ['min→max', [-1, -0.5, -1], [1, 0.5, 1]],
   ['dragged right-to-left on X', [1, -0.5, -1], [-1, 0.5, 1]],

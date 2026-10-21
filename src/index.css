@@ -952,3 +952,39 @@ button.danger { color: #ff9a9a; }
 .set-live { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: var(--fs-xs); }
 .set-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--y); }
 .modal[data-testid="settings"] .modal-foot { align-items: center; border-top: 1px solid var(--line); padding: 8px 14px; }
+/* Create tab: shape search, then collapsible sections; shapes are compact text-only tiles in two equal columns
+   (one column when the tool panel is dragged below ~180 px), Points / Samples / Reference are full-width rows */
+.prim-picker { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.prim-search { width: 100%; box-sizing: border-box; background: #0f1116; border: 1px solid var(--line2); border-radius: 3px; padding: 4px 7px; color: var(--text); outline: none; font-size: 12px; }
+.prim-search:focus { border-color: var(--accent); }
+.prim-chips { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 2px; }
+.prim-chip { flex: 0 1 auto; min-width: 0; font-size: 11px; padding: 1px 6px; border-radius: 3px; color: var(--dim); background: transparent; }
+.prim-chip.on { background: var(--panel2); border-color: var(--line2); color: var(--text); }
+.cr-sec { border-top: 1px solid var(--line); padding: 2px 0 4px; min-width: 0; }
+.cr-head { width: 100%; display: flex; align-items: center; gap: 4px; background: none; border: none; border-radius: 3px; padding: 4px 2px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); cursor: pointer; }
+.cr-head:hover:not(:disabled) { color: var(--text); background: none; }
+.cr-head:disabled { cursor: default; opacity: 1; }
+.cr-head svg { flex: none; }
+.cr-head .cr-label { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-head .n { color: var(--dim); font-weight: 400; opacity: .7; font-variant-numeric: tabular-nums; }
+.cr-body { display: flex; flex-direction: column; gap: 1px; }
+.prim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; }
+.prim-tile { display: flex; align-items: center; justify-content: flex-start; text-align: left; min-width: 0; min-height: 26px; padding: 3px 7px; border-radius: 3px; font-size: 12px; line-height: 1.15; white-space: normal; overflow-wrap: anywhere; hyphens: manual; background: var(--panel2); border: 1px solid transparent; }
+.prim-tile:hover { border-color: var(--line2); }
+.prim-tile.on { border-color: var(--accent); background: rgba(109,139,255,.16); }
+.prim-tile.hi { outline: 1px solid var(--accent); outline-offset: -1px; }
+.prim-tile.pinned { box-shadow: inset 2px 0 0 var(--gold); }
+.prim-empty { padding: 4px 2px; font-size: 11px; }
+.cr-body .tool-btn { border-radius: 3px; }
+.cr-body .tool-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-body .tool-btn kbd { flex: none; margin-left: 6px; color: var(--dim); }
+@container (max-width: 163px) { .prim-grid { grid-template-columns: minmax(0, 1fr); } .cr-body .tool-btn kbd { display: none; } .prim-chip { padding: 1px 4px; } .prim-chips { gap: 2px; } }
+
+/* Scene tab: the selected object's Transform, Origin to geometry right under Position */
+.ot { flex: none; display: flex; flex-direction: column; gap: 4px; margin: 8px 8px 2px; padding: 8px; background: #13161c; border: 1px solid var(--line); border-radius: 3px; font-size: 11.5px; }
+.ot-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); margin-bottom: 2px; }
+.ot-name { flex: 1; min-width: 0; text-align: right; text-transform: none; letter-spacing: 0; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-row { display: grid; grid-template-columns: 52px repeat(3, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.ot-lbl { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-num { width: 100%; min-width: 0; box-sizing: border-box; font-size: 11.5px; padding: 2px 4px; border-radius: 2px; font-variant-numeric: tabular-nums; }
+.ot-origin { width: 100%; justify-content: center; padding: 4px 6px; margin: 1px 0 3px; font-size: 11.5px; border-radius: 3px; background: var(--panel2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -5,6 +5,7 @@
 import { byId, WS_NAME } from './commands'
 import { history, useStore, WORKSPACES, type Layout } from './store'
 import { PRIMITIVES, type PrimitiveKind } from './model'
+import { PRIM_GROUPS } from './prims/extra'
 import { ask } from './dialog'
 import { panelCollapsed } from './useLayout'
 import { getBindingLabel } from './keymap'
@@ -99,6 +100,13 @@ export function buildMenus(openPalette: () => void): Menu[] {
       cmd('mesh.mirrorMenu', 'Mirror Menu…'),
     ] },
     'sep',
+    // Set Origin (Blender: Object → Set Origin); lives in Edit so the header keeps its six menus
+    { id: 'edit.setOrigin', label: 'Set Origin', keys: getBindingLabel('object.setOrigin') || undefined, sub: [
+      cmd('object.originToGeometry', 'Origin to Geometry'),
+      cmd('object.originToCursor', 'Origin to 3D Cursor'),
+      cmd('object.geometryToOrigin', 'Geometry to Origin'),
+    ] },
+    'sep',
     // the animation clipboard, only in Animate mode (Ctrl+C / Ctrl+V do nothing in Model mode)
     ...(animate ? [
       cmd('anim.copy', 'Copy Pose'),
@@ -155,7 +163,9 @@ export function buildMenus(openPalette: () => void): Menu[] {
     cmd('sel.unhide', 'Unhide All'),
   ]
   const create: MenuEntry[] = [
-    ...(Object.keys(PRIMITIVES) as PrimitiveKind[]).map(k => cmd(`add.${k}`, PRIMITIVES[k].label)),
+    // Basic shapes inline, the other picker groups as submenus (same grouping as the Create panel)
+    ...(PRIM_GROUPS[0].kinds as PrimitiveKind[]).map(k => cmd(`add.${k}`, PRIMITIVES[k].label)),
+    ...PRIM_GROUPS.slice(1).map((g): MenuItem => ({ id: `create.${g.id}`, label: g.label, sub: (g.kinds as PrimitiveKind[]).map(k => cmd(`add.${k}`, PRIMITIVES[k].label)) })),
     'sep',
     cmd('tool.point', 'Point Tool', { checked: s.tool === 'point' }),
     cmd('op.con.face', 'Polygon from Points'),

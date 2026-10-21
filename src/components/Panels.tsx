@@ -7,6 +7,7 @@ import { textures } from '../textures'
 import { importImage } from '../io'
 import { UVEditor } from './UVEditor'
 import { Outliner } from './Outliner'
+import { ObjectTransform } from './ObjectTransform'
 import { DopeSheet } from './DopeSheet'
 import { RefsPanel } from './RefsPanel'
 import { setHost } from '../portalhost'
@@ -77,7 +78,7 @@ function SideRail({ tabs, cur, collapsed }: { tabs: PanelTab[]; cur?: string; co
 }
 
 // ---- built-in tabs (Developer 3's Paint tabs register the same way: registerTab('paint', {...})) ----
-registerTab('*', { id: 'scene', icon: Box, title: 'Scene · objects', order: 10, badge: () => useStore.getState().model.groups.length, render: () => <Outliner tab="objects" /> })
+registerTab('*', { id: 'scene', icon: Box, title: 'Scene · objects', order: 10, badge: () => useStore.getState().model.groups.length, render: () => <><ObjectTransform /><Outliner tab="objects" /></> })
 registerTab('*', { id: 'joints', icon: Bone, title: 'Skeleton · joints', order: 20, badge: () => useStore.getState().model.bones.length, render: () => <><Outliner tab="joints" /><JointExtras /></> })
 registerTab(['model', 'uv', 'paint', 'rig', 'animate'], { id: 'materials', icon: Palette, title: 'Materials', order: 30, badge: () => useStore.getState().model.materials.length, render: () => <MaterialsPanel /> })
 registerTab('*', { id: 'clips', icon: Clapperboard, title: 'Clips', order: 40, badge: () => useStore.getState().model.clips.length, render: () => <><Outliner tab="clips" /><ClipKeys /></> })

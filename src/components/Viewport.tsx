@@ -12,7 +12,7 @@ import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
 import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction, setHoverFace } from '../interaction'
 import { topology } from '../topology'
-import type { ModalKind } from '../commands'
+import { openSetOrigin, selectedObjects, type ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
 import { facePoint, knifeCut, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
@@ -27,7 +27,7 @@ const ORTHO_DIR: Record<string, { pos: Vec3; up: Vec3 }> = {
 
 type Drag =
   | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean; toggle?: boolean }
-  | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number; cursorAt?: { x: number; y: number } }
+  | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number; cursorAt?: { x: number; y: number }; menuAt?: { x: number; y: number } }
   | { kind: 'paint' }
   | { kind: 'draw'; phase: 'foot' | 'height'; p0: THREE.Vector3; x0: number; y0: number; moved: boolean; h0?: number }
   | { kind: 'drawHandle'; axis: number; side: 0 | 1; x0: number; y0: number; v: { x: number; y: number }; min: Vec3; max: Vec3 }
@@ -1033,8 +1033,9 @@ export function Viewport({ pane }: { pane: number }) {
     }
     hit.current!.setPointerCapture(e.pointerId)
     if (btn === 2 && st.extruding) { st.cancelExtrude(); drag.current = null; return }
-    if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : {}) }; return }
-    if (btn === 2 || (btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select' && st.tool !== 'paint')) { drag.current = { kind: 'orbit', x, y }; return }
+    if (btn === 1 || (btn === 2 && (!isPersp || e.shiftKey))) { drag.current = { kind: 'pan', x, y, ...(btn === 2 && e.shiftKey ? { cursorAt: { x, y } } : btn === 2 ? { menuAt: { x, y } } : {}) }; return }
+    if (btn === 2) { drag.current = { kind: 'orbit', x, y, menuAt: { x, y } }; return }
+    if ((btn === 0 && e.altKey && !(e.ctrlKey || e.metaKey) && isPersp && st.tool !== 'select' && st.tool !== 'paint')) { drag.current = { kind: 'orbit', x, y }; return }
     if (btn !== 0) return
     if (st.draw && st.mode === 'model') { drawDown(x, y, e.ctrlKey || e.metaKey, e.timeStamp); return }
     // the gizmo is hit-tested first, with this pane's camera; a hit skips picking and keeps the camera still.
@@ -1193,6 +1194,14 @@ export function Viewport({ pane }: { pane: number }) {
         useStore.getState().set({ cursor3d: [p.x, p.y, p.z] })
       }
       drag.current = null; return
+    }
+    if ((d?.kind === 'pan' || d?.kind === 'orbit') && d.menuAt) {
+      // right-click without dragging on a selection: the object menu (Set Origin) at the mouse
+      const { x, y } = local(e)
+      drag.current = null
+      const st = useStore.getState()
+      if (Math.hypot(x - d.menuAt.x, y - d.menuAt.y) < 4 && !st.draw && st.mode === 'model' && selectedObjects().length) openSetOrigin('Object · Set Origin')
+      return
     }
     if (d?.kind === 'drawHandle') { drag.current = null; return }
     if (d?.kind === 'draw') {

@@ -43,6 +43,16 @@ describe('menu contents', () => {
     expect(labels(find(m[0].items, 'file.export')!.sub!)).toEqual(['glTF binary (.glb)', 'glTF embedded (.gltf)', 'Wavefront (.obj)'])
     expect(labels(find(m[0].items, 'file.import')!.sub!).filter(l => l !== '—')).toHaveLength(5)
   })
+  it('Set Origin lives in Edit (after Mirror & Rotate, between separators); no top-level Object menu', () => {
+    const m = buildMenus(() => {})
+    expect(m.some(x => x.label === 'Object')).toBe(false)
+    const edit = m[1].items, ids = edit.map(e => (isItem(e) ? e.id : 'sep'))
+    const i = ids.indexOf('edit.setOrigin')
+    expect(i).toBeGreaterThan(ids.indexOf('edit.mirrorRotate'))
+    expect(ids.indexOf('edit.mirrorRotate')).toBeGreaterThan(ids.indexOf('edit.delete'))
+    expect([ids[i - 1], ids[i + 1]]).toEqual(['sep', 'sep'])
+    expect(labels(find(edit, 'edit.setOrigin')!.sub!)).toEqual(['Origin to Geometry', 'Origin to 3D Cursor', 'Geometry to Origin'])
+  })
   it('every entry runs an existing command (or a store setter) and shows that command’s shortcut', () => {
     const walk = (es: MenuEntry[]) => es.forEach(e => {
       if (!isItem(e)) return
