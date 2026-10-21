@@ -246,6 +246,21 @@ export class History {
     this.enforceCap()
   }
   begin(m: Model, label: string) { this.commit(m); this.pending = true; this.pendingLabel = label }
+  /**
+   * MOD-2 `mergeUndo`: record the pending edit INTO the step on top instead of pushing a new one (Blender's
+   * duplicate_move: duplicate + move = one Ctrl+Z). The top step is rebuilt from the step below it, keeping its label.
+   * With no step to amend (only the base, or a texture step on top) it commits normally and returns false.
+   */
+  amend(m: Model): boolean {
+    if (!this.pending) return false
+    this.truncate()
+    if (this.cur === 0 || this.steps[this.cur].tex) { this.commit(m); return false }
+    const top = this.steps.pop()!
+    this.bytes -= top.bytes; this.cur--; this.tip = null
+    this.pendingLabel = top.label
+    this.commit(m) // still pending: diffs against the step below; no net change leaves no step at all
+    return true
+  }
   /** Discard the pending edit; returns the model to restore. */
   cancel(): Model | null {
     if (!this.pending) return null

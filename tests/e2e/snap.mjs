@@ -43,8 +43,11 @@ await p.click('[data-testid="snap-target"]'); await frame()
 check('cycle snap target to Vert', await S(() => window.__polyform.getState().snapTarget === 'vertex'))
 await p.click('[data-testid="snap-target"]'); await frame()
 check('cycle snap target to Incr', await S(() => window.__polyform.getState().snapTarget === 'increment'))
+// the pivot button opens the Pivot Point menu (MOD-2); picking a row sets the pivot
 await p.click('[data-testid="pivot"]'); await frame()
-check('cycle pivot', await S(() => window.__polyform.getState().pivot !== 'cursor'))
+check('pivot button opens the Pivot Point menu', (await p.locator('[data-testid="popup"]').count()) === 1)
+await p.click('[data-testid="popup-median"]'); await frame()
+check('picking Median Point in the menu sets the pivot', await S(() => window.__polyform.getState().pivot === 'median'))
 
 await p.screenshot({ path: '/workspace/shot-snap.png' })
 const failed = results.filter(r => !r[1])

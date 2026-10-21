@@ -197,7 +197,7 @@ const sub = (label: string, ...items: Spec[]): Section => ({ label, sub: items }
 
 /** Planned commands with a reserved slot (owner, ticket). Listed for the spec and the unit test. */
 export const RESERVED: Record<string, string> = {
-  'edit.repeatLast': 'Frontend · MOD-3 (Shift+R)', 'xf.shrinkFatten': 'Frontend · MOD-10 (Alt+S)', 'view.xray': 'Frontend · Alt+Z',
+  'edit.repeatLast': 'Frontend · MOD-3 (Shift+R)', 'view.xray': 'Frontend · Alt+Z',
   'edit.duplicateLinked': 'Developer 2 · Alt+D',
   'sel.loop': 'Developer 2 · loop select', 'sel.ring': 'Developer 2 · Ctrl+Alt ring select',
   'mesh.symmetrize': 'Backend · SYM-4', 'mesh.snapSymmetry': 'Backend · SYM-4', 'joint.symmetrize': 'Developer 2 · SYM-7', 'anim.flipPose': 'Developer 2 · SYM-8',

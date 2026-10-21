@@ -12,6 +12,8 @@ export interface ModalValue {
   digits?: number
   /** the raw text being typed for this value; `undefined` = not typing (no field shown), `''` = empty field */
   typed?: string
+  /** MOD-2: part of the previous value's group, joined with a space instead of ` · ` (`Scale · X 2.000 Y 2.000 Z 2.000`) */
+  join?: boolean
 }
 
 export type ModalAxisName = 'x' | 'y' | 'z' | 'normal' | 'view'
@@ -74,7 +76,9 @@ export const axisChipClass = (a: ModalAxis) => (a.axis === 'x' || a.axis === 'y'
 
 /** The readout as one string (what e2e tests assert): `Loop Cut · Cuts 1 · Smoothness 0.000`. Never truncated. */
 export function readoutText(s: Pick<ModalStatus, 'op' | 'values'>): string {
-  return [s.op, ...s.values.map(v => (v.label ? `${v.label} ${formatValue(v)}` : formatValue(v)))].join(' · ')
+  let out = s.op
+  for (const v of s.values) out += (v.join ? ' ' : ' · ') + (v.label ? `${v.label} ${formatValue(v)}` : formatValue(v))
+  return out
 }
 
 /** Keycaps of a hint, resolving `cmd` through `resolve` (the keymap). `[]` = hide the hint (unbound command). */
@@ -105,15 +109,18 @@ export function deriveInfo(s: ModalStatus, resolve: (cmd: string) => string = ()
 }
 
 /** Hints for G / R / S / E and other mouse-driven transforms (spec §0.2 "Extrude (and G/R/S)"). */
-export function transformHints(opts: { snapOn?: boolean } = {}): ModalHint[] {
+export function transformHints(opts: { snapOn?: boolean; precise?: boolean; plane?: boolean } = {}): ModalHint[] {
   return [
     { keys: [MOUSE.LMB, '↵'], label: 'Confirm', p: 1 },
     { keys: [MOUSE.RMB, 'Esc'], label: 'Cancel', p: 1 },
     { keys: ['X', 'Y', 'Z'], label: 'Axis', p: 1 },
+    { keys: ['Shift', 'X', 'Y', 'Z'], label: 'Plane', p: 2, on: !!opts.plane },
     { keys: ['Ctrl'], label: 'Snap', p: 2, on: !!opts.snapOn },
+    { keys: ['Shift'], label: 'Precision', p: 2, on: !!opts.precise },
     { keys: ['0–9'], label: 'Type', p: 2 },
+    { keys: ['C'], label: 'Clear axis', p: 3 },
     { keys: ['-'], label: 'Negate', p: 3 },
-    { keys: ['Bksp'], label: 'Delete digit', p: 3 },
+    { keys: ['='], label: 'Expression', p: 3 },
   ]
 }
 
@@ -124,6 +131,12 @@ export interface TransformReading {
   label: string
   /** locked axis index (0-2) or null; `normal` = constrained to a custom normal (extrude) */
   axis: 0 | 1 | 2 | null
+  /** MOD-2: Shift+X/Y/Z: the lock is the plane perpendicular to `axis` */
+  plane?: boolean
+  /** scale: the per-axis factors (overrides `factor` in the readout) */
+  scale?: [number, number, number]
+  /** Shift precision is on */
+  precise?: boolean
   normal: boolean
   space: 'global' | 'local'
   typed: string
@@ -141,12 +154,12 @@ export function transformStatus(r: TransformReading): Omit<ModalStatus, 'id'> {
   const typed = r.typed === '' ? undefined : r.typed
   const AX = ['x', 'y', 'z'] as const
   const axis: ModalAxis | null = r.normal && r.axis === null ? { axis: 'normal', space: 'normal' }
-    : r.axis !== null ? { axis: AX[r.axis], space: r.space }
+    : r.axis !== null ? { axis: AX[r.axis], space: r.space, ...(r.plane && r.op !== 'rotate' ? { plane: true } : {}) }
       : r.op === 'rotate' ? { axis: 'view' } : null
   let values: ModalValue[]
   if (r.op === 'move') {
     const t = r.t ?? [0, 0, 0]
-    if (r.axis !== null || r.normal) values = [{ label: 'D', value: r.along ?? 0, unit: 'm', typed }]
+    if ((r.axis !== null && !r.plane) || (r.normal && r.axis === null)) values = [{ label: 'D', value: r.along ?? 0, unit: 'm', typed }]
     else {
       const len = Math.hypot(t[0], t[1], t[2])
       values = [
@@ -155,6 +168,12 @@ export function transformStatus(r: TransformReading): Omit<ModalStatus, 'id'> {
       ]
     }
   } else if (r.op === 'rotate') values = [{ label: 'Angle', value: r.angle ?? 0, digits: 1, unit: '°', typed }]
-  else values = [{ label: 'Factor', value: r.factor ?? 1, typed }]
-  return { op: r.label, values, axis, tags: [], keys: transformHints({ snapOn: r.snapOn }), cursor: r.op === 'move' ? 'move' : undefined }
+  else {
+    // Blender: `Scale X: 1.250 Y: 1.250 Z: 1.250`; one axis: `Scale · Z 1.250`; a plane: the two scaled axes
+    const f = r.factor ?? 1
+    const sc = r.scale ?? (r.axis === null ? [f, f, f] : ([0, 1, 2].map(i => ((r.plane ? i !== r.axis : i === r.axis) ? f : 1)) as [number, number, number]))
+    const shown = r.axis === null ? [0, 1, 2] : r.plane ? [0, 1, 2].filter(i => i !== r.axis) : [r.axis]
+    values = shown.map((i, k) => ({ label: 'XYZ'[i], value: sc[i], ...(k === 0 ? { typed } : { join: true }) }))
+  }
+  return { op: r.label, values, axis, tags: [], keys: transformHints({ snapOn: r.snapOn, precise: r.precise, plane: !!r.plane && r.axis !== null }), cursor: r.op === 'move' ? 'move' : r.op === 'scale' ? 'crosshair' : undefined }
 }

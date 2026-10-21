@@ -23,7 +23,7 @@ export function currentPivot(): Vec3 {
   const s = S(), sel = s.opSel()
   const lastOf = (set: Set<number>) => (set.size ? [...set][set.size - 1] : undefined)
   const active = s.selectMode === 'vertex' ? { vert: lastOf(s.selVerts) } : s.selectMode === 'face' ? { face: lastOf(s.selFaces) } : undefined
-  return MO.pivotOf(s.model, sel, s.pivot, s.cursor3d, active)
+  return MO.pivotOf(s.model, sel, s.pivot === 'cursor' || s.pivot === 'active' ? s.pivot : 'median', s.cursor3d, active)
 }
 
 const pivotOpts = () => { const c = currentPivot(); return { pivotX: c[0], pivotY: c[1], pivotZ: c[2] } }

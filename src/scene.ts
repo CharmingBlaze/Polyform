@@ -180,6 +180,11 @@ class SceneManager {
     toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
     const toolP = new THREE.Points(this.toolPointGeo, this.toolPointMat = new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
     toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
+    // MOD-2 modal guides: constraint axis lines (every pane) and the dashed pivot→cursor guide (the modal's pane)
+    const axL = new THREE.LineSegments(this.axisLineGeo, new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.85 }))
+    axL.layers.enableAll(); axL.renderOrder = 9; axL.frustumCulled = false; s.add(axL)
+    this.guideLine = new THREE.Line(this.guideGeo, this.guideMat)
+    this.guideLine.renderOrder = 12; this.guideLine.frustumCulled = false; this.guideLine.visible = false; s.add(this.guideLine)
     // hover sync (UV-14): the face under the pointer in the UV editor, outlined on top in every pane
     const hov = new THREE.LineSegments(this.hoverGeo, new THREE.LineBasicMaterial({ color: '#ffd166', depthTest: false, transparent: true }))
     hov.layers.enableAll(); hov.renderOrder = 11; hov.frustumCulled = false; s.add(hov)
@@ -239,6 +244,47 @@ class SceneManager {
   setToolOverlay(lines: number[] | null, points: number[] | null = null) {
     this.toolLineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lines ?? [], 3))
     this.toolPointGeo.setAttribute('position', new THREE.Float32BufferAttribute(points ?? [], 3))
+    this.invalidate()
+  }
+
+  readonly axisLineGeo = new THREE.BufferGeometry()
+  readonly guideGeo = new THREE.BufferGeometry()
+  /** the dashed guide, coloured by the --modal-guide token */
+  readonly guideMat = new THREE.LineDashedMaterial({ color: '#ffffff', opacity: 0.7, transparent: true, depthTest: false, dashSize: 0.05, gapSize: 0.05 })
+  guideLine: THREE.Line | null = null
+  /** what the modal guides show now (e2e tests read it): axis line segments (xyz pairs) and the guide's two points */
+  modalGuides: { axes: number[]; guide: number[] | null; pane: number } | null = null
+  /**
+   * MOD-2: draw the modal transform guides. `axes`: lines through the pivot for the locked axis or plane (in the
+   * axis colours, every pane). `guide`: the dashed line from the pivot to the pointer, only in `guide.pane`; `dash`
+   * is the dash length in world units (4 px on screen). Null clears both.
+   */
+  setModalGuides(g: { axes?: { from: Vec3; to: Vec3; color: string }[]; guide?: { from: Vec3; to: Vec3; pane: number; dash: number } | null } | null) {
+    const pos: number[] = [], col: number[] = []
+    const c = new THREE.Color()
+    for (const a of g?.axes ?? []) {
+      pos.push(...a.from, ...a.to)
+      c.set(/^#[0-9a-f]{8}$/i.test(a.color) ? a.color.slice(0, 7) : a.color)
+      col.push(c.r, c.g, c.b, c.r, c.g, c.b)
+    }
+    this.axisLineGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    this.axisLineGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+    const gd = g?.guide ?? null
+    this.guideGeo.setAttribute('position', new THREE.Float32BufferAttribute(gd ? [...gd.from, ...gd.to] : [], 3))
+    if (this.guideLine) {
+      this.guideLine.visible = !!gd
+      if (gd) {
+        this.guideLine.layers.set(LAYER.gizmo0 + gd.pane)
+        this.guideLine.computeLineDistances()
+        this.guideMat.dashSize = this.guideMat.gapSize = gd.dash
+        if (typeof document !== 'undefined') {
+          const raw = getComputedStyle(document.documentElement).getPropertyValue('--modal-guide').trim() || '#ffffffb3'
+          const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(raw)
+          if (m) { this.guideMat.color.set(`#${m[1]}`); this.guideMat.opacity = m[2] ? parseInt(m[2], 16) / 255 : 1 }
+        }
+      }
+    }
+    this.modalGuides = g ? { axes: pos, guide: gd ? [...gd.from, ...gd.to] : null, pane: gd?.pane ?? -1 } : null
     this.invalidate()
   }
 

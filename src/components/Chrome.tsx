@@ -1,10 +1,11 @@
 import { openPicked } from '../fileActions'
-import { useEffect, useMemo, useState } from 'react'
+import { PIVOT_LABEL, PIVOT_SHORT } from '../modal/numinput'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Undo2, Redo2, Download, X, HelpCircle, SquarePlus, Move3d, Copy, Hammer, Grid3x3, Brush, Bone, Clapperboard, ChevronsRight, ChevronsLeft, MousePointer2, Move, RotateCw, Scaling } from 'lucide-react'
 import { setLeftCollapsed, sideHandle, useSides } from '../useLayout'
 import { history, useStore, type EditMode } from '../store'
-import { byId, commands } from '../commands'
-import { bindingLabels, useKeymapVersion } from '../keymap'
+import { byId, commands, openPivotMenu } from '../commands'
+import { bindingLabels, getBindingLabel, useKeymapVersion } from '../keymap'
 import { OPS, opById } from '../ops'
 import { MirrorRotateSection } from './MirrorRotate'
 import { PRIMITIVES, SEG_KEY, triCount, type ParamDef, type Vec3 } from '../model'
@@ -144,12 +145,8 @@ export function ToolRail() {
                 const i = order.indexOf(snapTarget)
                 set({ snapTarget: order[(i + 1) % order.length], snap: true })
               }}>{snapTarget === 'grid' ? 'Grid' : snapTarget === 'vertex' ? 'Vert' : 'Incr'}</button>
-            <button className="axis-btn" data-testid="pivot" title="Transform pivot: Median / 3D Cursor / Active. Click to cycle"
-              onClick={() => {
-                const order = ['median', 'cursor', 'active'] as const
-                const i = order.indexOf(pivot)
-                set({ pivot: order[(i + 1) % order.length] })
-              }}>{pivot === 'median' ? 'Median' : pivot === 'cursor' ? 'Cursor' : 'Active'}</button>
+            <button className="axis-btn" data-testid="pivot" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }} title={`Pivot: ${PIVOT_LABEL[pivot]}  ·  ${getBindingLabel('edit.pivotCycle')}`}
+              onClick={e => { const r = e.currentTarget.getBoundingClientRect(); openPivotMenu({ x: r.left, y: r.bottom + 2, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }) }}>{PIVOT_SHORT[pivot]}</button>
             <button className={`axis-btn ${xMirror ? 'on' : ''}`} data-testid="x-mirror" onClick={() => byId['edit.xmirror'].run()} title="X-mirror editing (Alt+X): transforms on one side update the paired verts across X = 0">X-Mirror</button>
           </div>
           <MirrorRotateSection />
@@ -409,10 +406,22 @@ if (typeof window !== 'undefined') window.addEventListener('pointermove', e => {
 export function Popup() {
   const p = useStore(s => s.popup)
   const [at, setAt] = useState(lastClient)
+  const box = useRef<HTMLDivElement>(null)
+  // anchored (a toolbar button): below it, else above it (bottom edge at its top), else clamped; never over it
+  useLayoutEffect(() => {
+    const a = p?.at?.anchor, el = box.current
+    if (!a || !el) return
+    // the anchor rect is viewport px; the popup's own px are those ÷ the UI scale
+    const z = uiScale(), top = a.top / z, bottom = a.bottom / z, left = a.left / z
+    const h = el.offsetHeight, w = el.offsetWidth, vh = window.innerHeight / z, gap = 2
+    const y = bottom + gap + h <= vh ? bottom + gap : top - gap - h >= 0 ? top - gap - h : Math.max(0, Math.min(bottom + gap, vh - h))
+    const x = Math.max(0, Math.min(left, window.innerWidth / z - w))
+    if (x !== at.x || y !== at.y) setAt({ x, y })
+  }, [p?.at?.anchor, at.x, at.y])
   useEffect(() => {
     if (!p) return
-    // pointer coords are viewport px; the popup sits in the UI-scaled document, so place it in those px
-    const z = uiScale(), x = lastClient.x / z, y = lastClient.y / z
+    // pointer / anchor coords are viewport px; the popup sits in the UI-scaled document, so place it in those px
+    const z = uiScale(), o = p.at ?? lastClient, x = o.x / z, y = o.y / z
     setAt({ x: Math.min(x, window.innerWidth / z - 240), y: Math.min(y, window.innerHeight / z - 40 - p.items.length * 30) })
     const close = () => useStore.getState().set({ popup: null })
     const onKey = (e: KeyboardEvent) => {
@@ -427,7 +436,7 @@ export function Popup() {
   if (!p) return null
   return (
     <div className="popup-backdrop" data-testid="popup-backdrop" onPointerDown={e => { if (e.target === e.currentTarget) useStore.getState().set({ popup: null }) }}>
-      <div className="popup" data-testid="popup" style={{ left: at.x, top: at.y }}>
+      <div className="popup" data-testid="popup" ref={box} style={{ left: at.x, top: at.y }}>
         <div className="popup-title">{p.title}</div>
         {p.items.map((it, i) => (
           <button key={it.id} data-testid={`popup-${it.id}`} onClick={it.run}><span className="popup-n">{i + 1}</span>{it.label}</button>

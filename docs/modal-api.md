@@ -113,6 +113,35 @@ on every update, `endModal(id, { confirmed, opts })` in `endXf`.
 The scene's tool overlay (loop cut / knife previews) reads `--tool-preview` when the renderer attaches and on the
 `polyform-theme` window event (`refreshPreviewTheme()`); `sceneManager.toolLineMat` is the line material.
 
+## MOD-2: modal transforms from code, numeric entry, axis locks (`src/modal/transform.ts`, `src/modal/numinput.ts`)
+
+```ts
+import { startGrab, startRotate, startScale, startShrinkFatten } from '../modal/transform'
+startGrab(sel?: TransformSelection): boolean      // G; true when the modal started
+// TransformSelection = { verts?: number[]; id?: string; label?: string; axis?: 0|1|2; plane?: boolean; pane?: number;
+//                        onEnd?: (confirmed: boolean, opts?: Record<string, unknown>) => void }
+startGrab({ id: 'mul.duplicate', label: 'Duplicate', onEnd: ok => { /* Esc: only the move is undone */ } })
+import { repeatTransform } from '../modal/repeat'
+repeatTransform(getLastOp()!.id, getLastOp()!.opts)  // Repeat Last for xf.grab / xf.rotateModal / xf.scaleModal
+```
+
+* **Numeric entry** (`numKey`, `numValue`, `numApply`, `numText`): digits and `.` type; `-` negates at any time;
+  `/` reciprocal; Backspace deletes, then restores, then leaves typing; Ctrl+Backspace clears; `=` or `*` starts an
+  expression (`2*0.25`, `10cm`, `45deg`, `sqrt(2)`, `pi`) parsed by `evalExpr` (no `eval`). `-` alone with no digits
+  negates the mouse value (`S -` mirrors while the mouse still drives).
+* **Axis locks** (`nextAxisLock`): X/Y/Z → global, again → local, again → free; Shift+X/Y/Z → the plane without that
+  axis (chip `⊥Z`); C clears. Locked axes are drawn through the pivot in the axis colours (every pane).
+* **Scale**: factor = pointer distance to the pivot ÷ start distance (`scaleFactor`), a dashed `--modal-guide` line
+  from the pivot to the pointer (S, R, Alt+S; the modal's pane), readout `Scale · X 2.000 Y 2.000 Z 2.000`. Typed 0
+  flattens; a mirrored result (odd number of negative factors) flips the moved faces' winding.
+* **Ctrl** snaps (move: grid step, ×0.1 with Shift; rotate 15°, 1° with Shift; scale 0.1, 0.01 with Shift). **Shift**
+  is precision: the pointer drives the value at 0.1× from the moment Shift goes down, with no jump.
+* **Pivots** (`store.pivot`): `median`, `bounds` (bounding-box centre), `cursor`, `individual` (each connected island /
+  object around its own centre), `active` (last point, face or object). Ctrl+. opens the Pivot Point menu.
+* **Alt+S** `xf.shrinkFatten`: points move along their vertex normals; S toggles Offset Even; last op
+  `{ offset, even }`.
+* G/R/S record `{ op, axis, plane, space, pivot, typed?, translate | angle + axisVec | factor + scale }`.
+
 ## Not in MOD-1
 
 Loop Cut, Knife, Bevel and Inset still write `modalInfo` directly; their owners port them to this API (the gizmo

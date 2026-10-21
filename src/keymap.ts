@@ -179,7 +179,8 @@ export const PRESETS: Preset[] = [
     'view.toolPanel': { global: ['T'] }, 'view.sidePanel': { global: ['N'] }, 'edit.numeric': { global: ['F9'] },
     'anim.prev': { global: ['ArrowLeft'] }, 'anim.next': { global: ['ArrowRight'] },
     'view.frame': { global: ['.'] },
-    // B is box select in Blender: no instant face bevel there (spec §4.3; Ctrl+B stays the bevel modal)
+    // B is box select in Blender: no instant face bevel there (spec §4.3). Ctrl+B / Ctrl+Shift+B are the defaults'
+    // op.mul.bevel / op.mul.bevelVerts, as in Blender.
     'op.mul.bevelFaces': { global: [] },
   } },
 ]

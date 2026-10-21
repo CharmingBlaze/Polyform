@@ -105,7 +105,7 @@ export const OPS: OpDef[] = [
   // ---------- Multiply
   { id: 'mul.extrude', label: 'Extrude', tab: 'Multiply', needs: 'faces', params: [N('dist', 'Distance', 0.25, -100, 100, 0.05)], run: (m, s, p) => facesSel(M.extrudeFaces(m, s.faces, p.dist)) },
   {
-    id: 'mul.bevelFaces', label: 'Bevel Faces (LightWave)', tab: 'Multiply',
+    id: 'mul.bevelFaces', label: 'Bevel faces (classic)', tab: 'Multiply',
     params: [N('inset', 'Width', 0.1, 0, 10, 0.02), N('height', 'Depth', 0.0, -100, 100, 0.05), N('segments', 'Segments', 1, 1, 16, 1, true), BOOL('individual', 'Individual', 0)],
     run: (m, s, p) => {
       const segs = Math.max(1, Math.round(p.segments || 1))

@@ -98,7 +98,7 @@ check('Esc ends the R line', (await line()) === null)
 check('Esc records nothing (last op still xf.grab)', await S(async () => (await import('/src/modal/index.ts')).getLastOp()?.id === 'xf.grab'))
 await p.keyboard.press('s'); await p.keyboard.type('2'); await frame()
 L = await line()
-check('S 2 → "Scale · Factor 2.000"', L?.readout === 'Scale · Factor 2.000' && L?.typed === '2', `${L?.readout} | ${L?.typed}`)
+check('S 2 → "Scale · X 2.000 Y 2.000 Z 2.000"', L?.readout === 'Scale · X 2.000 Y 2.000 Z 2.000' && L?.typed === '2', `${L?.readout} | ${L?.typed}`)
 await p.mouse.down({ button: 'right' }); await p.mouse.up({ button: 'right' }); await frame()
 check('right-click ends the S line', (await line()) === null)
 
@@ -113,8 +113,8 @@ await p.keyboard.press('Escape'); await frame()
 
 // 4. Bevel (not yet on the line API) still hides the gizmo in every pane
 await reset(true)
-await p.keyboard.press('Control+b'); await frame()
-check('gizmo hidden during Ctrl+B', await S(() => !!window.__polyform.getState().modalInfo?.includes('Bevel')) && (await gizmos()).every(v => v === false), JSON.stringify(await gizmos()))
+await S(async () => (await import('/src/commands.ts')).byId['edit.bevel'].run()); await frame()
+check('gizmo hidden during the classic bevel modal', await S(() => !!window.__polyform.getState().modalInfo?.includes('Bevel')) && (await gizmos()).every(v => v === false), JSON.stringify(await gizmos()))
 await p.keyboard.press('Escape'); await frame()
 check('gizmo back after bevel', (await gizmos()).some(Boolean))
 
@@ -131,7 +131,7 @@ check('1024: Confirm and Cancel visible', L?.hints.includes('LMB↵Confirm') && 
 // squeeze further: lowest priority hints go before the p1 ones
 await p.setViewportSize({ width: 700, height: 700 }); await p.waitForTimeout(300)
 L = await line()
-check('700: p3 hints shed, p1 kept', !L?.hints.includes('BkspDelete digit') && L?.hints.includes('LMB↵Confirm') && L?.allHints.length === 7, JSON.stringify(L?.hints))
+check('700: p3 hints shed, p1 kept', !L?.hints.includes('BkspDelete digit') && L?.hints.includes('LMB↵Confirm') && L?.allHints.length === 10, JSON.stringify(L?.hints))
 check('700: counts shed first', L?.countsVisible === false)
 await p.keyboard.press('Escape'); await frame()
 await p.setViewportSize({ width: 1366, height: 768 }); await p.waitForTimeout(200)

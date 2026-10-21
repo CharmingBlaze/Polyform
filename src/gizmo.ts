@@ -1,5 +1,5 @@
 /**
- * Our own transform gizmo (no TransformControls): arrows (move), rings (rotate), cubes (scale).
+ * Our own transform gizmo (no TransformControls): arrows (move), rings (rotate), cubes plus an outer uniform circle (scale).
  * One instance per pane on that pane's gizmo layer, so each view sizes it for its own camera and hit-tests with it.
  * Drawn on top of everything (no depth test, last render order) at a constant on-screen size via worldPerPixel.
  */
@@ -58,6 +58,16 @@ export class Gizmo {
       this.pickers.push(mesh); parent.add(mesh)
       return mesh
     }
+    const viewRing = (r: number) => {
+      const ring = new THREE.Group()
+      const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.01, 6, 72), mat(COLORS[3]))
+      m.renderOrder = 1000
+      this.parts.push({ mesh: m, handle: { kind, axis: 3 }, base: COLORS[3] })
+      ring.add(m)
+      picker(new THREE.TorusGeometry(r, 0.06, 6, 48), { kind, axis: 3 }, () => {}, ring)
+      this.root.add(ring)
+      this.viewRing = ring
+    }
     for (const i of [0, 1, 2] as const) {
       const h: Handle = { kind, axis: i }
       if (kind === 'move' || kind === 'scale') {
@@ -78,16 +88,11 @@ export class Gizmo {
     } else if (kind === 'scale') {
       part(new THREE.BoxGeometry(0.13, 0.13, 0.13), c, () => {})
       picker(new THREE.BoxGeometry(0.22, 0.22, 0.22), c, () => {})
+      // MOD-10: Blender's outer view-facing circle scales uniformly (the centre cube keeps doing the same)
+      viewRing(1.2)
     } else {
       // outer ring facing the camera: rotate about the view axis (the only usable ring in flat views)
-      const ring = new THREE.Group()
-      const m = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.01, 6, 72), mat(COLORS[3]))
-      m.renderOrder = 1000
-      this.parts.push({ mesh: m, handle: c, base: COLORS[3] })
-      ring.add(m)
-      picker(new THREE.TorusGeometry(1.0, 0.06, 6, 48), c, () => {}, ring)
-      this.root.add(ring)
-      this.viewRing = ring
+      viewRing(1.0)
     }
     this.root.traverse(o => o.layers.set(LAYER.gizmo0 + this.pane))
   }

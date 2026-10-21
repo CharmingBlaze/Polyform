@@ -6,7 +6,7 @@ import { Fragment, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getBindingLabel, useKeymapVersion } from '../keymap'
 import { useModalStatus } from './index'
-import { axisChipClass, axisChipText, formatValue, hintKeys, shedOrder, type ModalHint } from './status'
+import { axisChipClass, axisChipText, formatValue, hintKeys, readoutText, shedOrder, type ModalHint } from './status'
 import './modal.css'
 
 /** Hide counts, then p 3, then p 2 hints until `footer` fits (p 1 never hides). */
@@ -56,7 +56,7 @@ export function ModalStatus() {
   const full = hints.map(({ h, k }) => `${k.join(' ')} ${h.label}`).join(' · ')
   return createPortal(
     <span className="m-line" data-testid="modal-status" data-op={status.id}>
-      <span className="m-read" data-testid="modal-readout" data-text={[status.op, ...status.values.map(v => (v.label ? `${v.label} ${formatValue(v)}` : formatValue(v)))].join(' · ')}>
+      <span className="m-read" data-testid="modal-readout" data-text={readoutText(status)}>
         <span className="m-op">{status.op}</span>
         {status.values.map((v, i) => (
           <span key={i} className="m-v" data-testid={`modal-value-${v.label || i}`}>

@@ -76,7 +76,7 @@ describe('MOD-1 transform status', () => {
   it('R and S', () => {
     expect(readoutText(transformStatus({ op: 'rotate', label: 'Rotate', axis: 2, normal: false, space: 'local', typed: '90', angle: 90 }))).toBe('Rotate · Angle 90.0°')
     expect(axisChipText(transformStatus({ op: 'rotate', label: 'Rotate', axis: null, normal: false, space: 'global', typed: '' }).axis!)).toBe('View')
-    expect(readoutText(transformStatus({ op: 'scale', label: 'Scale', axis: null, normal: false, space: 'global', typed: '', factor: 1.25 }))).toBe('Scale · Factor 1.250')
+    expect(readoutText(transformStatus({ op: 'scale', label: 'Scale', axis: null, normal: false, space: 'global', typed: '', factor: 1.25 }))).toBe('Scale · X 1.250 Y 1.250 Z 1.250')
   })
 })
 

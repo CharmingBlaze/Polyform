@@ -1,4 +1,6 @@
 import { addPaintLayerHere, clearPaintSelectionHere, cyclePaintBlend, deleteActivePaintLayer, duplicateActivePaintLayer, flattenPaintLayersHere, invertPaintSelectionHere, mergeActivePaintLayer, moveActivePaintLayer, savePaintSwatch, selectAllPaintHere, setPaintOptionsOpen, toggleActivePaintLayer, togglePaintOptions } from './paintlayers'
+import { PIVOTS, PIVOT_LABEL, type PivotPoint } from './modal/numinput'
+import { startShrinkFatten } from './modal/transform'
 import { openSwatchFile, saveSwatchFile } from './palfile'
 import { useStore, WORKSPACES, type EditMode, type PaintMode, type Tool, type Workspace } from './store'
 import { exitApp, exportAs, newScene, pickFile, saveAs, saveFile } from './fileActions'
@@ -35,7 +37,8 @@ const edit = (m: EditMode, n: number): Command[] => [
   { id: `sel.${m}.add`, label: `Toggle ${m} in combined mode`, group: 'Selection', keys: `Shift+${n}`, run: () => S().setSelectMode(m, true) },
 ]
 // Ctrl+W / Ctrl+T / Ctrl+N / Ctrl+Tab belong to the browser and cannot be overridden, so weld is M (merge).
-const OP_KEYS: Record<string, string> = { 'mul.bevelFaces': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
+// Ctrl+B / Ctrl+Shift+B: Blender's edge / vertex bevel (bevel.ts); plain B stays the classic face bevel.
+const OP_KEYS: Record<string, string> = { 'mul.bevel': 'Ctrl+B', 'mul.bevelVerts': 'Ctrl+Shift+B', 'mul.bevelFaces': 'B', 'con.subdivide': 'Ctrl+Shift+D', 'con.face': 'Shift+P', 'con.flip': 'Shift+F', 'mul.duplicate': 'Shift+D' }
 /** Ask the hovered viewport to start a Blender-style modal transform (G/R/S, E extrude, E grow joint). */
 export type ModalKind = 'move' | 'rotate' | 'scale' | 'extrude' | 'joint' | 'dupmove'
 export const startModal = (kind: ModalKind) => window.dispatchEvent(new CustomEvent<ModalKind>('modal-transform', { detail: kind }))
@@ -85,6 +88,11 @@ function setOrigin(kind: OriginKind) {
   s.edit(m => { if (kind === 'geometry') originToGeometry(m, gs); else if (kind === 'cursor') originToPoint(m, gs, c); else geometryToOrigin(m, gs) }, ORIGIN_LABEL[kind])
   s.commit()
 }
+/** Blender's `.` pie: the five pivot points as a popup menu (Ctrl+. at the pointer; the toolbar button passes `at`). */
+export function openPivotMenu(at?: { x: number; y: number; anchor?: { left: number; top: number; right: number; bottom: number } }) {
+  const pick = (p: PivotPoint) => () => { const st = S(); st.set({ pivot: p, popup: null }); st.notify(`Pivot: ${PIVOT_LABEL[p]}`) }
+  S().set({ popup: { title: 'Pivot Point', items: PIVOTS.map(p => ({ id: p, label: `${S().pivot === p ? '● ' : ''}${PIVOT_LABEL[p]}`, run: pick(p) })), ...(at ? { at } : {}) } })
+}
 
 export const commands: Command[] = [
   tool('select', 'Select tool', 'Q'),
@@ -132,7 +140,8 @@ export const commands: Command[] = [
     if (s.mode !== 'model') return s.notify('Switch to Model mode to bridge')
     s.runOp('con.bridge')
   } },
-  { id: 'edit.bevel', label: 'Bevel (scroll = segments)', group: 'Multiply', keys: 'Ctrl+B', run: () => {
+  // the classic interactive face bevel (mouse = width, scroll = segments); unbound since Ctrl+B is Blender's bevel
+  { id: 'edit.bevel', label: 'Bevel faces (classic, interactive)', group: 'Multiply', run: () => {
     const s = S()
     if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify('Switch to Model mode to bevel')
     window.dispatchEvent(new CustomEvent('modal-tool', { detail: 'bevel' }))
@@ -302,12 +311,11 @@ export const commands: Command[] = [
     s.set({ snapTarget: next, snap: true })
     s.notify(`Snap: ${next}`)
   } },
-  { id: 'edit.pivotCycle', label: 'Cycle pivot (Median / Cursor / Active)', group: 'Edit', keys: 'Ctrl+.', run: () => {
+  { id: 'edit.pivotCycle', label: 'Pivot point menu (Median / Bounding Box / 3D Cursor / Individual / Active)', group: 'Edit', keys: 'Ctrl+.', run: () => openPivotMenu() },
+  { id: 'xf.shrinkFatten', label: 'Shrink / Fatten (modal, along normals)', group: 'Transform', keys: 'Alt+S', run: () => {
     const s = S()
-    const order = ['median', 'cursor', 'active'] as const
-    const next = order[(order.indexOf(s.pivot) + 1) % order.length]
-    s.set({ pivot: next })
-    s.notify(`Pivot: ${next}`)
+    if (s.mode !== 'model' || s.selectMode === 'object' || s.selectMode === 'joint') return s.notify('Shrink/Fatten works on points, edges or faces in Model mode')
+    startShrinkFatten()
   } },
   { id: 'view.onion', label: 'Toggle onion skin', group: 'View', run: () => S().set({ onion: !S().onion }) },
   ...WORKSPACES.map(w => ({ id: `ws.${w}`, label: `Workspace: ${WS_NAME[w]}`, group: 'View', run: () => S().setWorkspace(w) })),

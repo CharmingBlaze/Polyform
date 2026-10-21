@@ -3,20 +3,23 @@ import * as THREE from 'three'
 import { Move, Rotate3d, Search, Maximize2, Minimize2 } from 'lucide-react'
 import { LAYER, paneLayers, sceneManager } from '../scene'
 import { useStore, type Shading, type ViewType } from '../store'
-import { faceCenter, faceNormal, triangulate, type Vec3 } from '../model'
+import { faceCenter, faceNormal, flipFaces, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
 import { noteShapeMods, paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
 import { PaintOverlay } from './PaintOverlay'
 import { input, notePen, notePointer, palmRejected, penErases, pickRadius, wheelIntent } from '../input'
 import { Gizmo, type GizmoKind, type Handle } from '../gizmo'
-import { applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
+import { applyTransformDelta, applyXf, collectTargets, identityXf, nearestVert, needsKeyFirst, type Targets, type Xf } from '../transform'
 import { interaction, setHoverFace } from '../interaction'
 import { topology } from '../topology'
-import { type ModalKind } from '../commands'
+import * as Commands from '../commands'
+import type { ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
 import { facePoint, knifeCut, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
-import { beginModal, endModal, isModalRunning, setModal, transformStatus } from '../modal'
+import { beginModal, endModal, isModalRunning, MOUSE, setModal, transformStatus, updateModal, type ModalHint } from '../modal'
+import { emptyNum, flipsWinding, lockedScale, nextAxisLock, numApply, numKey, numText, numTyping, numValue, precisionStep, scaleFactor, snapFactor, type NumInput } from '../modal/numinput'
+import { modalRequestOf, type ModalRequest } from '../modal/transform'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -59,7 +62,18 @@ interface XfDrag {
   x0: number; y0: number
   hit0: THREE.Vector3
   lastAng: number; accAng: number
-  typed: string
+  /** MOD-2 typed value (shared numeric entry: digits, `-`, `/`, `=` expressions) */
+  num: NumInput
+  /** MOD-2 Shift+X/Y/Z: `axis` is the excluded axis of a plane lock */
+  plane: boolean
+  /** frame at the start (restored when the lock is cleared) */
+  frame0: THREE.Quaternion
+  /** MOD-2 Shift precision: the virtual pointer driving the value, the last real pointer, Shift held */
+  virt: { x: number; y: number }; real: { x: number; y: number }; precise: boolean
+  /** world axis of the last rotate step (recorded in the last op) */
+  rotAxis?: THREE.Vector3
+  /** a startGrab / startScale request (id, label, onEnd) */
+  req?: ModalRequest
   started: boolean
   label: string
   modal?: ModalKind
@@ -105,6 +119,8 @@ let activeXf: {
   down?: (button: number, x: number, y: number, ctrl: boolean) => void
   hover?: (x: number, y: number, ctrl: boolean) => void
   wheel?: (dy: number) => void
+  /** key releases while the modal runs (Shift precision, Ctrl snap) */
+  keyUp?: (e: KeyboardEvent) => void
 } | null = null
 
 export interface ViewCtx {
@@ -163,7 +179,7 @@ export function Viewport({ pane }: { pane: number }) {
     c.handlePoint = (axis, along = 0.9, ring = false) => {
       if (!giz.root.visible) return null
       const p = new THREE.Vector3()
-      if (axis === 3 && ring) p.set(Math.cos(along), Math.sin(along), 0).multiplyScalar(1.0).applyQuaternion(giz.viewRing!.quaternion)
+      if (axis === 3 && ring) p.set(Math.cos(along), Math.sin(along), 0).multiplyScalar(giz.kind === 'scale' ? 1.2 : 1.0).applyQuaternion(giz.viewRing!.quaternion)
       else if (ring) { const a = Math.cos(along) * 0.8, b = Math.sin(along) * 0.8; p.set(axis === 0 ? 0 : a, axis === 0 ? a : axis === 1 ? 0 : b, axis === 2 ? 0 : b) }
       else if (axis < 3) p.setComponent(axis, along)
       p.applyMatrix4(giz.root.matrixWorld).project(camera)
@@ -337,101 +353,121 @@ export function Viewport({ pane }: { pane: number }) {
   }
 
   // ---------- transforms (gizmo / modal / tweak) ----------
-  const axisVector = (d: XfDrag): THREE.Vector3 | null => d.axisVec ?? (d.axis === null ? null : AXES[d.axis].clone().applyQuaternion(d.frame))
+  const axisVector = (d: XfDrag): THREE.Vector3 | null => d.axisVec ?? (d.axis === null || d.plane ? null : AXES[d.axis].clone().applyQuaternion(d.frame))
+  /** MOD-2 plane lock (Shift+X/Y/Z): the excluded axis in world space */
+  const planeNormal = (d: XfDrag): THREE.Vector3 | null => (d.plane && d.axis !== null ? AXES[d.axis].clone().applyQuaternion(d.frame) : null)
   const planeHit = (d: XfDrag, x: number, y: number): THREE.Vector3 => {
     const { fwd } = camBasis()
     const a = d.op === 'move' ? axisVector(d) : null
     let n = fwd.clone()
-    if (a) { const p = fwd.clone().sub(a.clone().multiplyScalar(a.dot(fwd))); if (p.lengthSq() > 1e-6) n = p.normalize() }
+    const pn = d.op === 'move' ? planeNormal(d) : null
+    if (pn && Math.abs(pn.dot(fwd)) > 0.2) n = pn.clone() // drag on the locked plane itself unless it is seen edge-on
+    else if (a) { const p = fwd.clone().sub(a.clone().multiplyScalar(a.dot(fwd))); if (p.lengthSq() > 1e-6) n = p.normalize() }
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, d.T.center)
     return ray(x, y).ray.intersectPlane(plane, new THREE.Vector3()) ?? d.T.center.clone()
   }
   const screenAngle = (x: number, y: number, c: { x: number; y: number }) => Math.atan2(y - c.y, x - c.x)
 
-  function beginXf(src: XfDrag['src'], op: GizmoKind, x: number, y: number, opts: { axis?: 0 | 1 | 2 | null; axisVec?: THREE.Vector3 | null; modal?: ModalKind; label?: string; verts?: number[] } = {}): XfDrag | null {
+  function beginXf(src: XfDrag['src'], op: GizmoKind, x: number, y: number, opts: { axis?: 0 | 1 | 2 | null; axisVec?: THREE.Vector3 | null; modal?: ModalKind; label?: string; verts?: number[]; plane?: boolean; req?: ModalRequest } = {}): XfDrag | null {
     const st = useStore.getState()
     const T = collectTargets(st, st.gizmoSpace, opts.verts)
     if (!T) { st.notify('Select something to transform'); return null }
     if (op === 'scale' && T.keys.size && !T.objs.size) { st.notify('Joints are not scaled — use Move or Rotate'); return null }
     if (needsKeyFirst(st, T)) { st.notify('Auto-key is off: press I to key this frame first'); return null }
     if (T.note) st.notify(T.note)
+    const startLocked = opts.axis !== undefined && opts.axis !== null && src === 'modal'
     const d: XfDrag = {
-      kind: 'xf', src, op, axis: opts.axis ?? null, axisVec: opts.axisVec ?? null, frame: T.frame.clone(), space: st.gizmoSpace,
-      normalVec: opts.axisVec ?? null,
-      T, x0: x, y0: y, hit0: new THREE.Vector3(), lastAng: 0, accAng: 0, typed: '', started: false,
+      kind: 'xf', src, op, axis: opts.axis ?? null, axisVec: opts.axisVec ?? null,
+      // a lock asked for by startGrab({ axis }) starts in global space, like pressing the key
+      frame: startLocked ? new THREE.Quaternion() : T.frame.clone(), space: startLocked ? 'global' : st.gizmoSpace,
+      frame0: T.frame.clone(), normalVec: opts.axisVec ?? null,
+      T, x0: x, y0: y, hit0: new THREE.Vector3(), lastAng: 0, accAng: 0, num: emptyNum(), plane: !!opts.plane && opts.axis != null, started: false,
       label: opts.label ?? (op === 'move' ? 'Move' : op === 'rotate' ? 'Rotate' : 'Scale'), modal: opts.modal, ctrl: false,
+      virt: { x, y }, real: { x, y }, precise: false, req: opts.req,
     }
+    if (startLocked && op === 'scale') d.T.frame = d.frame.clone()
     d.hit0 = planeHit(d, x, y)
     d.lastAng = screenAngle(x, y, project(T.center))
     return d
+  }
+
+  /** snap a world translation (increment: the delta; grid: the destination) */
+  const snapMove = (st: ReturnType<typeof useStore.getState>, d: XfDrag, delta: THREE.Vector3) => {
+    const g = st.gridStep * (d.precise ? 0.1 : 1)
+    if (st.snapTarget === 'increment') return delta.set(Math.round(delta.x / g) * g, Math.round(delta.y / g) * g, Math.round(delta.z / g) * g)
+    const dest = d.T.center.clone().add(delta)
+    dest.set(Math.round(dest.x / g) * g, Math.round(dest.y / g) * g, Math.round(dest.z / g) * g)
+    return delta.copy(dest.sub(d.T.center))
   }
 
   function computeXf(d: XfDrag, x: number, y: number): Xf {
     const st = useStore.getState()
     const out = identityXf()
     const snap = st.snap !== d.ctrl
-    const typed = d.typed !== '' && d.typed !== '-' && d.typed !== '.' ? parseFloat(d.typed) : NaN
     const cs = project(d.T.center)
+    const negOnly = d.num.active && !d.num.text && d.num.neg
     if (d.op === 'move') {
       const a = axisVector(d)
-      if (Number.isFinite(typed)) { out.t.copy(a ?? AXES[0]).multiplyScalar(typed); return out }
+      const pn = planeNormal(d)
+      const typed = numValue(d.num, 'length')
+      if (typed !== null) {
+        // typed: along the locked axis; free or plane: the first free axis (Blender types X first)
+        const dir = a ?? (pn ? AXES[(d.axis! + 1) % 3].clone().applyQuaternion(d.frame) : AXES[0])
+        out.t.copy(dir).multiplyScalar(typed); return out
+      }
       const delta = planeHit(d, x, y).sub(d.hit0)
       if (a) {
         let k = delta.dot(a)
         if (snap && st.snapTarget !== 'vertex') {
-          if (st.snapTarget === 'increment') k = Math.round(k / st.gridStep) * st.gridStep
+          const g = st.gridStep * (d.precise ? 0.1 : 1)
+          if (st.snapTarget === 'increment') k = Math.round(k / g) * g
           else { // absolute grid: snap the resulting world point
             const dest = d.T.center.clone().addScaledVector(a, k)
-            const g = st.gridStep
             const sg = dest.clone().set(Math.round(dest.x / g) * g, Math.round(dest.y / g) * g, Math.round(dest.z / g) * g)
             k = sg.clone().sub(d.T.center).dot(a)
           }
         }
         out.t.copy(a).multiplyScalar(k)
       } else {
-        if (snap && st.snapTarget !== 'vertex') {
-          const g = st.gridStep
-          if (st.snapTarget === 'increment') delta.set(Math.round(delta.x / g) * g, Math.round(delta.y / g) * g, Math.round(delta.z / g) * g)
-          else {
-            const dest = d.T.center.clone().add(delta)
-            dest.set(Math.round(dest.x / g) * g, Math.round(dest.y / g) * g, Math.round(dest.z / g) * g)
-            delta.copy(dest.sub(d.T.center))
-          }
-        }
+        if (pn) delta.addScaledVector(pn, -delta.dot(pn))
+        if (snap && st.snapTarget !== 'vertex') { snapMove(st, d, delta); if (pn) delta.addScaledVector(pn, -delta.dot(pn)) }
         out.t.copy(delta)
       }
       if (snap && st.snapTarget === 'vertex') {
         const dest = d.T.center.clone().add(out.t)
         const hit = nearestVert(st, dest, new Set(d.T.verts.keys()), Math.max(st.gridStep * 4, 0.25))
-        if (hit) out.t.copy(hit.sub(d.T.center))
+        if (hit) { out.t.copy(hit.sub(d.T.center)); if (pn) out.t.addScaledVector(pn, -out.t.dot(pn)) }
       }
+      if (negOnly) out.t.negate()
     } else if (d.op === 'rotate') {
       const toViewer = camBasis().fwd.negate()
-      const a = axisVector(d) ?? toViewer
+      // a plane lock turns about the excluded axis (Shift+Z ≈ Z)
+      const a = axisVector(d) ?? planeNormal(d) ?? toViewer
+      const typed = numValue(d.num, 'angle')
       let ang: number
-      if (Number.isFinite(typed)) ang = THREE.MathUtils.degToRad(typed)
+      if (typed !== null) ang = THREE.MathUtils.degToRad(typed)
       else {
         const cur = screenAngle(x, y, cs)
         let dd = cur - d.lastAng
         if (dd > Math.PI) dd -= 2 * Math.PI; else if (dd < -Math.PI) dd += 2 * Math.PI
         d.accAng += dd; d.lastAng = cur
         ang = -d.accAng * (a.dot(toViewer) < 0 ? -1 : 1)
-        if (snap) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
+        const step = Math.PI / 12 / (d.precise ? 15 : 1) // 15°, or 1° with Shift
+        if (snap) ang = Math.round(ang / step) * step
+        if (negOnly) ang = -ang
       }
       d.val = ang
-      out.q.setFromAxisAngle(a.clone().normalize(), ang)
+      d.rotAxis = a.clone().normalize()
+      out.q.setFromAxisAngle(d.rotAxis, ang)
     } else {
-      let f: number
-      if (Number.isFinite(typed)) f = typed
-      else {
-        const r0 = Math.max(6, Math.hypot(d.x0 - cs.x, d.y0 - cs.y))
-        f = Math.hypot(x - cs.x, y - cs.y) / r0
-        if (snap) f = Math.round(f * 10) / 10
-      }
-      if (Math.abs(f) < 1e-4) f = 1e-4
+      let mouse = scaleFactor({ x, y }, cs, { x: d.x0, y: d.y0 })
+      if (snap && !numTyping(d.num)) mouse = snapFactor(mouse, d.precise)
+      let f = numApply(d.num, mouse, 'factor')
+      // objects keep a tiny factor (a zero scale has no rotation to decompose); points flatten exactly (S X 0)
+      if (d.T.objs.size && Math.abs(f) < 1e-4) f = f < 0 ? -1e-4 : 1e-4
       d.val = f
-      if (d.axis === null) out.s.set(f, f, f)
-      else out.s.setComponent(d.axis, f)
+      const s = lockedScale({ axis: d.axis, space: d.space, plane: d.plane }, f)
+      out.s.set(s[0], s[1], s[2])
     }
     return out
   }
@@ -439,14 +475,17 @@ export function Viewport({ pane }: { pane: number }) {
   /** MOD-1: the status line for a modal transform (readout, typed field, axis chip, key hints) */
   // the registered command ids (src/commands.ts): Repeat Last / canRun look the tool up by the same key
   const XF_CMD = { move: 'xf.grab', rotate: 'xf.rotateModal', scale: 'xf.scaleModal' } as const
-  const xfModalId = (d: XfDrag) => (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : d.modal === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[d.op])
-  /** final parameters of a confirmed G/R/S/E, recorded as the last op */
+  const xfModalId = (d: XfDrag) => d.req?.id ?? (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : d.modal === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[d.op])
+  /** final parameters of a confirmed G/R/S/E, recorded as the last op (and replayed by `repeatTransform`) */
   const xfOpts = (d: XfDrag): Record<string, unknown> => {
     const xf = d.lastXf
-    const base = { op: d.modal ?? d.op, axis: d.axis === null ? (d.axisVec ? 'normal' : null) : 'xyz'[d.axis], space: d.space, typed: d.typed || undefined }
+    const base = {
+      op: d.modal ?? d.op, axis: d.axis === null ? (d.axisVec ? 'normal' : null) : 'xyz'[d.axis], plane: d.plane, space: d.space,
+      pivot: useStore.getState().pivot, typed: numText(d.num) || undefined,
+    }
     if (d.op === 'move') return { ...base, translate: xf ? [xf.t.x, xf.t.y, xf.t.z] : [0, 0, 0] }
-    if (d.op === 'rotate') return { ...base, angle: THREE.MathUtils.radToDeg(d.val ?? 0) }
-    return { ...base, factor: d.val ?? 1 }
+    if (d.op === 'rotate') return { ...base, angle: THREE.MathUtils.radToDeg(d.val ?? 0), axisVec: d.rotAxis ? [d.rotAxis.x, d.rotAxis.y, d.rotAxis.z] : undefined }
+    return { ...base, factor: d.val ?? 1, scale: xf ? [xf.s.x, xf.s.y, xf.s.z] : [1, 1, 1] }
   }
   const showXfStatus = (d: XfDrag, xf: Xf | null) => {
     const st = useStore.getState()
@@ -454,11 +493,27 @@ export function Viewport({ pane }: { pane: number }) {
     setModal({
       id: xfModalId(d),
       ...transformStatus({
-        op: d.op, label: d.label, axis: d.axis, normal: !!d.axisVec, space: d.space, typed: d.typed,
+        op: d.op, label: d.label, axis: d.axis, plane: d.plane, normal: !!d.axisVec, space: d.space, typed: d.num.active ? numText(d.num) || '' : '',
         t: xf ? [xf.t.x, xf.t.y, xf.t.z] : [0, 0, 0], along: xf && a ? xf.t.dot(a) / Math.max(1e-12, a.length()) : 0,
-        angle: THREE.MathUtils.radToDeg(d.val ?? 0), factor: d.val ?? 1, snapOn: st.snap !== d.ctrl,
+        angle: THREE.MathUtils.radToDeg(d.val ?? 0), factor: d.val ?? 1, scale: xf && d.op === 'scale' ? [xf.s.x, xf.s.y, xf.s.z] : undefined,
+        snapOn: st.snap !== d.ctrl, precise: d.precise,
       }),
     })
+    // an empty typed field (after `-` or Backspace) still shows the field
+    if (d.num.active && !numText(d.num)) updateModal({ id: xfModalId(d), typed: '' })
+  }
+  /** MOD-2: the constraint axis lines and, for S / R, the dashed pivot→pointer guide (spec §0.7 `--modal-guide`) */
+  const showGuides = (d: XfDrag, x: number, y: number) => {
+    const css = getComputedStyle(document.documentElement)
+    const col = (i: number) => css.getPropertyValue(['--x', '--y', '--z'][i]).trim() || ['#ff6b6b', '#5fd38d', '#6d9bff'][i]
+    const c = d.T.center, L = 1000
+    const axes: { from: Vec3; to: Vec3; color: string }[] = []
+    const line = (dir: THREE.Vector3, color: string) => axes.push({ from: [c.x - dir.x * L, c.y - dir.y * L, c.z - dir.z * L], to: [c.x + dir.x * L, c.y + dir.y * L, c.z + dir.z * L], color })
+    if (d.axis !== null) {
+      for (let i = 0; i < 3; i++) if (d.plane ? i !== d.axis : i === d.axis) line(AXES[i].clone().applyQuaternion(d.frame), col(i))
+    } else if (d.axisVec) line(d.axisVec.clone().normalize(), css.getPropertyValue('--text-2').trim() || '#c8ccd6')
+    const guide = d.op !== 'move' ? (() => { const p = unproject(x, y, c); return { from: [c.x, c.y, c.z] as Vec3, to: [p.x, p.y, p.z] as Vec3, pane, dash: worldPerPixel(c) * 4 } })() : null
+    sceneManager.setModalGuides({ axes, guide })
   }
 
   function updateXf(d: XfDrag, x: number, y: number) {
@@ -475,13 +530,13 @@ export function Viewport({ pane }: { pane: number }) {
     if (ex?.dirs && d.axisVec) {
       // individual faces: each face's points move along that face's own normal by the same distance
       const k = xf.t.dot(d.axisVec)
-      d.T.verts.forEach((o, v) => { const n = ex.dirs!.get(v); st.model.verts[v] = n ? [o[0] + n.x * k, o[1] + n.y * k, o[2] + n.z * k] : o })
+      applyTransformDelta(st.model, d.T.verts.keys(), v => { const o = d.T.verts.get(v)!; const n = ex.dirs!.get(v); return n ? [o[0] + n.x * k, o[1] + n.y * k, o[2] + n.z * k] : o })
       updateWallUVs(st.model, ex.walls, k)
     } else {
       applyXf(d.T, xf)
       if (ex) updateWallUVs(st.model, ex.walls, d.axisVec ? xf.t.dot(d.axisVec) : xf.t.length())
     }
-    if (d.src === 'modal') showXfStatus(d, xf)
+    if (d.src === 'modal') { showXfStatus(d, xf); showGuides(d, x, y) }
     // extrude-individual mutates verts without touch(); keep the mesh live during the drag
     if (d.started && !sceneManager.tryUpdatePositions()) { /* subscribe/touch path already refreshed or needs full rebuild */ }
   }
@@ -492,15 +547,38 @@ export function Viewport({ pane }: { pane: number }) {
     interaction.modal = false
     activeXf = null
     drag.current = null
-    if (d.src === 'modal') endModal(xfModalId(d), ok && d.started ? { confirmed: true, opts: xfOpts(d) } : { confirmed: false })
+    sceneManager.setModalGuides(null)
+    const opts = ok && d.started ? xfOpts(d) : undefined
+    // a mirrored scale (odd number of negative factors) turns the moved faces inside out: fix their winding
+    if (ok && d.started && d.op === 'scale' && d.lastXf && flipsWinding([d.lastXf.s.x, d.lastXf.s.y, d.lastXf.s.z]) && d.T.verts.size) {
+      const faces = st.model.faces.map((f, i) => (f.v.every(v => d.T.verts.has(v)) ? i : -1)).filter(i => i >= 0)
+      if (faces.length) { flipFaces(st.model, faces); st.touch() }
+    }
+    if (d.src === 'modal') endModal(xfModalId(d), opts ? { confirmed: true, opts } : { confirmed: false })
     st.set({ modalInfo: null })
     if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
     else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
     // Shift+D: cancelling the move leaves the copy where the original is (Blender); either way one undo step
     else if (d.modal === 'dupmove') { if (!ok) { applyXf(d.T, identityXf()); st.touch() } st.commit() }
-    else if (d.started) { if (ok) st.commit(); else st.cancelEdit() }
+    else if (d.started) { if (ok) { if (d.req?.mergeUndo) st.amendCommit(); else st.commit() } else st.cancelEdit() }
     gizmoDirty = true
     sceneManager.rebuild()
+    d.req?.onEnd?.(!!opts, opts)
+  }
+
+  /** MOD-2 X / Y / Z (Shift: plane) / C: Blender's constraint cycle (global → local → free) */
+  function setLock(d: XfDrag, key: 0 | 1 | 2 | 'clear', plane: boolean) {
+    const st = useStore.getState()
+    const free = { axis: null, space: st.gizmoSpace, plane: false } as const
+    const next = nextAxisLock({ axis: d.axis, space: d.space, plane: d.plane }, key, plane, free)
+    d.axis = next.axis; d.plane = next.plane; d.space = next.space
+    if (next.axis === null) { d.frame = d.frame0.clone(); d.axisVec = d.normalVec ?? null }
+    else {
+      d.axisVec = null
+      d.frame = next.space === 'global' ? new THREE.Quaternion() : collectTargets(st, 'local', [...d.T.verts.keys()])?.frame ?? d.frame0.clone()
+    }
+    if (d.op === 'scale') d.T.frame = d.frame.clone()
+    d.hit0 = planeHit(d, d.x0, d.y0)
   }
 
   /** Make `d` the active transform: window-level keys (axis, typed value, Enter, Esc) and pointer moves. */
@@ -508,35 +586,128 @@ export function Viewport({ pane }: { pane: number }) {
     drag.current = d
     interaction.modal = true
     const local2 = (e: { clientX: number; clientY: number }) => { const r = hit.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
-    let last = { x: d.x0, y: d.y0 }
+    const redraw = () => updateXf(d, d.virt.x, d.virt.y)
     activeXf = {
       pane,
       cancel: () => endXf(d, false),
       confirm: () => endXf(d, true),
-      move: e => { d.ctrl = e.ctrlKey || e.metaKey; last = local2(e); updateXf(d, last.x, last.y) },
+      move: e => {
+        d.ctrl = e.ctrlKey || e.metaKey
+        d.precise = e.shiftKey
+        const r = local2(e)
+        // Shift precision: the virtual pointer moves at 0.1× from the moment Shift goes down (no jump)
+        d.virt = precisionStep(d.virt, d.real, r, d.precise); d.real = r
+        redraw()
+      },
       key: e => {
         const k = e.key
         if (k === 'Escape') return endXf(d, false)
-        if (k === 'Enter') { if (!d.started) updateXf(d, last.x, last.y); return endXf(d, true) }
-        if (k === 'Control' || k === 'Meta') { d.ctrl = true; updateXf(d, last.x, last.y); return }
-        if (d.src === 'modal' && /^[xyz]$/i.test(k)) {
-          const i = 'xyz'.indexOf(k.toLowerCase()) as 0 | 1 | 2
-          // Blender cycle: global axis -> local axis -> free (extrude: back to its normal)
-          const st = useStore.getState()
-          if (d.axis !== i) { d.axis = i; d.space = 'global'; d.frame = new THREE.Quaternion(); d.axisVec = null }
-          else if (d.space === 'global') { d.space = 'local'; d.frame = collectTargets(st, 'local', [...d.T.verts.keys()])?.frame ?? new THREE.Quaternion() }
-          else { d.axis = null; d.space = st.gizmoSpace; d.frame = d.T.frame.clone(); d.axisVec = d.normalVec ?? null }
-          d.T.frame = d.op === 'scale' ? d.frame.clone() : d.T.frame
-          d.hit0 = planeHit(d, d.x0, d.y0)
-          updateXf(d, last.x, last.y); return
-        }
-        if (d.src === 'modal' && (/^[0-9.]$/.test(k) || (k === '-' && !d.typed) || k === 'Backspace')) {
-          d.typed = k === 'Backspace' ? d.typed.slice(0, -1) : d.typed + k
-          updateXf(d, last.x, last.y); return
-        }
+        if (k === 'Enter') { if (!d.started) redraw(); return endXf(d, true) }
+        if (k === 'Control' || k === 'Meta') { d.ctrl = true; redraw(); return }
+        if (k === 'Shift') { d.precise = true; return }
+        if (d.src !== 'modal') return
+        // numeric entry first (in expression mode letters belong to the expression)
+        const n = numKey(d.num, e)
+        if (n) { d.num = n; redraw(); return }
+        if (/^[xyz]$/i.test(k) && !(e.ctrlKey || e.metaKey || e.altKey)) { setLock(d, 'xyz'.indexOf(k.toLowerCase()) as 0 | 1 | 2, e.shiftKey); redraw(); return }
+        if (/^c$/i.test(k) && !(e.ctrlKey || e.metaKey || e.altKey)) { setLock(d, 'clear', false); redraw(); return }
       },
     }
     if (d.src === 'modal') { beginModal({ id: xfModalId(d), label: d.label }); showXfStatus(d, null); updateXf(d, d.x0, d.y0) }
+  }
+
+  /** Alt+S: shrink / fatten. Points move along their vertex normals; the pointer's distance change sets the offset. */
+  function startShrink(req: ModalRequest): boolean {
+    const st0 = useStore.getState()
+    const m0 = st0.model
+    const verts = req.verts ?? st0.activeVerts()
+    if (!verts.length) { st0.notify('Select points, edges or faces to shrink/fatten'); return false }
+    const id = req.id ?? 'xf.shrinkFatten', label = req.label ?? 'Shrink/Fatten'
+    const orig = new Map(verts.map(v => [v, [...m0.verts[v]] as Vec3]))
+    // vertex normals from the selected faces around each point (all its faces when none is selected)
+    const selF = new Set(st0.activeFaces())
+    const around = new Map<number, number[]>()
+    m0.faces.forEach((f, fi) => f.v.forEach(v => { if (orig.has(v)) { let l = around.get(v); if (!l) around.set(v, l = []); l.push(fi) } }))
+    const fn = new Map<number, THREE.Vector3>()
+    const fNormal = (fi: number) => { let n = fn.get(fi); if (!n) fn.set(fi, n = faceNormal(m0, m0.faces[fi]).clone().normalize()); return n }
+    const dirs = new Map<number, { n: THREE.Vector3; even: number }>()
+    orig.forEach((_, v) => {
+      const all = around.get(v) ?? []
+      const fs = all.some(f => selF.has(f)) ? all.filter(f => selF.has(f)) : all
+      const n = new THREE.Vector3()
+      fs.forEach(f => n.add(fNormal(f)))
+      if (n.lengthSq() < 1e-12) return
+      n.normalize()
+      // Offset Even: keep the faces' own offset equal (1 / cos of the angle to the face normals)
+      const dots = fs.map(f => Math.max(0.2, n.dot(fNormal(f))))
+      dirs.set(v, { n, even: dots.length ? dots.length / dots.reduce((a, b) => a + b, 0) : 1 })
+    })
+    const center = new THREE.Vector3()
+    orig.forEach((_, v) => { const p = sceneManager.posed[v] ?? m0.verts[v]; center.add(new THREE.Vector3(p[0], p[1], p[2])) })
+    center.multiplyScalar(1 / orig.size)
+    const at0 = interaction.mouse[pane] ?? { x: ctx.current!.w / 2, y: ctx.current!.h / 2 }
+    const cs = project(center)
+    const r0 = Math.hypot(at0.x - cs.x, at0.y - cs.y)
+    const wpp = worldPerPixel(center)
+    let num = emptyNum(), even = false, offset = 0, ctrl = false, precise = false
+    let virt = { x: at0.x, y: at0.y }, real = { ...virt }
+    st0.checkpoint(label)
+    sceneManager.dragging = true
+    const hints = (): ModalHint[] => [
+      { keys: [MOUSE.LMB, '↵'], label: 'Confirm', p: 1 }, { keys: [MOUSE.RMB, 'Esc'], label: 'Cancel', p: 1 },
+      { keys: ['Ctrl'], label: 'Snap', p: 2, on: useStore.getState().snap !== ctrl }, { keys: ['Shift'], label: 'Precision', p: 2, on: precise },
+      { keys: ['0–9'], label: 'Type', p: 2 }, { keys: ['-'], label: 'Negate', p: 3 },
+    ]
+    const apply = () => {
+      const st = useStore.getState()
+      const mouse = (Math.hypot(virt.x - cs.x, virt.y - cs.y) - r0) * wpp
+      let k = numApply(num, mouse, 'length')
+      if (st.snap !== ctrl && !numTyping(num)) { const g = st.gridStep * (precise ? 0.1 : 1); k = Math.round(k / g) * g }
+      offset = k
+      applyTransformDelta(st.model, orig.keys(), v => { const o = orig.get(v)!; const dv = dirs.get(v); const s = dv ? k * (even ? dv.even : 1) : 0; return dv ? [o[0] + dv.n.x * s, o[1] + dv.n.y * s, o[2] + dv.n.z * s] : o })
+      st.touch()
+      setModal({ id, op: label, values: [{ label: 'Offset', value: offset, unit: 'm', ...(num.active ? { typed: numText(num) } : {}) }], axis: { axis: 'normal', space: 'normal' },
+        tags: [{ key: 'S', label: 'Offset Even', on: even }], keys: hints(), cursor: 'crosshair' })
+      sceneManager.setModalGuides({ guide: { from: [center.x, center.y, center.z], to: (p => [p.x, p.y, p.z] as Vec3)(unproject(virt.x, virt.y, center)), pane, dash: wpp * 4 } })
+      sceneManager.tryUpdatePositions()
+    }
+    const end = (ok: boolean) => {
+      const st = useStore.getState()
+      sceneManager.dragging = false
+      sceneManager.setModalGuides(null)
+      interaction.modal = false
+      activeXf = null
+      const opts = { offset, even }
+      endModal(id, ok ? { confirmed: true, opts } : { confirmed: false })
+      if (ok) st.commit(); else st.cancelEdit()
+      st.set({ modalInfo: null })
+      gizmoDirty = true
+      sceneManager.rebuild()
+      req.onEnd?.(ok, ok ? opts : undefined)
+    }
+    interaction.modal = true
+    activeXf = {
+      pane,
+      cancel: () => end(false),
+      confirm: () => end(true),
+      move: () => {},
+      hover: (x, y, c) => { ctrl = c; const r = { x, y }; virt = precisionStep(virt, real, r, precise); real = r; apply() },
+      down: button => { if (button === 0) end(true); else if (button === 2) end(false) },
+      key: e => {
+        const k = e.key
+        if (k === 'Escape') return end(false)
+        if (k === 'Enter') return end(true)
+        if (k === 'Shift') { precise = true; return }
+        if (k === 'Control' || k === 'Meta') { ctrl = true; apply(); return }
+        const n = numKey(num, e)
+        if (n) { num = n; apply(); return }
+        if (/^s$/i.test(k)) { even = !even; apply() }
+      },
+      keyUp: e => { if (e.key === 'Shift') precise = false; else if (e.key === 'Control' || e.key === 'Meta') { ctrl = false; apply() } },
+    }
+    beginModal({ id, label, cursor: 'crosshair' })
+    apply()
+    return true
   }
 
   /** Screen-space parameter of (x, y) along the projected segment p -> q. */
@@ -968,15 +1139,31 @@ export function Viewport({ pane }: { pane: number }) {
       e.preventDefault(); e.stopImmediatePropagation()
       activeXf.key(e)
     }
-    const onKeyUp = (e: KeyboardEvent) => { if (activeXf?.pane === pane && (e.key === 'Control' || e.key === 'Meta')) { const d = drag.current; if (d?.kind === 'xf') d.ctrl = false } }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (activeXf?.pane !== pane) return
+      activeXf.keyUp?.(e)
+      const d = drag.current
+      if (d?.kind !== 'xf') return
+      if (e.key === 'Control' || e.key === 'Meta') d.ctrl = false
+      else if (e.key === 'Shift') d.precise = false
+    }
     const onMove = (e: PointerEvent) => { if (activeXf?.pane === pane && drag.current?.kind === 'xf' && drag.current.src === 'modal') activeXf.move(e) }
     const onModal = (e: Event) => {
-      const kind = (e as CustomEvent<ModalKind>).detail
-      const target = useStore.getState().maximized ?? interaction.hoverPane
+      const req = modalRequestOf((e as CustomEvent).detail)
+      const kind = req.kind
+      const target = req.pane ?? useStore.getState().maximized ?? interaction.hoverPane
       if (target !== pane || !ctx.current || hidden) return
       if (activeXf) return
       const st = useStore.getState()
+      // canRunCommand (when commands.ts has it): a refused transform does not start and says why
+      const cmdId = req.id ?? (kind === 'shrink' ? 'xf.shrinkFatten' : kind === 'extrude' || kind === 'joint' ? 'edit.extrude' : kind === 'dupmove' ? 'op.mul.duplicate' : XF_CMD[kind])
+      const gate = (Commands as unknown as Record<string, unknown>).canRunCommand
+      if (typeof gate === 'function') {
+        const r = (gate as (id: string, s: typeof st) => { ok: boolean; reason?: string } | undefined)(cmdId, st)
+        if (r && !r.ok) { st.notify(r.reason ?? 'Cannot run that here'); if (kind === 'extrude') st.cancelExtrude(); else if (kind === 'dupmove') st.commit(); return }
+      }
       const at = interaction.mouse[pane] ?? { x: ctx.current.w / 2, y: ctx.current.h / 2 }
+      if (kind === 'shrink') { if (startShrink(req)) req.started = true; return }
       let d: XfDrag | null = null
       if (kind === 'extrude') {
         const ex = extrudeSession.cur
@@ -997,8 +1184,8 @@ export function Viewport({ pane }: { pane: number }) {
       } else if (kind === 'joint') {
         d = beginXf('modal', 'move', at.x, at.y, { modal: 'joint', label: 'Grow joint' })
         if (!d) return
-      } else d = beginXf('modal', kind, at.x, at.y)
-      if (d) activate(d)
+      } else d = beginXf('modal', kind, at.x, at.y, { verts: req.verts, label: req.label, axis: req.axis, plane: req.plane, req })
+      if (d) { activate(d); req.started = true }
     }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('keyup', onKeyUp, true)

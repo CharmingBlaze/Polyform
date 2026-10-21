@@ -102,7 +102,7 @@ interface State {
   snapTarget: 'grid' | 'vertex' | 'increment'
   gridStep: number
   /** Gizmo / modal transform pivot. */
-  pivot: 'median' | 'cursor' | 'active'
+  pivot: 'median' | 'bounds' | 'cursor' | 'individual' | 'active'
   selVerts: Set<number>
   /** numeric edge keys (topology.ts) */
   selEdges: Set<number>
@@ -172,7 +172,7 @@ interface State {
   /** status text while a modal transform runs */
   modalInfo: string | null
   /** small popup menu at the mouse (Alt+E) */
-  popup: { title: string; items: { label: string; id: string; run: () => void }[] } | null
+  popup: { title: string; items: { label: string; id: string; run: () => void }[]; at?: { x: number; y: number; anchor?: { left: number; top: number; right: number; bottom: number } } } | null
   keyClipboard: KeyClip | null
   texRev: number
   toast: string | null
@@ -188,6 +188,8 @@ interface State {
   touch: () => void
   checkpoint: (label?: string) => void
   commit: () => void
+  /** commit the pending edit into the undo step on top (one Ctrl+Z for both), see History.amend */
+  amendCommit: () => void
   cancelEdit: () => void
   doUndo: () => void
   doRedo: () => void
@@ -516,6 +518,7 @@ export const useStore = create<State>((set, get) => ({
     set(s => ({ histRev: s.histRev + 1, lastOp: null }))
   },
   commit: () => { history.commit(get().model); set(s => ({ histRev: s.histRev + 1 })) },
+  amendCommit: () => { history.amend(get().model); set(s => ({ histRev: s.histRev + 1 })) },
   cancelEdit: () => {
     const m = history.cancel()
     if (m) set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, extruding: false }))

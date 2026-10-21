@@ -310,7 +310,7 @@ describe('bevel ops (OPS)', () => {
   it('mul.bevel / mul.bevelVerts run from a selection; mul.bevelFaces is the LightWave face bevel', async () => {
     const { OPS } = await import('../src/ops')
     const op = (id: string) => OPS.find(o => o.id === id)!
-    expect(op('mul.bevelFaces').label).toBe('Bevel Faces (LightWave)')
+    expect(op('mul.bevelFaces').label).toBe('Bevel faces (classic)')
     expect(op('mul.bevel').params.map(p => p.label)).toEqual(['Affect', 'Width Type', 'Width', 'Width Percent', 'Segments', 'Shape', 'Clamp Overlap', 'Loop Slide', 'Material'])
     expect(op('mul.bevel').params.map(p => p.key)).toEqual(BEVEL_PARAMS.map(p => p.name))
     const defaults = (id: string) => Object.fromEntries(op(id).params.map(p => [p.key, p.def]))

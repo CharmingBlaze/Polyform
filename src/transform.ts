@@ -10,6 +10,7 @@ import { applyMirror, pairs as xPairs } from './xmirror'
 import { useStore } from './store'
 import { sceneManager } from './scene'
 import { effectorTarget, ikChain, solveIK } from './ik'
+import { boundsCenter, selectionIslands } from './modal/numinput'
 
 export interface Xf { t: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }
 export const identityXf = (): Xf => ({ t: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1) })
@@ -27,6 +28,12 @@ export interface Targets {
   frame: THREE.Quaternion
   count: number
   note?: string
+  /**
+   * MOD-2 Individual Origins: each island of points (connected selection) or each object turns / sizes around its
+   * own centre. Absent for the other pivots (everything uses `center`).
+   */
+  islands?: { verts: number[]; center: THREE.Vector3 }[]
+  objCenters?: Map<number, THREE.Vector3>
 }
 
 type St = ReturnType<typeof useStore.getState>
@@ -44,7 +51,8 @@ function rootJointOf(m: Model, g: number): number | null {
 export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace, onlyVerts?: number[]): Targets | null {
   const m = st.model
   const T: Targets = { verts: new Map(), vmat: new Map(), bones: new Map(), keys: new Map(), objs: new Map(), okeys: false, center: new THREE.Vector3(), frame: new THREE.Quaternion(), count: 0 }
-  const add = (p: ArrayLike<number>) => { T.center.add(new THREE.Vector3(p[0], p[1], p[2])); T.count++ }
+  const pts: THREE.Vector3[] = []
+  const add = (p: ArrayLike<number>) => { const v = new THREE.Vector3(p[0], p[1], p[2]); pts.push(v); T.center.add(v); T.count++ }
   let frameSet = false
   const setFrame = (q: THREE.Quaternion) => { if (!frameSet && space === 'local') { T.frame.copy(q); frameSet = true } }
   const clip = st.curClip()
@@ -86,7 +94,25 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
   T.center.divideScalar(T.count)
 
   if (st.pivot === 'cursor') T.center.set(st.cursor3d[0], st.cursor3d[1], st.cursor3d[2])
-  else if (st.pivot === 'active') {
+  else if (st.pivot === 'bounds') T.center.fromArray(boundsCenter(pts.map(v => [v.x, v.y, v.z])))
+  else if (st.pivot === 'individual') {
+    // the gizmo / median stays at the median; each island or object uses its own centre while transforming
+    if (T.objs.size) {
+      T.objCenters = new Map()
+      T.objs.forEach((o, g) => T.objCenters!.set(g, new THREE.Vector3(o.pivot[0] + o.pos[0], o.pivot[1] + o.pos[1], o.pivot[2] + o.pos[2])))
+    } else if (T.verts.size) {
+      T.islands = selectionIslands(T.verts.keys(), m.faces).map(vs => {
+        const c = new THREE.Vector3()
+        vs.forEach(v => { const p = sceneManager.posed[v] ?? m.verts[v]; c.x += p[0]; c.y += p[1]; c.z += p[2] })
+        return { verts: vs, center: c.multiplyScalar(1 / vs.length) }
+      })
+    }
+  } else if (st.pivot === 'active') {
+    if (st.selectMode === 'object' && T.objs.size) {
+      const g = [...T.objs.keys()][T.objs.size - 1]!
+      const o = T.objs.get(g)!
+      T.center.set(o.pivot[0] + o.pos[0], o.pivot[1] + o.pos[1], o.pivot[2] + o.pos[2])
+    }
     if (st.selectMode === 'vertex' && st.selVerts.size) {
       const v = [...st.selVerts][st.selVerts.size - 1]!
       const p = sceneManager.posed[v] ?? m.verts[v]
@@ -119,6 +145,14 @@ export function collectTargets(st: St, space: 'global' | 'local' = st.gizmoSpace
   }
 }
 
+/**
+ * MOD-2: the one place a G / R / S / Alt+S / extrude drag writes moved points (`fn(v)` = the new object-space
+ * position of point `v`). Symmetry (backend/symmetry `applySymmetric`) wraps this with a one-line change later.
+ */
+export function applyTransformDelta(m: Model, indices: Iterable<number>, fn: (v: number) => Vec3): void {
+  for (const v of indices) m.verts[v] = fn(v)
+}
+
 /** World matrix of a transform about `center`, scaling along `frame`'s axes. */
 export function xfMatrix(x: Xf, center: THREE.Vector3, frame: THREE.Quaternion): THREE.Matrix4 {
   const toC = new THREE.Matrix4().makeTranslation(center.x + x.t.x, center.y + x.t.y, center.z + x.t.z)
@@ -136,12 +170,17 @@ export function applyXf(T: Targets, x: Xf) {
   const m = st.model
   const W = xfMatrix(x, T.center, T.frame)
   const p = new THREE.Vector3()
-  T.verts.forEach((o, v) => {
+  // Individual Origins: each island's own matrix (the move part is the same for all)
+  const vW = new Map<number, THREE.Matrix4>()
+  T.islands?.forEach(isl => { const Wi = xfMatrix(x, isl.center, T.frame); isl.verts.forEach(v => vW.set(v, Wi)) })
+  applyTransformDelta(m, T.verts.keys(), v => {
+    const o = T.verts.get(v)!
     p.set(o[0], o[1], o[2])
+    const Wv = vW.get(v) ?? W
     const G = T.vmat.get(v)
-    if (G) p.applyMatrix4(G).applyMatrix4(W).applyMatrix4(G.clone().invert())
-    else p.applyMatrix4(W)
-    m.verts[v] = [p.x, p.y, p.z]
+    if (G) p.applyMatrix4(G).applyMatrix4(Wv).applyMatrix4(G.clone().invert())
+    else p.applyMatrix4(Wv)
+    return [p.x, p.y, p.z]
   })
   if (st.xMirror && T.verts.size) {
     const xm = xPairs(m, st.xMirrorMap)
@@ -152,7 +191,8 @@ export function applyXf(T: Targets, x: Xf) {
   const ci = Math.min(st.clip, m.clips.length - 1)
   T.objs.forEach((o, g) => {
     const X = xformMatrix(o)
-    const M = W.clone().multiply(X).multiply(new THREE.Matrix4().makeTranslation(o.pivot[0], o.pivot[1], o.pivot[2]))
+    const oc = T.objCenters?.get(g)
+    const M = (oc ? xfMatrix(x, oc, T.frame) : W.clone()).multiply(X).multiply(new THREE.Matrix4().makeTranslation(o.pivot[0], o.pivot[1], o.pivot[2]))
     const t = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3()
     M.decompose(t, q, s)
     const e = new THREE.Euler().setFromQuaternion(q)

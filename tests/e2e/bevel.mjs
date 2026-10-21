@@ -20,8 +20,9 @@ await S(() => {
 })
 await frame()
 const before = await S(() => window.__polyform.getState().model.faces.length)
-await p.keyboard.press('Control+b'); await frame()
-check('Ctrl+B starts bevel modal', await S(() => !!window.__polyform.getState().modalInfo?.includes('Bevel')))
+// Ctrl+B is Blender's bevel (op.mul.bevel) now; the classic face bevel modal is the edit.bevel command
+await S(async () => (await import('/src/commands.ts')).byId['edit.bevel'].run()); await frame()
+check('edit.bevel starts the classic bevel modal', await S(() => !!window.__polyform.getState().modalInfo?.includes('Bevel')))
 const mid = await S(() => window.__polyform.getState().model.faces.length)
 check('bevel added faces', mid > before, `${before} → ${mid}`)
 
