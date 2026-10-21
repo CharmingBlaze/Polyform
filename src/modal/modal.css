@@ -1,0 +1,46 @@
+/* MOD-1: modal tool status line (spec §0.2) and preview colour tokens (§0.7). Owned by src/modal (Frontend). */
+:root {
+  --tool-preview: #ffe04a;       /* loop-cut ring preview, knife cut line (scene.ts reads it) */
+  --tool-preview-dim: #ffe04a66; /* preview segments behind geometry (cut-through / X-ray) */
+  --knife-point: #5fd38d;        /* placed knife points */
+  --knife-snap: #ff6b6b;         /* hover point snapped to a vertex / existing cut */
+  --knife-mid: #ffa04a;          /* hover point snapped to an edge midpoint */
+  --knife-cross: #ffe04a;        /* where the cut will cross edges */
+  --slide-guide: #ffe04a;        /* Edge Slide (Even): the edge being measured */
+  --slide-anchor: #ff6b6b;       /* Edge Slide (Even): the start vertex */
+  --modal-guide: #ffffffb3;      /* dashed pivot→cursor guide */
+  --modal-readout: var(--gold);  /* status-line op name and values */
+  --modal-typed: var(--accent);  /* typed-number field */
+}
+
+/* the line lives inside footer.status (Chrome's StatusBar): while it is up, the old one-clause hint hides and the
+   counts move to the right, after the grow spacer */
+.status[data-modal-status] > [data-testid="hint"] { display: none; }
+.status[data-modal-status] > .counts, .status[data-modal-status] > .sel { order: 1; }
+.status[data-modal-status] > .help-btn { order: 2; }
+.status[data-modal-status][data-shed-counts] > .counts { display: none; }
+.status > .m-line { order: -1; display: flex; align-items: center; gap: 14px; min-width: 0; flex: 0 1 auto; }
+
+.m-read { display: flex; align-items: center; gap: 10px; flex: none; color: var(--modal-readout); }
+.m-op { font-weight: 650; }
+.m-v { display: inline-flex; align-items: center; }
+.m-v i { font-style: normal; color: #ffd166b3; margin-right: 4px; }
+.m-v b { font-weight: 600; color: var(--modal-readout); }
+.m-typed { display: inline-flex; align-items: center; height: 16px; padding: 0 4px; border-radius: 3px; background: #6d8bff22; box-shadow: inset 0 0 0 1px var(--modal-typed); color: #dfe5ff; font-family: ui-monospace, monospace; font-size: 11px; }
+.m-typed .caret { width: 1px; height: 11px; background: #dfe5ff; margin-left: 1px; animation: m-blink 1s steps(1) infinite; }
+@keyframes m-blink { 50% { opacity: 0; } }
+.m-typed + .unit { color: #ffd166b3; margin-left: 3px; }
+.m-axis { display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; border-radius: 3px; font-weight: 600; font-size: 10.5px; color: #0e1015; }
+.m-axis.x { background: var(--x); } .m-axis.y { background: var(--y); } .m-axis.z { background: var(--z); } .m-axis.n { background: var(--text-2, #9aa2b3); }
+.m-tag { height: 16px; line-height: 16px; padding: 0 5px; border-radius: 3px; font-size: 10.5px; color: var(--dim); background: #ffffff08; }
+.m-tag.on { color: var(--text); background: #6d8bff33; }
+.m-tag kbd { background: transparent; padding: 0 2px 0 0; color: inherit; opacity: .8; }
+.m-sep { width: 1px; height: 14px; background: var(--line2); flex: none; }
+.m-keys { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; }
+.m-k { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--dim); }
+.m-k kbd { padding: 0 4px; font-size: 10.5px; line-height: 16px; color: var(--text-2, #9aa2b3); }
+.m-k kbd + kbd { margin-left: -1px; }
+.m-k.on { color: var(--text); }
+
+/* cursor over every viewport while a modal asks for one */
+body[data-modal-cursor] .vp-hit { cursor: var(--modal-cursor) !important; }

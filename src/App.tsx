@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Viewport } from './components/Viewport'
 import { Header, ToolRail, StatusBar, Toast, NumericPanel, Popup, DrawPanel, HelpPopover } from './components/Chrome'
+import { ModalStatus } from './modal/ModalStatus'
 import { SideIcons, Sidebar, Timeline } from './components/Panels'
 import { panelKey, sideHandle, useSides } from './useLayout'
 import { DialogHost } from './components/Modal'
@@ -118,6 +119,7 @@ export default function App() {
           : <div className="right-col"><div className="side-handle left" data-testid="side-handle" {...sideHandle('right', false)} /><Sidebar><DrawPanel /><NumericPanel /></Sidebar></div>}
       </div>
       <StatusBar />
+      <ModalStatus />
       <CommandPalette open={palette} onClose={() => setPalette(false)} />
       <KeymapDialog />
       <SettingsDialog />

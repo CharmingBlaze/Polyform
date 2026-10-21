@@ -175,9 +175,10 @@ class SceneManager {
     cur.layers.enableAll(); cur.renderOrder = 8; cur.frustumCulled = false; s.add(cur)
 
     // tool overlay (loop cut preview, knife path): on top in every pane
-    const toolL = new THREE.LineSegments(this.toolLineGeo, new THREE.LineBasicMaterial({ color: '#ffe04a', depthTest: false, transparent: true }))
+    // colour: the --tool-preview theme token (src/modal/modal.css), re-read by applyThemeTokens()
+    const toolL = new THREE.LineSegments(this.toolLineGeo, this.toolLineMat)
     toolL.layers.enableAll(); toolL.renderOrder = 9; toolL.frustumCulled = false; s.add(toolL)
-    const toolP = new THREE.Points(this.toolPointGeo, new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
+    const toolP = new THREE.Points(this.toolPointGeo, this.toolPointMat = new THREE.PointsMaterial({ size: 9, sizeAttenuation: false, color: '#ffe04a', depthTest: false, map: dotTexture(), transparent: true, alphaTest: 0.3 }))
     toolP.layers.enableAll(); toolP.renderOrder = 10; toolP.frustumCulled = false; s.add(toolP)
     // hover sync (UV-14): the face under the pointer in the UV editor, outlined on top in every pane
     const hov = new THREE.LineSegments(this.hoverGeo, new THREE.LineBasicMaterial({ color: '#ffd166', depthTest: false, transparent: true }))
@@ -218,6 +219,20 @@ class SceneManager {
     }
   }
   readonly cursorGeo = new THREE.BufferGeometry()
+  /** tool overlay materials (loop cut / knife previews), coloured by the --tool-preview token */
+  readonly toolLineMat = new THREE.LineBasicMaterial({ color: '#ffe04a', depthTest: false, transparent: true })
+  toolPointMat!: THREE.PointsMaterial
+  /** Read the preview colour tokens (MOD-1, spec §0.7) from :root; runs on attach and on the 'polyform-theme' event. */
+  applyThemeTokens() {
+    if (typeof document === 'undefined') return
+    const css = getComputedStyle(document.documentElement)
+    const tok = (name: string, fb: string) => (css.getPropertyValue(name).trim() || fb)
+    const raw = tok('--tool-preview', '#ffe04a')
+    const c = /^#[0-9a-f]{8}$/i.test(raw) ? raw.slice(0, 7) : raw // THREE.Color takes no alpha
+    this.toolLineMat.color.set(c)
+    this.toolPointMat?.color.set(c)
+    this.invalidate()
+  }
   readonly toolLineGeo = new THREE.BufferGeometry()
   readonly toolPointGeo = new THREE.BufferGeometry()
   /** Lines (xyz pairs) and points drawn on top of everything, for modal tools; null clears. */
@@ -254,8 +269,11 @@ class SceneManager {
     canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); this.contextLost = true })
     canvas.addEventListener('webglcontextrestored', () => { this.contextLost = false; this.matKey = ''; this.rebuild() })
     this.renderer = r
+    this.applyThemeTokens()
+    if (!this.themeHooked) { this.themeHooked = true; window.addEventListener('polyform-theme', () => this.applyThemeTokens()) }
     this.invalidate()
   }
+  private themeHooked = false
 
   private renderAll() {
     const r = this.renderer!

@@ -16,6 +16,7 @@ import { openSetOrigin, selectedObjects, type ModalKind } from '../commands'
 import { extrudeSession, updateWallUVs } from '../extrude'
 import { facePoint, knifeCut, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
+import { beginModal, endModal, isModalRunning, setModal, transformStatus } from '../modal'
 
 export const VIEW_LABEL: Record<ViewType, string> = { persp: 'Perspective', top: 'Top', bottom: 'Bottom', front: 'Front', back: 'Back', left: 'Left', right: 'Right', uv: 'UV Texture' }
 export const SHADE_LABEL: Record<Shading, string> = { wire: 'Wireframe', solid: 'Solid', smooth: 'Smooth shade', textured: 'Textured', texwire: 'Textured + wire' }
@@ -63,10 +64,13 @@ interface XfDrag {
   label: string
   modal?: ModalKind
   ctrl: boolean
+  /** last rotate angle (radians) / scale factor, for the status line */
+  val?: number
+  /** last computed transform (the confirmed op's opts) */
+  lastXf?: Xf
 }
 
 const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
-const AXIS_NAME = ['X', 'Y', 'Z']
 /** gizmo center/frame cache, recomputed after any store change */
 let gizmoDirty = true
 let gizmoState: { center: THREE.Vector3; frame: THREE.Quaternion } | null = null
@@ -322,7 +326,9 @@ export function Viewport({ pane }: { pane: number }) {
     if (gizmoDirty) { gizmoDirty = false; const T = kind ? collectTargets(st) : null; gizmoState = T ? { center: T.center, frame: T.frame } : null }
     const d = drag.current
     const hideForModal = activeXf && d?.kind !== 'xf' && interaction.modal
-    giz.root.visible = !!kind && !!gizmoState && !hideForModal && !useStore.getState().draw
+    // MOD-1: no gizmo while a modal tool runs (G/R/S/E, loop cut, knife, bevel…); a gizmo or tweak drag keeps its own
+    const modalUp = isModalRunning() || (!!activeXf && !(d?.kind === 'xf' && d.src !== 'modal'))
+    giz.root.visible = !!kind && !!gizmoState && !hideForModal && !modalUp && !useStore.getState().draw
     if (!giz.root.visible || !gizmoState) return
     const cam = c.camera
     const wpp = cam instanceof THREE.OrthographicCamera ? (cam.top - cam.bottom) / cam.zoom / c.h
@@ -412,6 +418,7 @@ export function Viewport({ pane }: { pane: number }) {
         ang = -d.accAng * (a.dot(toViewer) < 0 ? -1 : 1)
         if (snap) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12)
       }
+      d.val = ang
       out.q.setFromAxisAngle(a.clone().normalize(), ang)
     } else {
       let f: number
@@ -422,15 +429,36 @@ export function Viewport({ pane }: { pane: number }) {
         if (snap) f = Math.round(f * 10) / 10
       }
       if (Math.abs(f) < 1e-4) f = 1e-4
+      d.val = f
       if (d.axis === null) out.s.set(f, f, f)
       else out.s.setComponent(d.axis, f)
     }
     return out
   }
 
-  const infoOf = (d: XfDrag) => {
-    const ax = d.axisVec ? 'along normal' : d.axis === null ? (d.op === 'rotate' ? 'view axis' : d.op === 'scale' ? 'uniform' : 'free') : `${AXIS_NAME[d.axis]} (${d.space})`
-    return `${d.label} · ${ax}${d.typed ? ` · ${d.typed}` : ''} · X/Y/Z axis · type a value · Ctrl snaps · Enter/click confirm · Esc/right-click cancel`
+  /** MOD-1: the status line for a modal transform (readout, typed field, axis chip, key hints) */
+  // the registered command ids (src/commands.ts): Repeat Last / canRun look the tool up by the same key
+  const XF_CMD = { move: 'xf.grab', rotate: 'xf.rotateModal', scale: 'xf.scaleModal' } as const
+  const xfModalId = (d: XfDrag) => (d.modal === 'extrude' || d.modal === 'joint' ? 'edit.extrude' : XF_CMD[d.op])
+  /** final parameters of a confirmed G/R/S/E, recorded as the last op */
+  const xfOpts = (d: XfDrag): Record<string, unknown> => {
+    const xf = d.lastXf
+    const base = { op: d.modal ?? d.op, axis: d.axis === null ? (d.axisVec ? 'normal' : null) : 'xyz'[d.axis], space: d.space, typed: d.typed || undefined }
+    if (d.op === 'move') return { ...base, translate: xf ? [xf.t.x, xf.t.y, xf.t.z] : [0, 0, 0] }
+    if (d.op === 'rotate') return { ...base, angle: THREE.MathUtils.radToDeg(d.val ?? 0) }
+    return { ...base, factor: d.val ?? 1 }
+  }
+  const showXfStatus = (d: XfDrag, xf: Xf | null) => {
+    const st = useStore.getState()
+    const a = axisVector(d)
+    setModal({
+      id: xfModalId(d),
+      ...transformStatus({
+        op: d.op, label: d.label, axis: d.axis, normal: !!d.axisVec, space: d.space, typed: d.typed,
+        t: xf ? [xf.t.x, xf.t.y, xf.t.z] : [0, 0, 0], along: xf && a ? xf.t.dot(a) / Math.max(1e-12, a.length()) : 0,
+        angle: THREE.MathUtils.radToDeg(d.val ?? 0), factor: d.val ?? 1, snapOn: st.snap !== d.ctrl,
+      }),
+    })
   }
 
   function updateXf(d: XfDrag, x: number, y: number) {
@@ -441,6 +469,7 @@ export function Viewport({ pane }: { pane: number }) {
       if (!d.modal || (d.modal !== 'extrude' && d.modal !== 'joint')) { if (!st.extruding) st.checkpoint(d.label) }
     }
     const xf = computeXf(d, x, y)
+    d.lastXf = xf
     const ex = d.modal === 'extrude' ? extrudeSession.cur : null
     if (ex?.dirs && d.axisVec) {
       // individual faces: each face's points move along that face's own normal by the same distance
@@ -451,7 +480,7 @@ export function Viewport({ pane }: { pane: number }) {
       applyXf(d.T, xf)
       if (ex) updateWallUVs(st.model, ex.walls, d.axisVec ? xf.t.dot(d.axisVec) : xf.t.length())
     }
-    if (d.src === 'modal') st.set({ modalInfo: infoOf(d) })
+    if (d.src === 'modal') showXfStatus(d, xf)
     // extrude-individual mutates verts without touch(); keep the mesh live during the drag
     if (d.started && !sceneManager.tryUpdatePositions()) { /* subscribe/touch path already refreshed or needs full rebuild */ }
   }
@@ -462,6 +491,7 @@ export function Viewport({ pane }: { pane: number }) {
     interaction.modal = false
     activeXf = null
     drag.current = null
+    if (d.src === 'modal') endModal(xfModalId(d), ok && d.started ? { confirmed: true, opts: xfOpts(d) } : { confirmed: false })
     st.set({ modalInfo: null })
     if (d.modal === 'extrude') { if (ok) st.finishExtrude(); else st.cancelExtrude() }
     else if (d.modal === 'joint') { if (ok) st.commit(); else { st.cancelEdit(); st.notify('Joint cancelled') } }
@@ -503,7 +533,7 @@ export function Viewport({ pane }: { pane: number }) {
         }
       },
     }
-    if (d.src === 'modal') { useStore.getState().set({ modalInfo: infoOf(d) }); updateXf(d, d.x0, d.y0) }
+    if (d.src === 'modal') { beginModal({ id: xfModalId(d), label: d.label }); showXfStatus(d, null); updateXf(d, d.x0, d.y0) }
   }
 
   /** Screen-space parameter of (x, y) along the projected segment p -> q. */
