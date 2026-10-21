@@ -32,7 +32,7 @@ describe('command palette data', () => {
   })
   it('fuzzy search: abbreviations and typos of the words find the command', () => {
     expect(rankEntries(entries, 'slct all', []).list[0].label).toMatch(/^Select all/)
-    expect(rankEntries(entries, 'loop cut', []).list[0].id).toBe('edit.loopcut')
+    expect(rankEntries(entries, 'loop cut', []).list[0].id).toBe('mesh.loopcut')
     expect(rankEntries(entries, 'exp glb', []).list[0].id).toBe('file.glb')
     expect(rankEntries(entries, 'zzzzqqq', []).list).toEqual([])
   })

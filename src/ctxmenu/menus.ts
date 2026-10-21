@@ -241,7 +241,7 @@ const VIEWPORT: Record<string, Section[]> = {
       ['edit.extrude', { label: 'Extrude', alt: extrudeAlt('verts', 'Extrude points only') }], ['mesh.knife', { label: 'Knife' }], ['mesh.dissolveVerts', { label: 'Dissolve vertices' }], ['op.mul.lathe', { label: 'Lathe' }]),
     sec('Rig', ['joint.bind', { label: 'Bind to joint' }], ['joint.unbind', { label: 'Unbind' }]), EDIT(), ...EDIT_TAIL, ...TAIL],
   'vp.edge': [XF, sec('Edge', ['edit.extrude', { label: 'Extrude', alt: extrudeAlt('edges', 'Extrude edges only') }], ['op.mul.bevel', { label: 'Bevel' }],
-      ['edit.loopcut', { label: 'Loop cut' }], ['mesh.knife', { label: 'Knife' }], ['edit.bridge', { label: 'Bridge', tags: 'loops' }], ['op.con.subdivide', { label: 'Subdivide' }], ['op.con.turn', { label: 'Turn edge' }],
+      ['mesh.loopcut', { label: 'Loop cut' }], ['mesh.knife', { label: 'Knife' }], ['edit.bridge', { label: 'Bridge', tags: 'loops' }], ['op.con.subdivide', { label: 'Subdivide' }], ['op.con.turn', { label: 'Turn edge' }],
       ['edit.merge', { label: 'Merge', opt: 'con.merge' }], ['mesh.dissolveEdges', { label: 'Dissolve edges' }]),
     sec('UV & shading', ['uv.seamMark', { label: 'Mark UV seam' }], ['uv.seamClear', { label: 'Clear UV seam' }], ['uv.stitch', { label: 'Stitch UVs' }], ['shade.sharp', { label: 'Mark hard edge' }], ['shade.sharpClear', { label: 'Clear hard edge' }]),
     EDIT(), ...EDIT_TAIL, ...TAIL],
@@ -317,7 +317,7 @@ const MODE_DIRS: Partial<Record<Dir, Spec>> = { N: ['sel.edge', { label: 'Edge' 
 const MARKS: Record<string, Partial<Record<Dir, Spec>>> = {
   'vp.object': { ...MODE_DIRS, NW: ['op.mul.duplicate', { label: 'Duplicate' }], SW: ['sel.hide', { label: 'Hide' }], S: ['edit.delete', { label: 'Delete' }], SE: ['view.frame', { label: 'Frame' }] },
   'vp.vertex': { ...MODE_DIRS, NW: ['edit.merge', { label: 'Merge' }], SW: ['op.con.weld', { label: 'Weld' }], S: ['edit.delete', { label: 'Delete' }], SE: ['op.con.face', { label: 'Make polygon' }] },
-  'vp.edge': { ...MODE_DIRS, NW: ['edit.loopcut', { label: 'Loop cut' }], SW: ['edit.bridge', { label: 'Bridge' }], S: ['edit.delete', { label: 'Delete' }], SE: ['op.mul.bevel', { label: 'Bevel' }] },
+  'vp.edge': { ...MODE_DIRS, NW: ['mesh.loopcut', { label: 'Loop cut' }], SW: ['edit.bridge', { label: 'Bridge' }], S: ['edit.delete', { label: 'Delete' }], SE: ['op.mul.bevel', { label: 'Bevel' }] },
   'vp.face': { ...MODE_DIRS, NW: ['edit.extrude', { label: 'Extrude' }], SW: ['edit.inset', { label: 'Inset' }], S: ['edit.delete', { label: 'Delete' }], SE: ['op.mul.bevel', { label: 'Bevel' }] },
   'vp.empty': { ...MODE_DIRS, NW: ['add.box', { label: 'Add box' }], SW: ['view.frameAll', { label: 'Frame all' }], S: ['cursor.origin', { label: 'Cursor to origin' }], SE: ['sel.all', { label: 'Select all' }] },
   'vp.joint': { ...MODE_DIRS, N: ['sel.joint', { label: 'Joint' }], NW: ['joint.addAtCursor', { label: 'Joint at cursor' }], SW: ['joint.bind', { label: 'Bind' }], S: ['edit.delete', { label: 'Delete' }], SE: ['joint.mirror', { label: 'Mirror joints' }] },

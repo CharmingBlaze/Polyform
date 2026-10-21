@@ -223,6 +223,11 @@ export interface State {
   growSelection: () => void
   shrinkSelection: () => void
   selectLoop: (edgeKey: number, add: boolean) => void
+  /** Ctrl+Alt+click: the edge ring through an edge (edge mode: ring edges; vertex mode: their points; face mode: the face
+   *  ring running across the clicked face, i.e. the quads of the ring of the edge beside `edgeKey` in `face`) */
+  selectRing: (edgeKey: number, add: boolean, face?: number) => void
+  /** Select › Select Loop › Edge Loops / Edge Rings: grow the selected edges into their whole loops or rings */
+  selectLoops: (kind: 'loop' | 'ring') => void
   selectGroup: (g: number, add: boolean) => void
   hideSelection: (unselected?: boolean) => void
   unhideAll: () => void
@@ -681,6 +686,40 @@ export const useStore = create<State>((set, get) => ({
       const t = topology(s.model)
       s.setSelection({ edges: t.edges.filter(e => { const [a, b] = t.ends(e); return v.has(a) && v.has(b) }) })
     } else s.setSelection({ verts: v })
+  },
+  selectRing: (e, add, face) => {
+    const s = get(), t = topology(s.model)
+    if (s.selectMode === 'face') {
+      // the face ring across the clicked face: the quad strip of the ring through a neighbouring edge of that face
+      const f = face !== undefined && face >= 0 && t.faceEdges(face).includes(e) ? face : t.edgeFaces(e)[0]
+      if (f === undefined) return
+      const es = t.faceEdges(f), i = es.indexOf(e)
+      const side = es[(i + 1) % es.length]
+      const sf = new Set(add ? s.selFaces : []); t.edgeRing(side).faces.forEach(x => sf.add(x))
+      return s.setSelection({ faces: sf })
+    }
+    const ring = t.edgeRing(e).edges
+    if (s.selectMode === 'edge') { const se = new Set(add ? s.selEdges : []); ring.forEach(x => se.add(x)); return s.setSelection({ edges: se }) }
+    const sv = new Set(add ? s.selVerts : []); vertsOfEdges(ring).forEach(v => sv.add(v))
+    s.setSelection({ verts: sv })
+  },
+  selectLoops: kind => {
+    const s = get(), t = topology(s.model)
+    const src = s.selectMode === 'edge' ? [...s.selEdges]
+      : s.selectMode === 'vertex' ? t.edges.filter(e => { const [a, b] = t.ends(e); return s.selVerts.has(a) && s.selVerts.has(b) })
+        : s.selectMode === 'face' ? [...new Set([...s.selFaces].flatMap(f => t.faceEdges(f)))] : []
+    if (!src.length) return
+    if (s.selectMode === 'face') {
+      // faces: the face loops crossing the selected faces (Blender's edge rings of the face edges)
+      const sf = new Set(s.selFaces)
+      if (kind === 'ring') src.forEach(e => t.edgeRing(e).faces.forEach(f => sf.add(f)))
+      else src.forEach(e => t.edgeLoop(e).forEach(x => t.edgeFaces(x).forEach(f => { if (t.faceEdges(f).filter(y => src.includes(y)).length) sf.add(f) })))
+      return s.setSelection({ faces: sf })
+    }
+    const out = new Set<number>(src)
+    src.forEach(e => (kind === 'loop' ? t.edgeLoop(e) : t.edgeRing(e).edges).forEach(x => out.add(x)))
+    if (s.selectMode === 'edge') return s.setSelection({ edges: out })
+    s.setSelection({ verts: vertsOfEdges([...out]) })
   },
   selectLoop: (e, add) => {
     const s = get(), t = topology(s.model)

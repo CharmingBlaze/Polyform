@@ -36,7 +36,7 @@ describe('keymap (team/user decision of 2026-10-19)', () => {
     const b = by()
     expect(b['B']).toBe('op.mul.bevelFaces'); expect(b['Ctrl+B']).toBe('op.mul.bevel'); expect(b['Ctrl+Shift+B']).toBe('op.mul.bevelVerts'); expect(b['I']).toBe('edit.inset'); expect(b['K']).toBe('mesh.knife')
     expect(b['F']).toBe('edit.fill'); expect(b['M']).toBe('edit.merge')
-    expect(b['Ctrl+R']).toBe('edit.loopcut'); expect(b['Ctrl+P']).toBe('joint.bind'); expect(b['Tab']).toBe('sel.object')
+    expect(b['Ctrl+R']).toBe('mesh.loopcut'); expect(b['Ctrl+P']).toBe('joint.bind'); expect(b['Tab']).toBe('sel.object')
     expect(b['Ctrl+Tab']).toBe('anim.mode')
     expect(b['1']).toBe('sel.objectMode'); expect(b['2']).toBe('sel.vertex'); expect(b['3']).toBe('sel.edge'); expect(b['4']).toBe('sel.face'); expect(b['5']).toBe('sel.joint'); expect(b['Tab']).toBe('sel.object')
     expect(b['Ctrl+[']).toBe('view.toolPanel'); expect(b['Ctrl+]']).toBe('view.sidePanel'); expect(b['Ctrl+\\']).toBe('view.focus')

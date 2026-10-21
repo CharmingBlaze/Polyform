@@ -118,7 +118,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
     ] },
     { id: 'edit.meshTools', label: 'Mesh Tools', sub: [
       cmd('mesh.knife', 'Knife', { enabled: !animate && s.selectMode !== 'joint' }),
-      cmd('edit.loopcut', 'Loop Cut', { enabled: !animate && s.selectMode !== 'joint' }),
+      cmd('mesh.loopcut', 'Loop Cut and Slide', { enabled: !animate && s.selectMode !== 'joint' }),
     ] },
     'sep',
     // Set Origin (Blender: Object → Set Origin); lives in Edit so the header keeps its six menus
@@ -173,6 +173,10 @@ export function buildMenus(openPalette: () => void): Menu[] {
     cmd('sel.linked', 'Linked', { enabled: hasSel() }),
     cmd('sel.grow', 'Grow', { enabled: hasSel() }),
     cmd('sel.shrink', 'Shrink', { enabled: hasSel() }),
+    { id: 'sel.selectLoop', label: 'Select Loop', enabled: s.selectMode !== 'joint' && s.selectMode !== 'object', sub: [
+      cmd('sel.edgeLoops', 'Edge Loops', { enabled: hasSel() }),
+      cmd('sel.edgeRings', 'Edge Rings', { enabled: hasSel() }),
+    ] },
     'sep',
     cmd('sel.vertex', 'Points', { radio: true, checked: s.selectMode === 'vertex' }),
     cmd('sel.edge', 'Edges', { radio: true, checked: s.selectMode === 'edge' }),

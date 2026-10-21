@@ -69,7 +69,7 @@ describe('context menu contents', () => {
     byId['sel.loop'] = { id: 'sel.loop', label: 'Select loop', group: 'Selection', run: () => {} }
     expect(flatItems(tableMenu('vp.edge').entries).map(i => i.id)).toContain('sel.loop')
     delete byId['sel.loop']
-    const entries = buildSections('vp.face', [{ label: 'X', items: ['nope.never'] }])
+    const entries = buildSections('test.none', [{ label: 'X', items: ['nope.never'] }])
     expect(entries.length).toBe(0)
   })
   it('sections never start or end empty; submenus collect under More', () => {

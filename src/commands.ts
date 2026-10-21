@@ -137,7 +137,7 @@ export const commands: Command[] = [
   } },
   // MOD-5: Blender's id; was `edit.knife` (saved rebinds are carried over by keymap.ts)
   { id: 'mesh.knife', label: 'Knife (Animate: insert key)', group: 'Multiply', keys: 'K', run: () => { const s = S(); if (s.mode === 'animate') s.setKey(); else s.knife() } },
-  { id: 'edit.loopcut', label: 'Loop cut', group: 'Multiply', keys: 'Ctrl+R', canRun: meshTool(), run: () => S().loopCut() },
+  { id: 'mesh.loopcut', label: 'Loop Cut and Slide', group: 'Multiply', keys: 'Ctrl+R', canRun: meshTool(), run: () => S().loopCut() },
   { id: 'edit.merge', label: 'Merge points', group: 'Construct', keys: 'M', canRun: meshTool(R.points('Merge', 2)), run: () => {
     const s = S()
     if (s.mode !== 'model' || s.selectMode === 'joint') return s.notify(s.mode !== 'model' ? 'Switch to Model mode to merge' : 'Switch to Object, Point, Edge or Face mode to merge')
@@ -214,6 +214,8 @@ export const commands: Command[] = [
   { id: 'sel.grow3', label: 'Grow selection (bracket)', group: 'Selection', keys: ']', run: () => byId['sel.grow'].run() },
   { id: 'sel.shrink', label: 'Shrink selection', group: 'Selection', keys: 'Ctrl+-', run: () => { const s = S(); if (s.tool === 'paint') s.setPaint({ size: Math.floor(s.paint.size / 1.25) }); else s.shrinkSelection() } },
   { id: 'sel.shrink2', label: 'Shrink selection (bracket)', group: 'Selection', keys: '[', run: () => byId['sel.shrink'].run() },
+  { id: 'sel.edgeLoops', label: 'Select edge loops', group: 'Selection', run: () => S().selectLoops('loop'), menus: [{ ctx: ['vp.vertex', 'vp.edge', 'vp.face'], section: 'Select', label: 'Edge loops' }] },
+  { id: 'sel.edgeRings', label: 'Select edge rings', group: 'Selection', run: () => S().selectLoops('ring'), menus: [{ ctx: ['vp.vertex', 'vp.edge', 'vp.face'], section: 'Select', label: 'Edge rings' }] },
   { id: 'sel.hide', label: 'Hide selected', group: 'Selection', keys: 'H', canRun: R.faces('Hide'), run: () => S().hideSelection() },
   { id: 'sel.hideOthers', label: 'Hide unselected', group: 'Selection', keys: 'Shift+H', canRun: R.hasMesh, run: () => S().hideSelection(true) },
   { id: 'sel.unhide', label: 'Unhide all', group: 'Selection', keys: 'Alt+H', run: () => S().unhideAll() },

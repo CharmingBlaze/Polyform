@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { Move, Rotate3d, Search, Maximize2, Minimize2 } from 'lucide-react'
 import { LAYER, paneLayers, sceneManager } from '../scene'
 import { useStore, type Shading, type ViewType } from '../store'
-import { faceCenter, faceNormal, flipFaces, triangulate, type Vec3 } from '../model'
+import { edgeKey, faceCenter, faceNormal, flipFaces, triangulate, type Vec3 } from '../model'
 import { createVertex } from '../geom'
 import { noteShapeMods, paintAt, paintStrokeEnd, paintStrokeStart } from '../paint'
 import { PaintOverlay } from './PaintOverlay'
@@ -18,7 +18,7 @@ import { extrudeSession, updateWallUVs } from '../extrude'
 import { chainClicks, facePoint, knifeCutChains, knifePath, kpos, type Eye, type KPoint } from '../knife'
 import { snapPoint, type SnapHit, type SnapOpts } from '../snap'
 import { refreshKnifeTheme, setKnifeOverlay, type HoverKind } from '../knifeOverlay'
-import { loopCut, orientedRing, previewLines, slideCut, type CutRec, type Ring } from '../loopcut'
+import { canEven, clampFactor, loopCut, orientedRing, previewLines, ringNormals, setSmoothness, slideCut, type CutRec, type Ring, type SlideOpts } from '../loopcut'
 import { beginModal, endModal, isModalRunning, MOUSE, setModal, transformStatus, updateModal, type ModalHint, type ModalValue } from '../modal'
 import { emptyNum, flipsWinding, lockedScale, nextAxisLock, numApply, numKey, numText, numTyping, numValue, precisionStep, scaleFactor, snapFactor, type NumInput } from '../modal/numinput'
 import { modalRequestOf, type ModalRequest } from '../modal/transform'
@@ -32,7 +32,7 @@ const ORTHO_DIR: Record<string, { pos: Vec3; up: Vec3 }> = {
 }
 
 type Drag =
-  | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean; toggle?: boolean }
+  | { kind: 'rect'; x0: number; y0: number; x1: number; y1: number; add: boolean; sub: boolean; alt: boolean; toggle?: boolean; ring?: boolean }
   | { kind: 'orbit' | 'pan' | 'zoom'; x: number; y: number; cursorAt?: { x: number; y: number }; menuAt?: { x: number; y: number } }
   | { kind: 'paint' }
   | { kind: 'draw'; phase: 'foot' | 'height'; p0: THREE.Vector3; x0: number; y0: number; moved: boolean; h0?: number }
@@ -122,9 +122,8 @@ let activeXf: {
   hover?: (x: number, y: number, ctrl: boolean, ev?: { shift: boolean; buttons: number }) => void
   /** the button went up (knife: ends a freehand drag) */
   up?: (x: number, y: number) => void
-  wheel?: (dy: number) => void
-  /** key releases while the modal runs (Shift precision, Ctrl snap) */
   keyUp?: (e: KeyboardEvent) => void
+  wheel?: (dy: number, ev?: { alt: boolean }) => void
 } | null = null
 
 export interface ViewCtx {
@@ -844,20 +843,63 @@ export function Viewport({ pane }: { pane: number }) {
     // seed selection onto the inset caps (op already selected via applyResult)
   }
 
-  /** Ctrl+R: hover previews the ring, wheel/digits set the cut count, click cuts, then slide; right-click centers. */
+  /**
+   * Ctrl+R (`mesh.loopcut`, Blender 4.2 Loop Cut and Slide, MOD-7). Hover previews the ring in --tool-preview; Wheel,
+   * PgUp/PgDn, Numpad ± or typed digits (Backspace edits) set the cut count; Alt+Wheel the smoothness. LMB cuts, then
+   * Edge Slide: the mouse slides (Shift precision, Ctrl 0.1 steps), a typed factor (-1..1) sets it, E Even, F Flip,
+   * C Clamp; LMB/Enter confirm, RMB/Esc leave the loops centred. The whole op is one undo step.
+   */
   function startLoopCut() {
-    let cuts = 1, ring: Ring | null = null, hoverEdge = -1, typed = '', typedAt = 0
-    let phase: 'hover' | 'slide' = 'hover', rec: CutRec | null = null, ringIdx = 0, u0 = 0, slide = 0
-    const info = () => useStore.getState().set({
-      modalInfo: phase === 'hover'
-        ? `Loop cut · ${cuts} cut${cuts > 1 ? 's' : ''} · wheel or type a number · click to cut · Esc/right-click exit`
-        : `Edge slide ${slide.toFixed(2)} · click/Enter confirm · right-click/Esc center`,
-    })
-    const preview = () => sceneManager.setToolOverlay(phase === 'hover' && ring ? previewLines(sceneManager.posed, ring, cuts) : null)
-    const end = () => {
-      sceneManager.setToolOverlay(null)
+    const ID = 'mesh.loopcut'
+    let cuts = 1, smooth = 0, ring: Ring | null = null, hoverEdge = -1, typed = ''
+    let phase: 'hover' | 'slide' = 'hover', rec: CutRec | null = null, ringIdx = 0, lastU = 0, raw = 0
+    let even = false, flipped = false, clamp = true, shift = false, ctrl = false
+    const factor = () => {
+      if (typed && typed !== '-' && typed !== '.' && typed !== '-.') return clampFactor(parseFloat(typed) || 0, clamp)
+      return clampFactor(ctrl ? Math.round(raw * 10) / 10 : raw, clamp)
+    }
+    const slideOpts = (): SlideOpts => ({ factor: factor(), even, flipped, clamp, ref: ringIdx })
+    const cutHints: ModalHint[] = [
+      { keys: [MOUSE.LMB], label: 'Cut', p: 1 },
+      { keys: ['Esc/RMB'], label: 'Cancel', p: 1 },
+      { keys: ['Backspace'], label: 'Edit number', p: 2 },
+      { keys: ['Wheel/PgUp/PgDn'], label: 'Cuts', p: 3 },
+      { keys: ['0–9'], label: 'Type cuts', p: 3 },
+      { keys: [MOUSE.AltWheel], label: 'Smoothness', p: 3 },
+    ]
+    const slideHints = (): ModalHint[] => [
+      { keys: ['LMB/Enter'], label: 'Confirm', p: 1 },
+      { keys: ['Esc/RMB'], label: 'Cancel', p: 1 },
+      { keys: ['Backspace'], label: 'Edit number', p: 2 },
+      { keys: ['Shift'], label: 'Precision', p: 3, on: shift },
+      { keys: ['Ctrl'], label: 'Snap 0.1', p: 3, on: ctrl },
+      { keys: ['-0–9'], label: 'Type factor', p: 3 },
+    ]
+    const slideTags = () => [
+      { key: 'E', label: 'Even', on: even && !!rec && canEven(rec) },
+      ...(even ? [{ key: 'F', label: 'Flipped', on: flipped }] : []),
+      { key: 'C', label: 'Clamp', on: clamp },
+    ]
+    const info = () => {
+      if (phase === 'hover') {
+        const vals: ModalValue[] = [{ label: 'Cuts', value: String(cuts), ...(typed ? { typed } : {}) }, { label: 'Smoothness', value: smooth, digits: 3 }]
+        updateModal({ id: ID, label: 'Loop Cut', value: vals, tags: [], hints: cutHints })
+      } else {
+        const v: ModalValue = { label: 'Factor', value: factor(), digits: 4, ...(typed ? { typed } : {}) }
+        updateModal({ id: ID, label: 'Edge Slide', value: [v], tags: slideTags(), hints: slideHints() })
+      }
+    }
+    const preview = () => {
+      if (phase !== 'hover' || !ring) return setKnifeOverlay(null)
+      const nrm = smooth ? ringNormals(useStore.getState().model, ring) : null
+      setKnifeOverlay({ lines: previewLines(sceneManager.posed, ring, cuts, 0, smooth, nrm ? v => nrm.get(v)! : undefined), dim: [], points: [], cross: [], hover: null })
+    }
+    const end = (confirmed: boolean) => {
+      setKnifeOverlay(null)
       interaction.modal = false
       activeXf = null
+      const o = slideOpts()
+      endModal(ID, { confirmed, opts: confirmed ? { number_cuts: cuts, smoothness: smooth, factor: o.factor, use_even: even, flipped, use_clamp: clamp } : undefined })
       useStore.getState().set({ modalInfo: null })
       gizmoDirty = true
       sceneManager.rebuild()
@@ -867,67 +909,93 @@ export function Viewport({ pane }: { pane: number }) {
       if (e !== hoverEdge) { hoverEdge = e; ring = e >= 0 ? orientedRing(useStore.getState().model, e) : null }
       preview()
     }
+    const setCuts = (n: number) => { cuts = THREE.MathUtils.clamp(n, 1, 64); preview(); info() }
+    const setSmooth = (v: number) => {
+      smooth = Math.round(THREE.MathUtils.clamp(v, -1, 1) * 10) / 10
+      if (phase === 'hover') preview()
+      else if (rec) { setSmoothness(useStore.getState().model, rec, smooth, slideOpts()); useStore.getState().touch() }
+      info()
+    }
     const doCut = (x: number, y: number) => {
       if (!ring) return
       const st = useStore.getState()
       st.checkpoint('Loop cut')
-      rec = loopCut(st.model, ring, cuts)
+      rec = loopCut(st.model, ring, cuts, { smoothness: smooth })
       st.touch()
       const loopEdges = rec.loops.flat()
       if (st.selectMode !== 'object') {
         if (st.subModes.includes('edge')) st.setSelection({ edges: loopEdges })
         else st.setSelection({ verts: rec.verts.map(v => v.v) })
       }
-      ringIdx = Math.max(0, ring.A.findIndex((a, i) => (a < ring!.B[i] ? a * 2 ** 26 + ring!.B[i] : ring!.B[i] * 2 ** 26 + a) === hoverEdge))
+      ringIdx = Math.max(0, ring.A.findIndex((a, i) => edgeKey(a, ring!.B[i]) === hoverEdge))
       const P = sceneManager.posed
-      u0 = segParam(P[ring.A[ringIdx]], P[ring.B[ringIdx]], x, y)
-      phase = 'slide'; slide = 0
+      lastU = segParam(P[ring.A[ringIdx]], P[ring.B[ringIdx]], x, y)
+      phase = 'slide'; raw = 0; typed = ''
       preview(); info()
     }
+    const apply = () => { if (rec) { slideCut(useStore.getState().model, rec, slideOpts()); useStore.getState().touch() } info() }
     const finish = (center: boolean) => {
       const st = useStore.getState()
-      if (rec && center) { slideCut(st.model, rec, 0); st.touch() }
+      if (rec && center) { raw = 0; typed = ''; even = false; slideCut(st.model, rec, 0); st.touch() }
       st.commit()
-      end()
+      end(true)
     }
     activeXf = {
       pane,
-      cancel: () => { if (phase === 'slide') finish(true); else end() },
+      cancel: () => { if (phase === 'slide') finish(true); else end(false) },
       confirm: () => { if (phase === 'slide') finish(false) },
       move: () => {},
-      hover: (x, y) => {
+      hover: (x, y, c, ev) => {
         if (phase === 'hover') return hoverAt(x, y)
         if (!rec || !ring) return
+        ctrl = c; shift = !!ev?.shift
         const P = sceneManager.posed
         const u = segParam(P[ring.A[ringIdx]], P[ring.B[ringIdx]], x, y)
-        slide = THREE.MathUtils.clamp((u - u0) * (cuts + 1), -0.98, 0.98)
-        slideCut(useStore.getState().model, rec, slide)
-        useStore.getState().touch()
-        info()
+        raw += (u - lastU) * (cuts + 1) * (shift ? 0.1 : 1); lastU = u
+        raw = clampFactor(raw, clamp)
+        if (!typed) apply(); else info()
       },
       down: (button, x, y) => {
-        if (phase === 'hover') { if (button === 0) { hoverAt(x, y); doCut(x, y) } else if (button === 2) end() }
+        if (phase === 'hover') { if (button === 0) { hoverAt(x, y); doCut(x, y) } else if (button === 2) end(false) }
         else if (button === 0) finish(false)
         else if (button === 2) finish(true)
       },
-      wheel: dy => { if (phase === 'hover') { cuts = THREE.MathUtils.clamp(cuts + (dy < 0 ? 1 : -1), 1, 64); preview(); info() } },
+      wheel: (dy, ev) => {
+        if (ev?.alt) return setSmooth(smooth + (dy < 0 ? 0.1 : -0.1))
+        if (phase === 'hover') { typed = ''; setCuts(cuts + (dy < 0 ? 1 : -1)) }
+      },
       key: e => {
-        const k = e.key
-        if (k === 'Escape') return phase === 'slide' ? finish(true) : end()
-        if (k === 'Enter') { if (phase === 'slide') finish(false); return }
-        if (phase === 'hover' && /^[0-9]$/.test(k)) {
-          if (performance.now() - typedAt > 1200) typed = ''
-          typed = (typed + k).slice(-2); typedAt = performance.now()
-          cuts = THREE.MathUtils.clamp(parseInt(typed, 10) || 1, 1, 64)
-          preview(); info()
+        const k = e.key, lk = k.toLowerCase()
+        if (k === 'Shift') { shift = true; return info() }
+        if (k === 'Control' || k === 'Meta') { ctrl = true; return phase === 'slide' ? apply() : undefined }
+        if (k === 'Escape') return phase === 'slide' ? finish(true) : end(false)
+        if (k === 'Enter' || k === 'NumpadEnter') { if (phase === 'slide') finish(false); return }
+        if (phase === 'hover') {
+          if (k === 'PageUp' || e.code === 'NumpadAdd') { typed = ''; return setCuts(cuts + 1) }
+          if (k === 'PageDown' || e.code === 'NumpadSubtract') { typed = ''; return setCuts(cuts - 1) }
+          if (/^[0-9]$/.test(k)) { typed = (typed + k).replace(/^0+/, '').slice(0, 2); return setCuts(parseInt(typed, 10) || 1) }
+          if (k === 'Backspace') { typed = typed.slice(0, -1); return setCuts(parseInt(typed, 10) || 1) }
+          return
         }
+        if (/^[0-9.]$/.test(k)) { typed = (typed + k).slice(0, 8); return apply() }
+        if (k === '-' || e.code === 'NumpadSubtract') { typed = typed.startsWith('-') ? typed.slice(1) : '-' + typed; return apply() }
+        if (k === 'Backspace') { typed = typed.slice(0, -1); return apply() }
+        if (lk === 'e') { if (rec && canEven(rec)) { even = !even; if (!even) flipped = false } return apply() }
+        if (lk === 'f') { if (even) flipped = !flipped; return apply() }
+        if (lk === 'c') { clamp = !clamp; raw = clampFactor(raw, clamp); return apply() }
+      },
+      keyUp: e => {
+        if (e.key === 'Shift') { shift = false; info() } else if (e.key === 'Control' || e.key === 'Meta') { ctrl = false; if (phase === 'slide') apply() }
       },
     }
     interaction.modal = true
+    refreshKnifeTheme()
+    beginModal({ id: ID, label: 'Loop Cut', hints: cutHints, values: [{ label: 'Cuts', value: '1' }, { label: 'Smoothness', value: 0, digits: 3 }] })
     const at = interaction.mouse[pane]
     if (at) hoverAt(at.x, at.y)
     info()
   }
+
 
   /** Knife snapping through the shared `snapPoint` (src/snap.ts): vertex / existing cut point > edge (Shift: midpoint)
    *  > face surface > empty space; Ctrl ignores vertex, edge and cut-point snapping. */
@@ -1500,9 +1568,10 @@ export function Viewport({ pane }: { pane: number }) {
       useStore.getState().setSelection({ verts: sv })
       return
     }
-    // Ctrl+drag: marquee from anywhere (replace; +Shift add, +Alt subtract); a Ctrl+click toggles one element
+    // Ctrl+drag: marquee from anywhere (replace; +Shift add, +Alt subtract); a Ctrl+click toggles one element;
+    // Ctrl+Alt+click selects an edge ring (Blender), Ctrl+Shift+Alt+click adds one
     const ctrl = e.ctrlKey || e.metaKey
-    if (ctrl) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.altKey && !e.shiftKey, alt: false, toggle: !e.shiftKey && !e.altKey }; return }
+    if (ctrl) { drag.current = { kind: 'rect', x0: x, y0: y, x1: x, y1: y, add: e.shiftKey, sub: e.altKey && !e.shiftKey, alt: false, toggle: !e.shiftKey && !e.altKey, ring: e.altKey }; return }
     // press on an element: select it now, drag past 4 px moves it (one undo step); empty space: marquee
     const hitEl = !e.altKey ? pickAny(x, y, st) : null
     if (hitEl) {
@@ -1679,27 +1748,22 @@ export function Viewport({ pane }: { pane: number }) {
       st.setSelection({ faces: merge(st.selFaces, faces) })
       return
     }
-    // Alt+click: edge loop (vertex/edge modes) or face loop (face mode)
-    if (click && d.alt) {
+    // Alt+click: edge loop (vertex/edge modes) or face loop (face mode); Ctrl+Alt+click: edge ring / face ring
+    if (click && (d.alt || d.ring)) {
+      const fi = pickFaceScreen(d.x0, d.y0)
       let e2 = pickEdge(d.x0, d.y0)
-      if (e2 < 0) {
-        // solid shading: pick the face under the cursor, then the edge of that face closest to the click
-        const fi = pickFaceScreen(d.x0, d.y0)
-        if (fi >= 0) {
-          const t = topology(m)
-          const es = t.faceEdges(fi)
-          let best = -1, bd = 1e9
-          for (const ek of es) {
-            const [a, b] = t.ends(ek)
-            const mid = new THREE.Vector3(...P[a]).lerp(new THREE.Vector3(...P[b]), 0.5)
-            const scr = project(mid)
-            const dd = (scr.x - d.x0) ** 2 + (scr.y - d.y0) ** 2
-            if (dd < bd) { bd = dd; best = ek }
-          }
-          e2 = best
+      if (e2 < 0 && fi >= 0) {
+        // solid shading: the edge of the face under the cursor closest to the click
+        const t = topology(m)
+        let bd = 1e9
+        for (const ek of t.faceEdges(fi)) {
+          const [a, b] = t.ends(ek)
+          const scr = project(new THREE.Vector3(...P[a]).lerp(new THREE.Vector3(...P[b]), 0.5))
+          const dd = (scr.x - d.x0) ** 2 + (scr.y - d.y0) ** 2
+          if (dd < bd) { bd = dd; e2 = ek }
         }
       }
-      if (e2 >= 0) st.selectLoop(e2, d.add)
+      if (e2 >= 0) { if (d.ring) st.selectRing(e2, d.add, fi); else st.selectLoop(e2, d.add) }
       return
     }
     const subs = st.subModes
@@ -1743,7 +1807,7 @@ export function Viewport({ pane }: { pane: number }) {
   const onWheel = (e: React.WheelEvent) => {
     const dr = useStore.getState().draw
     if (dr?.has) { useStore.getState().drawSeg(dr.seg + (e.deltaY < 0 ? 1 : -1)); return }
-    if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY); return }
+    if (activeXf?.wheel) { if (activeXf.pane === pane) activeXf.wheel(e.deltaY || e.deltaX, { alt: e.altKey }); return }
     // trackpad: two-finger scroll pans, pinch (Ctrl+wheel) zooms; a mouse-wheel notch zooms
     const w = wheelIntent(e)
     if (w.kind === 'zoom') zoom(w.k); else pan(-w.dx, -w.dy)
