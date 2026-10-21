@@ -52,3 +52,23 @@
 .tl-root .dope::-webkit-scrollbar-thumb, .tl-inspector::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 0; }
 .tl-root .dope::-webkit-scrollbar-track, .tl-inspector::-webkit-scrollbar-track { background: var(--panel); }
 .tl-root .dope::-webkit-scrollbar-corner { background: var(--panel); }
+
+/* ---- UI scale (src/uiscale.ts). The timeline sits in the counter-zoomed work area (.center, zoom 1 / scale) so its
+   pointer maths stay in viewport px; the dope sheet's own sizes scale with --ui-scale instead, like the rest of the
+   chrome: the name column, row height (18 px base), track names and the ruler readout (11 px base, never below 11 px
+   rendered), key diamonds (8 px base) and the sheet's controls. Play-range marks and .tl-tick-label are sized by
+   timeRuler.css. ---- */
+.tl-root { --tl-s: var(--ui-scale, 1); --tl-name-w: calc(128px * var(--tl-s)); --tl-row-h: calc(18px * var(--tl-s)); --tl-fs: max(11px, calc(11px * var(--tl-s))); }
+.tl-root .dope-row { grid-template-columns: var(--tl-name-w) minmax(0, 1fr); min-height: var(--tl-row-h); }
+.tl-root .dope-label { height: var(--tl-row-h); font-size: var(--tl-fs); }
+.tl-root .dope-name { gap: calc(2px * var(--tl-s)); }
+.tl-root .tl-twisty { width: calc(16px * var(--tl-s)); height: calc(16px * var(--tl-s)); font-size: var(--tl-fs); }
+.tl-root .tl-swatch { width: calc(6px * var(--tl-s)); height: calc(6px * var(--tl-s)); }
+.tl-root .dkey { width: calc(8px * var(--tl-s)); height: calc(8px * var(--tl-s)); }
+.tl-root .tl-bar { padding: calc(3px * var(--tl-s)) calc(6px * var(--tl-s)); }
+.tl-root .tl-bar button { width: calc(22px * var(--tl-s)); height: calc(22px * var(--tl-s)); font-size: var(--tl-fs); }
+.tl-root .tl-bar .tl-speed { font-size: var(--tl-fs); }
+.tl-root .ol-empty { font-size: var(--tl-fs); }
+/* the ruler's frame column lines up with the name column; its readout numbers scale with the names */
+.tl-root .tl-ruler { grid-template-columns: var(--tl-name-w) minmax(0, 1fr); height: calc(22px * var(--tl-s)); }
+.tl-root .tl-ruler-readout { font-size: var(--tl-fs); padding: 0 calc(6px * var(--tl-s)); }

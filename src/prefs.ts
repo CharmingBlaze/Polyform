@@ -1,4 +1,4 @@
-import { isUIScale, layoutWidth, type UIScale } from './uiscale'
+import { isUIScale, layoutHeight, layoutWidth, type UIScale } from './uiscale'
 
 /** Per-browser UI settings (layout sizes, pen options), kept in localStorage — not part of the project file. */
 export interface UIPrefs {
@@ -149,7 +149,8 @@ export function savePrefs(p: UIPrefs) {
 }
 
 /** Clamp the timeline to a compact strip … most of the window. */
-export function clampTimeline(h: number, winH = typeof window !== 'undefined' ? window.innerHeight : 900) {
+/** Timeline height in layout px (CSS px ÷ UI scale; the row is drawn at h × --ui-scale), kept below the window minus 220 layout px. */
+export function clampTimeline(h: number, winH = layoutHeight()) {
   return Math.round(Math.max(TIMELINE_MIN, Math.min(Math.max(TIMELINE_MIN, winH - 220), h)))
 }
 

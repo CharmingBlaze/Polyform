@@ -15,7 +15,7 @@ import { MaterialsPanel } from './MaterialsPanel'
 import { keyFrames, objectKeyFrames, sampleBone } from '../anim'
 import { clampTimeline, TIMELINE_DEFAULT, TIMELINE_MIN } from '../prefs'
 import { openSideTab, setPanel } from '../useLayout'
-import { zoomOf } from '../uiscale'
+import { uiScale, zoomOf } from '../uiscale'
 import { byId } from '../commands'
 import { getBindingLabel, useKeymapVersion } from '../keymap'
 
@@ -326,7 +326,8 @@ function TimelineHandle() {
     const el = e.currentTarget
     el.setPointerCapture(e.pointerId)
     const y0 = e.clientY, h0 = clampTimeline(useStore.getState().ui.timelineH)
-    const move = (ev: PointerEvent) => useStore.getState().setUI({ timelineH: clampTimeline(h0 + (y0 - ev.clientY)) })
+    // pointer px ÷ UI scale = layout px (the stored height scales with the UI)
+    const move = (ev: PointerEvent) => useStore.getState().setUI({ timelineH: clampTimeline(h0 + (y0 - ev.clientY) / uiScale()) })
     const up = (ev: PointerEvent) => {
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up)
       try { el.releasePointerCapture(ev.pointerId) } catch { /* already released */ }

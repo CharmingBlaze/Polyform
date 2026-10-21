@@ -100,7 +100,7 @@ export default function App() {
       <div className={`main ${anim ? 'anim' : ''}`} data-left={sides.leftCollapsed ? 'icons' : 'open'} data-right={sides.rightCollapsed ? 'icons' : 'open'} style={{ gridTemplateColumns: `${sides.leftW}px minmax(0, 1fr) ${sides.rightW}px` }}>
         {/* Animate without its tool panel: an empty 0 px column keeps the grid's three columns */}
         {sides.leftHidden ? <div className="rail-gone" data-testid="rail-gone" /> : <ToolRail />}
-        <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) ${clampTimeline(timelineH)}px` : 'minmax(0, 1fr)' }}>
+        <div className="center" style={{ gridTemplateRows: showTimeline ? `minmax(0, 1fr) calc(${clampTimeline(timelineH)}px * var(--ui-scale))` : 'minmax(0, 1fr)' }}>
           <div className={`work ${uvSpace ? 'uv-space' : ''} ${paintSpace ? 'paint-space' : ''} ${swapped ? 'swap' : ''}`} style={uvSpace ? { gridTemplateColumns: cols } : paintSpace ? { gridTemplateColumns: paintCols } : undefined}>
             <div ref={viewsRef} className={`views layout-${maximized !== null ? '1' : layout} ${maximized !== null ? 'max' : ''} ${recording ? 'autokey' : ''}`} data-testid="views">
               <canvas className="gl" ref={el => { if (el) sceneManager.attach(el) }} />
