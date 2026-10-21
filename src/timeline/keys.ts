@@ -63,3 +63,21 @@ export function mirrorIndex(names: { name: string }[], index: number): number | 
   const i = names.findIndex(n => n.name === want)
   return i >= 0 && i !== index ? i : null
 }
+
+/**
+ * Where a duplicate of keys spanning frames lo..hi starts. A playhead outside the keys places the copy there (the
+ * earliest key lands on the playhead); a playhead on or inside them puts the copy right after the last one, so the
+ * copy never lands on its own source. Null when that would start past the clip's last frame.
+ */
+export function duplicateStart(lo: number, hi: number, playhead: number, max: number): number | null {
+  const start = playhead < lo || playhead > hi ? playhead : hi + 1
+  return start <= max ? start : null
+}
+
+/** First frame after `after` where none of the tracks has a key; null when the clip has no free frame left. */
+export function nextFreeFrame(clip: Clip, tracks: { kind: 'bone' | 'obj'; index: number }[], after: number, max: number): number | null {
+  for (let f = after + 1; f <= max; f++) {
+    if (tracks.every(t => !(t.kind === 'bone' ? clip.keys[t.index] : clip.okeys[t.index])?.[f])) return f
+  }
+  return null
+}

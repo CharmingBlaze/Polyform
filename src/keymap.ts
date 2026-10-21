@@ -9,7 +9,7 @@
  */
 import { create } from 'zustand'
 import { byId, commands, comboOf, overTimeline, paintHotkey, TIMELINE_KEYS, UV_CLIP_KEYS, UV_KEYS, type Command } from './commands'
-import { copyTimelineKeys, deleteTimelineKeys, duplicateTimelineKeys, pasteTimelineKeys, setTimelineArmed, timelineArmed } from './timeline/edit'
+import { deleteTimelineKeys, setTimelineArmed, timelineArmed } from './timeline/edit'
 import { isModalActive, overUV } from './interaction'
 import { useStore, WORKSPACES, type Workspace } from './store'
 import { WS_NAME } from './commands'
@@ -72,7 +72,8 @@ export const APPLY_TRANSFORM_ID = 'xf.apply'
 /**
  * Default keymap: every `Command.keys` in global scope, plus the scoped rules the team agreed on:
  * Shift+D and Ctrl+D duplicate, except Ctrl+D clears the pixel selection in Paint; Ctrl+A is Apply transform
- * (Select all while that command does not exist yet), except Select all pixels in Paint; S over the Timeline scales keys.
+ * (Select all while that command does not exist yet), except Select all pixels in Paint; S over the Timeline scales keys;
+ * Ctrl+D duplicates keys in Animate and over the Timeline.
  */
 export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   const ids = new Set(list.map(c => c.id))
@@ -90,6 +91,9 @@ export function defaultKeyMap(list: readonly Command[] = commands): KeyMap {
   else add('sel.all2', 'global', 'Ctrl+A')
   add('paint.selectAll', 'ws:paint', 'Ctrl+A')
   add('anim.scaleKeys', 'panel:timeline', 'S')
+  // Ctrl+D duplicates keys in Animate (viewport) and over the Timeline in any mode; mesh Duplicate everywhere else
+  add('anim.duplicateKeys', 'ws:animate', 'Ctrl+D')
+  add('anim.duplicateKeys', 'panel:timeline', 'Ctrl+D')
   return km
 }
 
@@ -309,10 +313,8 @@ export function installShortcuts(openPalette: () => void) {
     if (!combo) return
     const hit = resolveKey(combo, keyContext(), currentBindings())
     const run = (b: Binding) => { e.preventDefault(); byId[b.id]?.run() }
-    if (hit && hit.scope.startsWith('panel:')) return run(hit) // a hovered panel's own keys come first
-    if (paintHotkey(e)) return
-    if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && useStore.getState().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
-    // armed dope-sheet key edits (G/S after picking keys) own the keyboard until confirmed; undo cancels them
+    // armed dope-sheet key edits (G/S after picking keys) own the keyboard until confirmed, ahead of the
+    // hovered panel's own keys (S, Ctrl+D) so nothing else fires mid-gesture; undo cancels them
     if (timelineArmed()) {
       if (combo === 'Ctrl+Z' || combo === 'Ctrl+Shift+Z' || combo === 'Ctrl+Y') {
         setTimelineArmed(false)
@@ -323,15 +325,14 @@ export function installShortcuts(openPalette: () => void) {
         return
       }
     }
+    if (hit && hit.scope.startsWith('panel:')) return run(hit) // a hovered panel's own keys come first
+    if (paintHotkey(e)) return
+    if (overUV() && (UV_KEYS.includes(combo) || (UV_CLIP_KEYS.includes(combo) && useStore.getState().mode !== 'animate'))) { e.preventDefault(); window.dispatchEvent(new CustomEvent('uv-key', { detail: combo })); return }
     if (overTimeline() && TIMELINE_KEYS.includes(combo)) {
       e.preventDefault()
       if (combo === 'Space') { byId['anim.play']?.run(); return }
       if (combo === 'I') { byId['anim.insertKey']?.run(); return }
       if (combo === 'Del') { deleteTimelineKeys(); return }
-      if (combo === 'Ctrl+C') { if (!copyTimelineKeys()) useStore.getState().copyPose(); return }
-      if (combo === 'Ctrl+V') { pasteTimelineKeys(false); return }
-      if (combo === 'Ctrl+Shift+V') { pasteTimelineKeys(true); return }
-      if (combo === 'Ctrl+D') { duplicateTimelineKeys(); return }
       window.dispatchEvent(new CustomEvent('timeline-key', { detail: combo }))
       return
     }

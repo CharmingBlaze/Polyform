@@ -35,10 +35,27 @@ describe('default keymap and resolution', () => {
   it('no two commands clash within one scope in the defaults', () => {
     expect(findClashes(currentBindings()).filter(c => c.kind === 'conflict').map(c => `${c.a.keys}: ${c.a.id} vs ${c.b.id}`)).toEqual([])
   })
-  it('Shift+D duplicates everywhere; Ctrl+D duplicates except in Paint, where it clears the pixel selection', () => {
+  it('Shift+D duplicates everywhere; Ctrl+D duplicates the mesh except in Paint (clear pixel selection) and Animate / over the Timeline (duplicate keys)', () => {
     for (const w of ['model', 'uv', 'paint', 'rig', 'animate'] as const) expect(live('Shift+D', at(w)), w).toBe('op.mul.duplicate')
-    for (const w of ['model', 'uv', 'rig', 'animate'] as const) expect(live('Ctrl+D', at(w)), w).toBe('op.mul.duplicate')
+    for (const w of ['model', 'uv', 'rig'] as const) expect(live('Ctrl+D', at(w)), w).toBe('op.mul.duplicate')
     expect(live('Ctrl+D', at('paint'))).toBe('paint.deselect')
+    expect(live('Ctrl+D', at('animate'))).toBe('anim.duplicateKeys')
+    for (const w of ['model', 'animate'] as const) expect(live('Ctrl+D', at(w, 'timeline')), w).toBe('anim.duplicateKeys')
+  })
+  it('Ctrl+D for keys is rebindable and labelled from the keymap', () => {
+    useStore.setState({ workspace: 'animate', mode: 'animate' })
+    expect(getBindingLabel('anim.duplicateKeys')).toBe('Ctrl+D')
+    setBinding('anim.duplicateKeys', 'ws:animate', ['Alt+D'])
+    expect(live('Ctrl+D', at('animate'))).toBe('op.mul.duplicate')
+    expect(live('Alt+D', at('animate'))).toBe('anim.duplicateKeys')
+    expect(getBindingLabel('anim.duplicateKeys')).toBe('Alt+D')
+    resetBinding('anim.duplicateKeys')
+    expect(live('Ctrl+D', at('animate'))).toBe('anim.duplicateKeys')
+  })
+  it('the clipboard keys over the Timeline are the same commands (no fixed dope-sheet copies)', () => {
+    expect(live('Ctrl+C', at('animate', 'timeline'))).toBe('anim.copy')
+    expect(live('Ctrl+V', at('animate', 'timeline'))).toBe('anim.paste')
+    expect(live('Ctrl+Shift+V', at('animate', 'timeline'))).toBe('anim.pasteMirror')
   })
   it('Ctrl+A: Select all pixels in Paint; Select all elsewhere until Apply transform exists, then Apply transform', () => {
     expect(live('Ctrl+A', at('paint'))).toBe('paint.selectAll')

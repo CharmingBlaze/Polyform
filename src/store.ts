@@ -364,6 +364,21 @@ function keptSel(s: { selVerts: Set<number>; selFaces: Set<number>; selEdges: Se
     selUV: new Set<number>(),
   }
 }
+/** The field an edit comes from, when it is a focused number / text input (typed or spun value by value). */
+let liveField: { el: Element; label: string } | null = null
+function typeField(): Element | null {
+  if (typeof document === 'undefined' || typeof HTMLInputElement === 'undefined') return null
+  const el = document.activeElement
+  return el instanceof HTMLInputElement && ['number', 'text', ''].includes(el.type) ? el : null
+}
+// leaving the field ends its step, so the next edit there is a new one
+if (typeof document !== 'undefined') document.addEventListener('focusout', () => { liveField = null }, true)
+/** Dope-sheet selection without keys that an undo / redo removed. */
+function liveAnimKeys(s: { animKeys: AnimKeyRef[]; clip: number }, m: Model): AnimKeyRef[] {
+  const c = m.clips[Math.min(s.clip, m.clips.length - 1)]
+  const kept = s.animKeys.filter(r => (r.kind === 'bone' ? c?.keys[r.index] : c?.okeys[r.index])?.[r.frame])
+  return kept.length === s.animKeys.length ? s.animKeys : kept
+}
 const clearSel = () => ({ selVerts: new Set<number>(), selFaces: new Set<number>(), selEdges: new Set<number>(), selBones: new Set<number>(), selUV: new Set<number>() })
 
 export const useStore = create<State>((set, get) => ({
@@ -490,6 +505,7 @@ export const useStore = create<State>((set, get) => ({
   set: p => set(p as State),
   touch: () => { M.normalizeCorners(get().model); set(s => ({ version: s.version + 1, ...(s.xMirror ? { xMirrorMap: xPairs(s.model, s.xMirrorMap) } : {}) })) },
   checkpoint: (label = 'Edit') => {
+    liveField = null
     history.begin(get().model, label)
     set(s => ({ histRev: s.histRev + 1, lastOp: null }))
   },
@@ -503,17 +519,24 @@ export const useStore = create<State>((set, get) => ({
     if (s.extruding) return s.cancelExtrude()
     const r = history.undo(s.model)
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), animKeys: liveAnimKeys(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
   doRedo: () => {
     const s = get()
     const r = history.redo()
     if (!r.ok) return
-    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
+    if (r.model) set({ model: r.model, version: s.version + 1, histRev: s.histRev + 1, lastOp: null, activeMat: Math.min(s.activeMat, r.model.materials.length - 1), ...keptSel(s, r.model), animKeys: liveAnimKeys(s, r.model), ...(s.xMirror ? { xMirrorMap: xPairs(r.model, null) } : {}) })
     else set({ histRev: s.histRev + 1, texRev: s.texRev + 1 })
   },
-  edit: (fn, label = 'Edit') => { get().checkpoint(label); fn(get().model); get().touch() },
+  edit: (fn, label = 'Edit') => {
+    // typing or spinning one number / text field is one undo step: keep extending the step that field started
+    const field = typeField()
+    if (field && liveField?.el === field && liveField.label === label && history.pending) { fn(get().model); get().touch(); return }
+    get().checkpoint(label)
+    liveField = field ? { el: field, label } : null
+    fn(get().model); get().touch()
+  },
   loadModel: m => {
     history.reset(m)
     set(s => ({ model: m, version: s.version + 1, histRev: s.histRev + 1, savedRev: s.histRev + 1, frame: 0, clip: Math.min(m.props?.defaultClip ?? 0, Math.max(0, m.clips.length - 1)), lastOp: null, extruding: false, activeMat: 0, animKeys: [], playRange: null, ...clearSel() }))
@@ -957,17 +980,21 @@ export const useStore = create<State>((set, get) => ({
     if (s.selectMode === 'object' || (!s.selBones.size && s.selFaces.size && s.selectMode !== 'joint')) {
       const gs = [...new Set([...s.selFaces].map(f => m.faces[f].g))].filter(g => !skinned.has(g))
       if (!gs.length) return s.notify('Objects bound to joints are animated through their joints')
-      s.edit(mm => { const cc = mm.clips[s.clip]; gs.forEach(g => { const cur = sampleObject(cc, g, s.frame) ?? mm.groups[g].xf; cc.okeys[g] = { ...(cc.okeys[g] || {}), [s.frame]: { pos: [...cur.pos] as Vec3, rot: [...cur.rot] as Vec3, scale: [...cur.scale] as Vec3 } } }) }, 'Key objects')
+      // a key already on this frame is the pose there: keep it (and its easing) rather than re-writing a round-tripped copy
+      const todo = gs.filter(g => !c.okeys[g]?.[s.frame])
+      if (!todo.length) return s.notify(`Already keyed on frame ${s.frame}`)
+      s.edit(mm => { const cc = mm.clips[s.clip]; todo.forEach(g => { const cur = sampleObject(cc, g, s.frame) ?? mm.groups[g].xf; cc.okeys[g] = { ...(cc.okeys[g] || {}), [s.frame]: { pos: [...cur.pos] as Vec3, rot: [...cur.rot] as Vec3, scale: [...cur.scale] as Vec3 } } }) }, 'Key objects')
       return
     }
     const bones = s.selBones.size ? [...s.selBones] : m.bones.map((_, i) => i)
     if (!bones.length) return s.notify('Nothing to key: select joints or objects')
-    s.edit(mm => bones.forEach(b => {
+    const todo = bones.filter(b => !c.keys[b]?.[s.frame])
+    if (!todo.length) return s.notify(`Already keyed on frame ${s.frame}`)
+    s.edit(mm => todo.forEach(b => {
       const cc = mm.clips[s.clip]
       const k = sampleBone(cc, b, s.frame).key
       cc.keys[b] = { ...(cc.keys[b] || {}), [s.frame]: { rot: [...k.rot] as Vec3, pos: [...k.pos] as Vec3 } }
     }), 'Set key')
-    void c
   },
   deleteKey: () => { const s = get(); s.deleteKeyRange(s.frame, s.frame) },
   deleteKeyRange: (from, to) => {

@@ -1,6 +1,6 @@
 import type { Ease, Key, OKey } from '../model'
 import { useStore, type KeyClip } from '../store'
-import { keyId, retimeKeys, type AnimKeyRef, type KeyMove } from './keys'
+import { duplicateStart, keyId, nextFreeFrame, retimeKeys, type AnimKeyRef, type KeyMove } from './keys'
 import { clipNames } from './pose'
 
 let armed = false
@@ -53,31 +53,59 @@ export function pasteTimelineKeys(mirror: boolean) {
   useStore.getState().pasteKeys(mirror)
 }
 
-/** Duplicate the selected keys so the earliest one lands on the playhead. One undo step. */
+/**
+ * Duplicate keys, one undo step. With keys selected in the dope sheet: the earliest copy lands on the playhead, or,
+ * when the playhead is on or inside the selection, right after its last key (the copy never overwrites its source).
+ * With nothing selected: the keys on the playhead of the selected joints (all joints when none; selected objects in
+ * Object mode) are copied to the next frame where those tracks have no key. The copies become the selection, and
+ * the playhead follows them when they were offset, so pressing Ctrl+D again keeps stepping forward.
+ */
 export function duplicateTimelineKeys() {
   const s = useStore.getState()
-  if (!s.animKeys.length) { s.notify('Select keys to duplicate'); return }
   const c = s.curClip()
-  const lo = Math.min(...s.animKeys.map(k => k.frame))
-  const jobs: { r: AnimKeyRef; dest: number; key: Key | OKey }[] = []
-  for (const r of s.animKeys) {
-    const k = read(c, r)
-    if (!k) continue
-    jobs.push({ r, dest: s.frame + (r.frame - lo), key: structuredClone(k) })
+  const max = c.frames - 1
+  let refs = s.animKeys.filter(r => read(c, r))
+  let start: number | null
+  if (refs.length) {
+    const lo = Math.min(...refs.map(k => k.frame)), hi = Math.max(...refs.map(k => k.frame))
+    start = duplicateStart(lo, hi, s.frame, max)
+  } else {
+    refs = keysAtPlayhead()
+    if (!refs.length) { s.notify(`No keys at frame ${s.frame} to duplicate: select keys or key this frame first`); return }
+    start = nextFreeFrame(c, refs, s.frame, max)
   }
-  if (!jobs.length) return
+  if (start === null) { s.notify('No room to duplicate: the copy would start past the last frame'); return }
+  const lo = Math.min(...refs.map(k => k.frame))
+  const jobs: { r: AnimKeyRef; dest: number; key: Key | OKey }[] = []
+  let dropped = 0
+  for (const r of refs) {
+    const dest = start + (r.frame - lo)
+    if (dest > max) { dropped++; continue }
+    jobs.push({ r, dest, key: structuredClone(read(c, r)!) })
+  }
   const next: AnimKeyRef[] = []
   s.edit(m => {
     const cc = m.clips[s.clip]
-    const max = cc.frames - 1
     for (const j of jobs) {
-      const dest = Math.max(0, Math.min(max, j.dest))
-      if (j.r.kind === 'bone') (cc.keys[j.r.index] ||= {})[dest] = j.key as Key
-      else (cc.okeys[j.r.index] ||= {})[dest] = j.key as OKey
-      next.push({ kind: j.r.kind, index: j.r.index, frame: dest })
+      if (j.r.kind === 'bone') (cc.keys[j.r.index] ||= {})[j.dest] = j.key as Key
+      else (cc.okeys[j.r.index] ||= {})[j.dest] = j.key as OKey
+      next.push({ kind: j.r.kind, index: j.r.index, frame: j.dest })
     }
   }, 'Duplicate keys')
-  s.set({ animKeys: dedupe(next) })
+  s.set({ animKeys: dedupe(next), ...(start !== s.frame ? { frame: start } : {}) })
+  s.notify(`Duplicated ${jobs.length} key${jobs.length > 1 ? 's' : ''} to frame ${start}${dropped ? ` · ${dropped} past the clip end skipped` : ''}`)
+}
+
+/** Keys on the playhead for the current selection: selected joints (all when none), or selected objects. */
+function keysAtPlayhead(): AnimKeyRef[] {
+  const s = useStore.getState(), m = s.model, c = s.curClip(), f = s.frame
+  const objMode = s.selectMode === 'object' && s.selFaces.size > 0
+  const groups = objMode ? [...new Set([...s.selFaces].map(i => m.faces[i].g))] : m.bones.length ? [] : m.groups.map((_, i) => i)
+  const bones = objMode ? [] : s.selBones.size ? [...s.selBones] : m.bones.map((_, i) => i)
+  return [
+    ...bones.filter(b => c.keys[b]?.[f]).map(index => ({ kind: 'bone' as const, index, frame: f })),
+    ...groups.filter(g => c.okeys[g]?.[f]).map(index => ({ kind: 'obj' as const, index, frame: f })),
+  ]
 }
 
 /** Ease on every selected key that already exists. Linear is stored by omitting ease. */

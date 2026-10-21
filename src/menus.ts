@@ -91,7 +91,7 @@ export function buildMenus(openPalette: () => void): Menu[] {
       cmd('anim.copy', 'Copy Pose'),
       cmd('anim.paste', s.keyClipboard && s.keyClipboard.span > 0 ? 'Paste Keys' : 'Paste Pose', { enabled: !!s.keyClipboard }),
       cmd('anim.pasteMirror', s.keyClipboard && s.keyClipboard.span > 0 ? 'Paste Keys Mirrored' : 'Paste Pose Mirrored', { enabled: !!s.keyClipboard }),
-      cmd('anim.duplicateKeys', 'Duplicate Keys', { enabled: s.animKeys.length > 0 }),
+      cmd('anim.duplicateKeys', 'Duplicate Keys'),
       'sep' as const,
     ] : []),
     cmd('sel.all', 'Select All', { enabled: hasGeo() }),

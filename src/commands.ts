@@ -9,7 +9,7 @@ import * as G from './geom'
 import { interaction } from './interaction'
 import { ask } from './dialog'
 import { scaleFrames } from './anim'
-import { duplicateTimelineKeys } from './timeline/edit'
+import { copyTimelineKeys, duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
@@ -209,11 +209,13 @@ export const commands: Command[] = [
     s.set({ ik: on })
     s.notify(on ? `IK on (depth ${s.ikDepth}): select the tip joint and drag Move` : 'IK off')
   } },
-  // Animation clipboard (Animate mode). Over the Timeline the same keys copy / paste the selected keys instead.
-  { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', keys: 'Ctrl+C', run: () => { if (S().mode === 'animate') S().copyPose() } },
-  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', keys: 'Ctrl+V', run: () => { if (S().mode === 'animate') S().pasteKeys(false) } },
-  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', keys: 'Ctrl+Shift+V', run: () => { if (S().mode === 'animate') S().pasteKeys(true) } },
-  { id: 'anim.duplicateKeys', label: 'Duplicate selected keys to the playhead', group: 'Animate', run: () => { if (S().mode === 'animate') duplicateTimelineKeys() } },
+  // Animation clipboard (Animate mode, or anywhere over the Timeline). Over the Timeline Ctrl+C copies the selected
+  // keys when there are any; the dope sheet's Ctrl+C / V / Shift+V / D are these same rebindable commands.
+  { id: 'anim.copy', label: 'Copy pose (selected joints at the playhead)', group: 'Animate', keys: 'Ctrl+C', run: () => { if (!animKeysHere()) return; if (overTimeline() && copyTimelineKeys()) return; S().copyPose() } },
+  { id: 'anim.paste', label: 'Paste pose / keys at the playhead', group: 'Animate', keys: 'Ctrl+V', run: () => { if (animKeysHere()) S().pasteKeys(false) } },
+  { id: 'anim.pasteMirror', label: 'Paste pose / keys mirrored (swap L/R)', group: 'Animate', keys: 'Ctrl+Shift+V', run: () => { if (animKeysHere()) S().pasteKeys(true) } },
+  // Ctrl+D in Animate and over the Timeline (scoped in keymap.ts); mesh Duplicate keeps Ctrl+D everywhere else
+  { id: 'anim.duplicateKeys', label: 'Duplicate keys (selected keys, or the keys on the playhead)', group: 'Animate', run: () => { if (animKeysHere()) duplicateTimelineKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },
   { id: 'anim.next', label: 'Next frame', group: 'Animate', keys: '.', run: () => { const s = S(); s.set({ frame: Math.min(s.curClip().frames - 1, s.frame + 1) }) } },
   { id: 'edit.fill', label: 'Fill (or frame selection)', group: 'Construct', keys: 'F', run: () => {
@@ -341,7 +343,9 @@ export const UV_KEYS = ['G', 'R', 'S', 'L', '/', 'F', 'Home', 'Shift+R', 'Shift+
 export const UV_CLIP_KEYS = ['Ctrl+C', 'Ctrl+V']
 /** Dope sheet keys while the pointer is over the timeline. Not Command.keys: those letters already belong to the views.
  *  Home, arrows, comma and period stay with the time ruler. */
-export const TIMELINE_KEYS = ['G', 'S', 'E', 'F', 'I', 'Del', 'Space', 'Ctrl+D', 'Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+V']
+export const TIMELINE_KEYS = ['G', 'S', 'E', 'F', 'I', 'Del', 'Space']
+/** The key clipboard commands act in Animate mode, and over the Timeline in any mode. */
+const animKeysHere = () => S().mode === 'animate' || overTimeline()
 
 export function overTimeline(): boolean {
   const el = document.querySelector('[data-testid="timeline"]')
