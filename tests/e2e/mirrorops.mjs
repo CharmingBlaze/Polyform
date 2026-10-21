@@ -52,6 +52,12 @@ rows = await rowsOk()
 check('rows do not wrap or overflow at a 144 px panel', rows.every(r => r.ok), JSON.stringify(rows))
 await S(() => { const r = document.querySelector('[data-testid="mirror-rotate"]'); r.style.width = r.dataset.w })
 check('section title is "Mirror & Rotate"', await S(() => [...document.querySelectorAll('.tool-list h4')].some(h => h.textContent === 'Mirror & Rotate')))
+const cols = await S(() => [...document.querySelectorAll('.mrow')].map(r => [...r.children].map(c => Math.round(c.getBoundingClientRect().left))))
+check('4-column grid: every row is label + 4 cells and X/Y/Z line up across rows', cols.every(c => c.length === 5) && cols.every(c => c.join() === cols[0].join()), JSON.stringify(cols))
+check('Flip and Rotate have an empty 4th cell; the weld link is only on Copy', await S(() => document.querySelectorAll('.mrow .mempty').length === 2 && !!document.querySelector('[data-testid="mrow-copy"] [data-testid="mr-weld"]') && document.querySelectorAll('[data-testid="mr-weld"]').length === 1))
+const vt = await S(() => ['flip-h', 'flip-v', 'rot-ccw', 'rot-cw'].map(k => document.querySelector(`[data-testid="mr-${k}"]`).title))
+check('View icons have tooltips with the shortcut (Ctrl+M H / V; rotate says where to bind one)', /Ctrl\+M H$/.test(vt[0]) && /Ctrl\+M V$/.test(vt[1]) && vt.slice(2).every(t => /·\s+\S/.test(t)), JSON.stringify(vt))
+check('axis tooltips show the Ctrl+M route', /Ctrl\+M X$/.test(await p.getAttribute('[data-testid="mr-flip-x"]', 'title')) && /Ctrl\+M Shift\+Y$/.test(await p.getAttribute('[data-testid="mr-copy-y"]', 'title')))
 
 // --- Flip X (button), median pivot, one undo step
 {

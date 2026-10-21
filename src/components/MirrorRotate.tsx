@@ -8,7 +8,17 @@ import type { Axis } from '../mirrorOps'
 
 const AX = ['X', 'Y', 'Z'] as const
 /** "Flip X · Ctrl+M X" style tooltip from the live keymap */
-const tip = (id: string, extra = '') => { const k = getBindingLabel(id); return `${byId[id]?.label ?? id}${extra}${k ? `  ·  ${k}` : ''}` }
+/** Ctrl+M menu letters for commands with no key of their own */
+const VIA_MENU: Record<string, string> = {
+  ...Object.fromEntries(AX.flatMap(a => [[`mesh.flip${a}`, a], [`mesh.copy${a}`, `Shift+${a}`], [`mesh.rotate${a}`, `Alt+${a}`]])),
+  'view.flipH': 'H', 'view.flipV': 'V',
+}
+/** tooltip: label · own key (getBindingLabel), else the Ctrl+M route, else where to bind one */
+const tip = (id: string, extra = '') => {
+  const own = getBindingLabel(id), menu = getBindingLabel('mesh.mirrorMenu')
+  const k = own || (VIA_MENU[id] && menu ? `${menu} ${VIA_MENU[id]}` : 'no key: bind one in Help › Keyboard Shortcuts')
+  return `${byId[id]?.label ?? id}${extra}  ·  ${k}`
+}
 
 /** Modify tab › Mirror & Rotate: Flip / Copy (+ Weld seam) / Rotate X|Y|Z and the view-relative Flip H|V, Rotate ⟲|⟳. */
 export function MirrorRotateSection() {
@@ -25,12 +35,12 @@ export function MirrorRotateSection() {
   return <>
     <h4>Mirror &amp; Rotate</h4>
     <div className="mirror-rotate" data-testid="mirror-rotate">
-      <div className="mrow" data-testid="mrow-flip"><span className="mlabel">Flip</span>{axisCells('flip')}</div>
+      <div className="mrow" data-testid="mrow-flip"><span className="mlabel">Flip</span>{axisCells('flip')}<span className="mcell mempty" aria-hidden /></div>
       <div className="mrow" data-testid="mrow-copy"><span className="mlabel">Copy</span>{axisCells('copy')}
         <button type="button" className={`mcell mweld ${weld ? 'on' : ''}`} data-testid="mr-weld" aria-pressed={weld} title={`Weld seam: points on the mirror plane are shared by both halves (${weld ? 'on' : 'off'})`}
           onClick={() => useStore.getState().set({ mirrorWeld: !weld })}><Link2 size={12} /></button>
       </div>
-      <div className="mrow" data-testid="mrow-rotate"><span className="mlabel">Rotate</span>{axisCells('rotate')}</div>
+      <div className="mrow" data-testid="mrow-rotate"><span className="mlabel">Rotate</span>{axisCells('rotate')}<span className="mcell mempty" aria-hidden /></div>
       <div className="mrow" data-testid="mrow-view"><span className="mlabel">View</span>
         {cell('flip-h', tip('view.flipH'), <FlipHorizontal2 size={12} />, () => void viewOp('flipH'))}
         {cell('flip-v', tip('view.flipV'), <FlipVertical2 size={12} />, () => void viewOp('flipV'))}

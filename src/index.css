@@ -894,11 +894,12 @@ button.danger { color: #ff9a9a; }
 /* Modify › Mirror & Rotate (MirrorRotate.tsx): four 22 px segmented rows, a 40 px label then equal square-cornered
    cells; axis letters in the axis colours. No wrapping from a 144 px panel up. */
 .mirror-rotate { display: flex; flex-direction: column; gap: var(--sp-1); }
-.mrow { display: flex; height: 22px; min-width: 0; border: 1px solid var(--line); border-radius: 0; background: var(--panel2); overflow: hidden; }
-.mrow .mlabel { flex: 0 0 40px; display: flex; align-items: center; padding: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); border-right: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
-.mrow .mcell { flex: 1 1 0; min-width: 0; height: 100%; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font-size: var(--fs-xs); font-weight: 700; }
+.mrow { display: grid; grid-template-columns: 40px repeat(4, minmax(0, 1fr)); height: 22px; min-width: 0; border: 1px solid var(--line); border-radius: 0; background: var(--panel2); overflow: hidden; }
+.mrow .mlabel { display: flex; min-width: 0; align-items: center; padding: 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); border-right: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+.mrow .mcell { min-width: 0; height: 100%; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font-size: var(--fs-xs); font-weight: 700; }
 .mrow .mcell:last-child { border-right: 0; }
 .mrow .mcell:hover { background: var(--line); }
+.mrow .mempty, .mrow .mempty:hover { background: transparent; }
 .mrow .mcell:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .mrow .mcell.x { color: var(--x); } .mrow .mcell.y { color: var(--y); } .mrow .mcell.z { color: var(--z); }
 .mrow .mweld { color: var(--dim); }
