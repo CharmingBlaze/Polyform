@@ -27,6 +27,7 @@ import { hexToRgb } from './paintcore'
 import type { Clip, Model, Params, PrimitiveKind, Vec3 } from './model'
 import type { AnimKeyRef } from './timeline/keys'
 import { applyPaste, capturePose, clipNames, pasteMessage, planPaste } from './timeline/pose'
+import { normalizeRange, wrapPlayFrame } from './timeline/rulerMath'
 
 /** Workspaces walk the whole flow; each picks its tool tab, side panel, mode and layout. */
 export type Workspace = 'model' | 'uv' | 'paint' | 'rig' | 'animate' | 'export'
@@ -275,6 +276,8 @@ interface State {
   setClip: (i: number) => void
   /** Clamp the playhead to the clip and switch into Animate. */
   setPlayhead: (frame: number) => void
+  /** Set or clear the play range (sorted, rounded, clamped to the clip). View state like the playhead: not an undo step. */
+  setPlayRange: (r: { start: number; end: number } | null) => void
 
   // materials
   addMaterial: () => number
@@ -1078,6 +1081,7 @@ export const useStore = create<State>((set, get) => ({
     if (s.mode !== 'animate') s.setMode('animate')
     set({ frame: f, playing: false })
   },
+  setPlayRange: r => set(s => ({ playRange: r ? normalizeRange(r.start, r.end, Math.max(1, (s.curClip()?.frames ?? 2) - 1)) : null })),
 
   // ------------------------------------------------------------------ materials
   uvFaces: () => { const m = get().model; return m.faces.map((f, i) => (f.hidden || m.groups[f.g]?.visible === false ? -1 : i)).filter(i => i >= 0) },
@@ -1337,6 +1341,19 @@ export const useStore = create<State>((set, get) => ({
   setPaint: p => set(s => ({ paint: { ...s.paint, ...p, size: Math.max(1, Math.min(200, p.size ?? s.paint.size)), opacity: Math.max(0.01, Math.min(1, p.opacity ?? s.paint.opacity)), hardness: Math.max(0, Math.min(1, p.hardness ?? s.paint.hardness)) } })),
   setMaterialTexture: (mat, tex) => get().edit(m => { m.materials[mat].texture = tex }, tex ? 'Set texture' : 'Remove texture'),
 }))
+
+// Playback stays inside the play range. The play loop (Panels.tsx) advances the frame over the whole clip; this keeps
+// it within playRange: wrap to the start on looping clips, stop at the end otherwise, and enter the range on play.
+let wrapping = false
+useStore.subscribe((s, prev) => {
+  if (wrapping || !s.playing || !s.playRange) return
+  const c = s.curClip()
+  if (!c) return
+  const next = wrapPlayFrame(prev.playing ? prev.frame : null, s.frame, c.frames, s.playRange, c.loop)
+  if (!next) return
+  wrapping = true // our own correction must not be judged again as a playback step
+  try { useStore.setState(next.stop ? { frame: next.frame, playing: false } : { frame: next.frame }) } finally { wrapping = false }
+})
 
 function applyResult(r: { verts?: number[]; faces?: number[]; edges?: [number, number][]; bones?: number[] }) {
   const s = useStore.getState()

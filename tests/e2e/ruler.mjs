@@ -110,6 +110,99 @@ check('markers hide without a play range', (await p.locator('[data-testid="timel
 await S(() => window.__polyform.getState().setPlayhead(9)); await frame()
 check('ruler follows playhead set elsewhere', await p.getAttribute('[data-testid="timeline-ruler-playhead"]', 'data-frame') === '9')
 
+// ---- play range editing on the ruler
+await S(() => { const s = window.__polyform.getState(); s.setPlayRange(null); s.setPlayhead(2) }); await frame()
+lane = await p.locator(laneSel).boundingBox()
+const PR = () => S(() => window.__polyform.getState().playRange)
+const lastR = Math.min(last, 24)
+const a0 = Math.min(4, lastR - 6), b0 = Math.min(14, lastR - 2)
+await p.keyboard.down('Control')
+await p.mouse.move(xAt(a0), y); await p.mouse.down()
+await p.mouse.move(xAt(b0), y, { steps: 5 })
+await p.mouse.up(); await p.keyboard.up('Control'); await frame()
+let r0 = await PR()
+check('Ctrl+drag sets the play range across the dragged span', r0 && r0.start === a0 && r0.end === b0, JSON.stringify(r0))
+check('Ctrl+drag does not move the playhead', (await cur()) === 2, String(await cur()))
+check('readout shows the play range', (await p.textContent('[data-testid="timeline-ruler-range"]'))?.replace(/\s/g, '') === `${a0}–${b0}`)
+
+const a1 = a0 + 2
+await p.mouse.move(xAt(a0), y); await p.mouse.down(); await p.mouse.move(xAt(a1), y, { steps: 4 }); await p.mouse.up(); await frame()
+r0 = await PR()
+check('dragging the in marker moves the range start', r0.start === a1 && r0.end === b0, JSON.stringify(r0))
+const b1 = Math.min(lastR, b0 + 2)
+await p.mouse.move(xAt(b0), y); await p.mouse.down(); await p.mouse.move(xAt(b1), y, { steps: 4 }); await p.mouse.up(); await frame()
+r0 = await PR()
+check('dragging the out marker moves the range end', r0.start === a1 && r0.end === b1, JSON.stringify(r0))
+await p.mouse.move(xAt(a1), y); await p.mouse.down(); await p.mouse.move(xAt(lastR), y, { steps: 4 }); await p.mouse.up(); await frame()
+r0 = await PR()
+check('the in marker cannot pass the out marker', r0.start === b1 && r0.end === b1, JSON.stringify(r0))
+check('marker drags leave the playhead alone', (await cur()) === 2)
+
+// context menu
+await S(() => window.__polyform.getState().setPlayRange(null)); await frame()
+const menuSel = '[data-testid="timeline-ruler-menu"]'
+await p.mouse.click(xAt(6), y, { button: 'right' }); await frame()
+check('right-click opens the range menu', await p.locator(menuSel).isVisible() && /Frame 6/.test(await p.textContent(menuSel)))
+check('Clear range is disabled without a range', await p.locator('[data-testid="ruler-menu-clear"]').isDisabled())
+await p.click('[data-testid="ruler-menu-start"]'); await frame()
+r0 = await PR()
+check('Set start here starts the range at that frame', r0 && r0.start === 6 && r0.end === last && (await p.locator(menuSel).count()) === 0, JSON.stringify(r0))
+await p.mouse.click(xAt(Math.min(lastR, 16)), y, { button: 'right' }); await frame()
+await p.click('[data-testid="ruler-menu-end"]'); await frame()
+r0 = await PR()
+check('Set end here ends the range at that frame', r0.start === 6 && r0.end === Math.min(lastR, 16), JSON.stringify(r0))
+await p.mouse.click(xAt(10), y, { button: 'right' }); await frame()
+await p.keyboard.press('Escape'); await frame()
+check('Esc closes the menu without changes', (await p.locator(menuSel).count()) === 0 && JSON.stringify(await PR()) === JSON.stringify(r0))
+await p.mouse.click(xAt(10), y, { button: 'right' }); await frame()
+check('menu items show their shortcuts', /Ctrl\+Home/.test(await p.textContent('[data-testid="ruler-menu-start"]')) && /Ctrl\+End/.test(await p.textContent('[data-testid="ruler-menu-end"]')))
+await p.click('[data-testid="ruler-menu-clear"]'); await frame()
+check('Clear range clears it', (await PR()) === null)
+
+// commands and their default keys
+await p.mouse.move(lane.x + lane.width / 2, lane.y - 200)
+await S(() => window.__polyform.getState().setPlayhead(5)); await frame()
+await p.keyboard.press('Control+Home'); await frame()
+await S(() => window.__polyform.getState().setPlayhead(Math.min(12, window.__polyform.getState().curClip().frames - 1))); await frame()
+await p.keyboard.press('Control+End'); await frame()
+r0 = await PR()
+check('Ctrl+Home / Ctrl+End set the range at the playhead', r0 && r0.start === 5 && r0.end === Math.min(12, last), JSON.stringify(r0))
+await p.keyboard.press('Control+Shift+Home'); await frame()
+check('Ctrl+Shift+Home clears the range', (await PR()) === null)
+
+// playback loops inside the range
+await S(() => { const s = window.__polyform.getState(); s.setPlayhead(0); s.setPlayRange({ start: 3, end: 6 }); s.set({ playing: true }) })
+const played = new Set()
+for (let i = 0; i < 25; i++) { played.add(await cur()); await p.waitForTimeout(40) }
+await S(() => window.__polyform.getState().set({ playing: false }))
+check('playback stays inside the play range and loops', [...played].every(f => f >= 3 && f <= 6) && played.has(3) && played.size >= 3, [...played].join(','))
+await S(() => window.__polyform.getState().setPlayRange(null)); await frame()
+
+// zoom-follow: zoom the dope sheet, the ruler maps the same frames to the same x as the key columns
+const trackBox = await p.locator('.dope-row.all .dope-track').boundingBox()
+await p.mouse.move(trackBox.x + trackBox.width * 0.4, trackBox.y + trackBox.height / 2)
+for (let i = 0; i < 6; i++) { await p.mouse.wheel(0, -120); await p.waitForTimeout(40) }
+await frame()
+const viewAttr = await p.getAttribute(laneSel, 'data-view')
+const [vlo, vhi] = viewAttr.split(':').map(Number)
+check('ruler follows the dope sheet zoom', vhi - vlo < last - 0.5, viewAttr)
+lane = await p.locator(laneSel).boundingBox()
+const xv = f => lane.x + ((f - vlo) / (vhi - vlo)) * lane.width
+const keyCols = await p.$$eval('[data-testid="dope-row-all"] [data-testid^="key-"]', els => els.map(e => { const r = e.getBoundingClientRect(); return { f: +e.dataset.testid.slice(4), x: r.left + r.width / 2, w: r.width } }))
+const visible = keyCols.filter(k => k.f >= vlo && k.f <= vhi)
+const off = visible.map(k => Math.abs(k.x - xv(k.f)))
+check('zoomed ruler lines up with the dope sheet key columns', visible.length >= 2 && off.every(d => d <= 3), JSON.stringify({ viewAttr, off, visible }))
+const labels = await p.$$eval('[data-testid="timeline-ruler-lane"] .tl-tick.major', els => els.map(e => ({ x: e.getBoundingClientRect().left, f: +e.textContent })))
+check('zoomed labels sit on their frames', labels.length >= 2 && labels.every(l => Math.abs(l.x - xv(l.f)) <= 1.5), JSON.stringify(labels))
+const zf = Math.round((vlo + vhi) / 2)
+await p.mouse.click(xv(zf), y); await frame()
+check('clicking the zoomed ruler picks the frame under the pointer', (await cur()) === zf, `${await cur()} want ${zf}`)
+lab = await labelsOk()
+check('zoomed labels do not overlap', lab.ok, JSON.stringify(lab.boxes))
+await p.mouse.move(trackBox.x + trackBox.width * 0.4, trackBox.y + trackBox.height / 2)
+for (let i = 0; i < 30 && (await p.getAttribute(laneSel, 'data-view')) !== `0.000:${last.toFixed(3)}`; i++) { await p.mouse.wheel(0, 240); await p.waitForTimeout(30) }
+check('zooming back out restores the whole clip', (await p.getAttribute(laneSel, 'data-view')) === `0.000:${last.toFixed(3)}`, await p.getAttribute(laneSel, 'data-view'))
+
 // labels adapt: minor ticks appear once the labels thin out (long clip)
 await S(() => window.__polyform.getState().edit(m => { m.clips[0].frames = 240 }, 'Long clip')); await frame()
 lab = await labelsOk()
@@ -121,6 +214,13 @@ check('undo restores the clip length', (await S(() => window.__polyform.getState
 await S(arg => { const s = window.__polyform.getState(); s.set({ playRange: arg }); s.setPlayhead(9) }, pr)
 await p.locator(laneSel).evaluate(el => el.blur()); await p.mouse.move(5, 5); await frame()
 await p.screenshot({ path: shot })
+if (process.env.RANGE_SHOT) { // optional: the range menu open over the ruler
+  lane = await p.locator(laneSel).boundingBox()
+  await p.mouse.click(lane.x + (lane.width * 14) / last, lane.y + lane.height / 2, { button: 'right' }); await frame()
+  await p.mouse.move(lane.x + (lane.width * 14) / last + 40, lane.y + lane.height / 2 + 40); await frame()
+  await p.screenshot({ path: process.env.RANGE_SHOT })
+  await p.keyboard.press('Escape'); await frame()
+}
 await S(() => window.__polyform.getState().set({ playRange: null }))
 
 // labels adapt to a narrow window

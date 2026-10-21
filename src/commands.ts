@@ -12,6 +12,7 @@ import { scaleFrames } from './anim'
 import { copyTimelineKeys, duplicateTimelineKeys } from './timeline/edit'
 import { openSideTab, toggleFocus, togglePanel } from './useLayout'
 import { mirrorCommands } from './mirrorCmds'
+import { rangeWithEnd, rangeWithStart } from './timeline/rulerMath'
 
 export interface Command { id: string; label: string; group: string; keys?: string; run: () => void; when?: () => boolean }
 
@@ -221,6 +222,9 @@ export const commands: Command[] = [
   { id: 'anim.duplicateKeys', label: 'Duplicate keys (selected keys, or the keys on the playhead)', group: 'Animate', run: () => { if (animKeysHere()) duplicateTimelineKeys() } },
   { id: 'anim.prev', label: 'Previous frame', group: 'Animate', keys: ',', run: () => { const s = S(); s.set({ frame: Math.max(0, s.frame - 1) }) } },
   { id: 'anim.next', label: 'Next frame', group: 'Animate', keys: '.', run: () => { const s = S(); s.set({ frame: Math.min(s.curClip().frames - 1, s.frame + 1) }) } },
+  { id: 'anim.rangeStart', label: 'Set play range start at playhead', group: 'Animate', keys: 'Ctrl+Home', run: () => { const s = S(); s.setPlayRange(rangeWithStart(s.playRange, s.frame, s.curClip().frames - 1)) } },
+  { id: 'anim.rangeEnd', label: 'Set play range end at playhead', group: 'Animate', keys: 'Ctrl+End', run: () => { const s = S(); s.setPlayRange(rangeWithEnd(s.playRange, s.frame, s.curClip().frames - 1)) } },
+  { id: 'anim.rangeClear', label: 'Clear play range', group: 'Animate', keys: 'Ctrl+Shift+Home', run: () => S().setPlayRange(null) },
   { id: 'edit.fill', label: 'Fill (or frame selection)', group: 'Construct', keys: 'F', run: () => {
     const s = S()
     if (s.mode === 'model' && s.selectMode !== 'joint') {

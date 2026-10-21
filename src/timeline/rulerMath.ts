@@ -86,3 +86,68 @@ export function buildTicks(lo: number, hi: number, width: number, minLabelPx?: n
   }
   return { ticks, spacing }
 }
+
+// ---------------------------------------------------------------------------------------------- play range
+
+/** Sorted, rounded range clamped to frames 0..last. */
+export function normalizeRange(a: number, b: number, last: number): FrameRange {
+  const top = Math.max(0, Math.floor(last))
+  const c = (f: number) => Math.max(0, Math.min(top, Number.isFinite(f) ? Math.round(f) : 0))
+  const x = c(a), y = c(b)
+  return { start: Math.min(x, y), end: Math.max(x, y) }
+}
+
+/** New range after setting its start at `f`. No range yet: f..last. A start past the end pulls the end along. */
+export function rangeWithStart(cur: FrameRange | null, f: number, last: number): FrameRange {
+  const s = normalizeRange(f, f, last).start
+  return normalizeRange(s, Math.max(s, cur ? cur.end : last), last)
+}
+
+/** New range after setting its end at `f`. No range yet: 0..f. An end before the start pulls the start along. */
+export function rangeWithEnd(cur: FrameRange | null, f: number, last: number): FrameRange {
+  const e = normalizeRange(f, f, last).end
+  return normalizeRange(Math.min(e, cur ? cur.start : 0), e, last)
+}
+
+/** Move one marker of `cur` to frame f, never past the other marker. */
+export function moveMarker(cur: FrameRange, which: 'in' | 'out', f: number, last: number): FrameRange {
+  const r = normalizeRange(cur.start, cur.end, last)
+  const g = normalizeRange(f, f, last).start
+  return which === 'in' ? { start: Math.min(g, r.end), end: r.end } : { start: r.start, end: Math.max(g, r.start) }
+}
+
+/** Which marker (if any) lies within `tol` px of x. Ties go to the nearer one; on a 1-frame range, the side of x picks. */
+export function markerAt(x: number, inX: number, outX: number, tol = 5): 'in' | 'out' | null {
+  const di = Math.abs(x - inX), dout = Math.abs(x - outX)
+  if (di > tol && dout > tol) return null
+  if (Math.abs(inX - outX) < 1e-6) return x < inX ? 'in' : 'out'
+  return di <= dout ? 'in' : 'out'
+}
+
+/**
+ * Keep playback inside the play range. `prev` is the frame before this playback step (null: playback just started),
+ * `frame` the frame the play loop moved to (it wraps over the whole clip, so frame < prev means it passed the clip end).
+ * Returns the corrected frame (stop = halt playback on a non-looping clip), or null when nothing needs to change.
+ */
+export function wrapPlayFrame(prev: number | null, frame: number, frames: number, range: FrameRange, loop: boolean): { frame: number; stop: boolean } | null {
+  const last = Math.max(1, frames - 1)
+  const r = normalizeRange(range.start, range.end, last)
+  if (prev === null) return frame < r.start || frame > r.end ? { frame: r.start, stop: false } : null
+  if (frame === prev) return null
+  if (prev < r.start || prev > r.end) return { frame: r.start, stop: false }
+  const steps = frame >= prev ? frame - prev : frame + Math.max(1, frames) - prev
+  const abs = prev + steps
+  if (abs <= r.end) return frame === abs ? null : { frame: abs, stop: false }
+  if (!loop) return { frame: r.end, stop: true }
+  const len = r.end - r.start + 1
+  return { frame: r.start + ((abs - r.end - 1) % len), stop: false }
+}
+
+/** A dope-sheet view (possibly fractional, possibly missing) as a usable lo..hi span inside the clip. */
+export function resolveView(view: FrameRange | undefined, last: number): { lo: number; hi: number } {
+  const top = Math.max(1, last)
+  if (!view || !Number.isFinite(view.start) || !Number.isFinite(view.end)) return { lo: 0, hi: top }
+  const lo = Math.max(0, Math.min(view.start, view.end))
+  const hi = Math.min(top, Math.max(view.start, view.end))
+  return hi - lo > 1e-6 ? { lo, hi } : { lo: 0, hi: top }
+}

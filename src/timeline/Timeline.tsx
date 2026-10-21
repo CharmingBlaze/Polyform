@@ -10,14 +10,14 @@ import { Curves } from './Curves'
 import { inspectorTarget, KeyInspector } from './KeyInspector'
 import './timeline.css'
 
-type RulerProps = { frame: number; onScrub: (frame: number) => void; range: { start: number; end: number } }
+type RulerProps = { frame: number; onScrub: (frame: number) => void; range: { start: number; end: number }; view?: { start: number; end: number } }
 const rulerMods = import.meta.glob('./TimeRuler.tsx', { eager: true }) as Record<string, { TimeRuler?: ComponentType<RulerProps>; default?: ComponentType<RulerProps> }>
 
 /** Frontend owns the ruler. Render it when that file is on disk; otherwise keep the slot. */
-function RulerSlot({ frame, range }: { frame: number; range: { start: number; end: number } }) {
+function RulerSlot({ frame, range, view }: Omit<RulerProps, 'onScrub'>) {
   const mod = Object.values(rulerMods)[0]
   const Comp = mod?.TimeRuler ?? mod?.default
-  if (Comp) return <Comp frame={frame} onScrub={f => useStore.getState().setPlayhead(f)} range={range} />
+  if (Comp) return <Comp frame={frame} onScrub={f => useStore.getState().setPlayhead(f)} range={range} view={view} />
   return <div className="tl-ruler-slot" data-testid="timeline-ruler-slot" data-slot="TimeRuler" aria-label="Time ruler" />
 }
 
@@ -496,7 +496,7 @@ export function Timeline() {
 
   return (
     <div className="tl-root">
-      <RulerSlot frame={frame} range={playRange ?? { start: 0, end: Math.max(0, n - 1) }} />
+      <RulerSlot frame={frame} range={playRange ?? { start: 0, end: Math.max(0, n - 1) }} view={{ start: lo, end: hi }} />
       <div className="tl-main">
         <div className={`dope ${rows.length ? '' : 'empty-dope'} ${dock ? 'with-inspector' : ''}`} data-testid="dope-sheet" ref={sheetRef}
           title="Drag empty space to scrub · Shift+drag or Ctrl+drag box-selects · Alt+drag scales · G move · S scale · E ease · F frame keys · I insert · Delete · Ctrl+D duplicate · Ctrl+Shift+V paste mirrored"

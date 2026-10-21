@@ -18,3 +18,12 @@
 .tl-ruler-playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: 0; background: var(--accent); pointer-events: none; z-index: 2; }
 .tl-ruler-head { position: absolute; top: 0; left: -4px; width: 9px; height: 6px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 50% 100%); }
 .tl-ruler-lane.scrubbing .tl-ruler-playhead, .tl-ruler-lane.scrubbing .tl-ruler-head { background: var(--accent2); }
+.tl-ruler-range { margin-left: auto; color: var(--gold); font-size: 10px; }
+.tl-ruler-lane.ranging { cursor: col-resize; }
+.tl-ruler-mark.hot { width: 4px; margin-left: -2px; }
+.tl-ruler-menu { position: fixed; z-index: 60; min-width: 184px; padding: 3px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 8px 24px rgba(0,0,0,.45); display: flex; flex-direction: column; font-size: 11px; }
+.tl-ruler-menu-head { padding: 2px 6px 3px; color: var(--dim); font-size: 10px; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+.tl-ruler-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 22px; padding: 0 6px; border: none; border-radius: 0; background: transparent; color: var(--text); text-align: left; }
+.tl-ruler-menu button:hover:not(:disabled), .tl-ruler-menu button:focus-visible { background: var(--panel2); outline: none; }
+.tl-ruler-menu button:disabled { color: var(--dim); opacity: .6; }
+.tl-ruler-menu kbd { font: inherit; font-size: 10px; color: var(--dim); }
