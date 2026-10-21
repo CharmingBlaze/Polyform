@@ -13,7 +13,7 @@ const frame = () => p.waitForTimeout(80)
 await S(() => window.__polyform.getState().openSample('character'))
 await frame()
 await p.click('[data-testid="ws-animate"]'); await frame()
-check('ruler slot is waiting for TimeRuler', await p.locator('[data-testid="timeline-ruler-slot"]').count() === 1)
+check('time ruler fills the ruler slot', await p.locator('[data-testid="timeline-ruler"]').count() === 1 && await p.locator('[data-testid="timeline-ruler-slot"]').count() === 0)
 check('dope sheet is in the timeline', await p.locator('[data-testid="dope-sheet"]').isVisible())
 
 const meta = await S(() => {

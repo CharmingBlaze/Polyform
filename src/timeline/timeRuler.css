@@ -1,0 +1,20 @@
+/* Time ruler: lines up with the dope sheet tracks (8 px side margin, 128 px name column). Theme tokens only. */
+.tl-ruler { flex: none; display: grid; grid-template-columns: 128px minmax(0, 1fr); height: 22px; margin: 0 8px; background: var(--panel); border-bottom: 1px solid var(--line); user-select: none; }
+.tl-ruler-readout { display: flex; align-items: center; gap: 4px; padding: 0 6px; font-size: 11px; color: var(--dim); border-right: 1px solid var(--line); font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; }
+.tl-ruler-readout b { color: var(--text); font-weight: 600; }
+.tl-ruler-lane { position: relative; min-width: 0; overflow: hidden; cursor: ew-resize; outline: none; touch-action: none; background: var(--bg); }
+.tl-ruler-lane:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.tl-tick { position: absolute; bottom: 0; width: 1px; pointer-events: none; }
+.tl-tick.minor { height: 4px; background: var(--line2); }
+.tl-tick.major { height: 8px; background: var(--dim); }
+.tl-tick-label { position: absolute; bottom: 9px; left: 0; transform: translateX(-50%); font-size: 10px; line-height: 1; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tl-tick-label.start { transform: translateX(2px); }
+.tl-tick-label.end { transform: translateX(calc(-100% - 2px)); }
+.tl-ruler-out { position: absolute; top: 0; bottom: 0; background: var(--panel2); opacity: .7; pointer-events: none; }
+.tl-ruler-mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--gold); pointer-events: none; }
+.tl-ruler-mark.in::after, .tl-ruler-mark.out::after { content: ''; position: absolute; top: 0; width: 5px; height: 2px; background: var(--gold); }
+.tl-ruler-mark.in::after { left: 0; }
+.tl-ruler-mark.out::after { right: 0; }
+.tl-ruler-playhead { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: 0; background: var(--accent); pointer-events: none; z-index: 2; }
+.tl-ruler-head { position: absolute; top: 0; left: -4px; width: 9px; height: 6px; background: var(--accent); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.tl-ruler-lane.scrubbing .tl-ruler-playhead, .tl-ruler-lane.scrubbing .tl-ruler-head { background: var(--accent2); }
